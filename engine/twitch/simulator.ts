@@ -21,8 +21,8 @@ form.addEventListener('submit', async event => {
 async function refresh() {
   const [ideasResponse, statusResponse] = await Promise.all([fetch('/api/ideas'), fetch('/api/twitch/status')]);
   const data = await ideasResponse.json() as { ideas: { id: string; authorName: string; text: string; source: string; status: string; votes: string[] }[]; replies: { text: string }[] };
-  const status = await statusResponse.json() as { configured: boolean; rewardConfigured: boolean; authIssue: string; broadcaster: { login: string } | null; bot: { login: string } | null; eventsub: string };
-  document.querySelector('#connection')!.textContent = status.configured ? `EventSub: ${status.eventsub}${status.rewardConfigured ? '' : ' · Set TWITCH_PITCH_REWARD_ID for reward events'}${status.authIssue ? ` · ${status.authIssue}` : ''}` : 'Twitch app is not configured; simulator is ready.';
+  const status = await statusResponse.json() as { configured: boolean; rewardConfigured: boolean; authIssue: string; chatIssue: string; broadcaster: { login: string } | null; bot: { login: string } | null; eventsub: string };
+  document.querySelector('#connection')!.textContent = status.configured ? `EventSub: ${status.eventsub}${status.rewardConfigured ? '' : ' · Set TWITCH_PITCH_REWARD_ID for reward events'}${status.authIssue ? ` · ${status.authIssue}` : ''}${status.chatIssue ? ` · ${status.chatIssue}` : ''}` : 'Twitch app is not configured; simulator is ready.';
   document.querySelector('#accounts')!.textContent = `Broadcaster: ${status.broadcaster?.login ?? 'not connected'} · Bot: ${status.bot?.login ?? 'not connected'}`;
   const ideas = document.querySelector('#ideas')!; ideas.replaceChildren();
   for (const [index, idea] of data.ideas.slice(-20).reverse().entries()) {

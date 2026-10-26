@@ -5,6 +5,7 @@ import type { ViteDevServer } from 'vite';
 import { IdeaStore } from '../pipeline/ideas';
 import { ChatPipeline } from '../pipeline/commands';
 import { TwitchAuth, authorizationError, defaultTwitchRedirectUri, type Role, type TwitchConfig } from './auth';
+import { chatDeliveryIssue } from './chat';
 import { EventSubClient } from './eventsub';
 import { normalizeSimulator } from './events';
 
@@ -45,6 +46,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string) {
   const store = new IdeaStore(path.join(dataDir, 'ideas.json'));
   const replies: { at: string; text: string }[] = [];
   const simulator = process.env.LIVE_PATCH_SIMULATOR_ENABLED !== '0';
+  let chatIssue = '';
   const pipeline = new ChatPipeline(store, {
     rewardId: config.rewardId || 'sim-pitch',
     reply: async (message, event) => {
@@ -55,8 +57,11 @@ export function configureTwitchServer(server: ViteDevServer, root: string) {
       }
       const bot = auth.identity('bot'); const broadcaster = auth.identity('broadcaster');
       if (!bot || !broadcaster) return;
-      const response = await auth.helix('bot', 'chat/messages', { broadcaster_id: broadcaster.id, sender_id: bot.id, message: message.slice(0, 500) });
-      if (!response.ok) console.error(`Twitch chat reply failed (${response.status})`);
+      try {
+        const response = await auth.helix('bot', 'chat/messages', { broadcaster_id: broadcaster.id, sender_id: bot.id, message: message.slice(0, 500) });
+        chatIssue = await chatDeliveryIssue(response);
+      } catch (error) { chatIssue = `Twitch chat reply failed: ${String(error)}`; }
+      if (chatIssue) console.error(chatIssue);
     },
     onChat: event => server.ws.send({ type: 'custom', event: 'live-patch:chat', data: { text: event.text, author: event.viewer.name } })
   });
@@ -82,7 +87,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string) {
     const route = url.pathname;
     if (route === '/api/ideas' && req.method === 'GET') { json(res, 200, { ideas: store.list(), rollbackRequests: store.rollbackRequests(), replies }); return; }
     if (route === '/api/twitch/status' && req.method === 'GET') {
-      json(res, 200, { configured: auth.configured(), rewardConfigured: Boolean(config.rewardId), broadcaster: auth.identity('broadcaster'), bot: auth.identity('bot'), eventsub: eventsub.status(), authIssue, simulator }); return;
+      json(res, 200, { configured: auth.configured(), rewardConfigured: Boolean(config.rewardId), broadcaster: auth.identity('broadcaster'), bot: auth.identity('bot'), eventsub: eventsub.status(), authIssue, chatIssue, simulator }); return;
     }
     if (route === '/api/twitch/rewards' && req.method === 'GET') {
       const broadcaster = auth.identity('broadcaster');

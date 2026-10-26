@@ -7,6 +7,7 @@ import { ChatPipeline, type InboundEvent } from '../engine/pipeline/commands';
 import { normalizeEventSub, normalizeSimulator } from '../engine/twitch/events';
 import { TwitchAuth, authorizationError, defaultTwitchRedirectUri } from '../engine/twitch/auth';
 import { EventSubClient } from '../engine/twitch/eventsub';
+import { chatDeliveryIssue } from '../engine/twitch/chat';
 
 function tempStore(run: (store: IdeaStore, file: string) => Promise<void> | void) {
   const directory = fs.mkdtempSync(path.join(process.cwd(), '.test-ideas-'));
@@ -17,6 +18,13 @@ const viewer = { id: '42', login: 'viewer', name: 'Viewer', moderator: false, br
 const inbound = (id: string, text: string): InboundEvent => ({ kind: 'chat', origin: 'simulator', id, viewer, text });
 
 describe('Phase 2 idea pipeline', () => {
+  it('reports a rejected Twitch chat send even when the API returns HTTP 200', async () => {
+    const rejected = new Response(JSON.stringify({ data: [{ is_sent: false, drop_reason: { code: 'msg_rejected', message: 'Your message could not be sent' } }] }));
+    expect(await chatDeliveryIssue(rejected)).toContain('msg_rejected');
+    const sent = new Response(JSON.stringify({ data: [{ is_sent: true, drop_reason: null }] }));
+    expect(await chatDeliveryIssue(sent)).toBe('');
+    expect(await chatDeliveryIssue(new Response('', { status: 403 }))).toContain('HTTP 403');
+  });
   it('explains a Twitch redirect mismatch using the configured callback URL', () => {
     expect(authorizationError('redirect_mismatch', defaultTwitchRedirectUri)).toContain(`Register ${defaultTwitchRedirectUri} exactly`);
     expect(authorizationError('redirect_mismatch', defaultTwitchRedirectUri)).toContain('localhost and 127.0.0.1');

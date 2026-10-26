@@ -9,6 +9,7 @@
 - Phase 2 spec, Twitch setup instructions, `.env.example`, architecture updates, unit tests, and a browser simulator regression.
 - Switched the development server and OAuth callback to HTTPS because the operator's Twitch registration form requires an `https://` redirect. The test harness remains on isolated HTTP ports.
 - OAuth callback errors now explain redirect mismatches and show the exact configured URL to register. An earlier callback on `127.0.0.1` exposed a host mismatch with the current `localhost` setting.
+- Bot reply delivery checks Twitch's `is_sent` field and displays a dropped-message warning in the simulator, even when the Send Chat Message API returns HTTP 200.
 
 `ws` was added for a supported WebSocket client and lifecycle on Node 20 or newer; `@types/ws` supplies strict TypeScript definitions. `@vitejs/plugin-basic-ssl` generates a local development certificate so Twitch can redirect to an HTTPS callback.
 
@@ -18,12 +19,14 @@
 - `npm test` runs the unit and browser suites against a temporary game and idea store. `npm run build` checks TypeScript and bundles the browser client.
 - Follow the README's Twitch setup steps to register a confidential app, authorize separate accounts, configure a text-entry reward, and run the real-channel checks.
 
-Local verification: `npm test` passed 12 unit and 26 browser tests; `npm run build` passed; `npm audit --audit-level=moderate` found zero vulnerabilities. `npm run dev` served the simulator over HTTPS, and a Chromium check loaded the simulator at `https://localhost:5173/simulator.html` with local certificate errors ignored. The OAuth start route returned the matching HTTPS callback. A local redirect-mismatch callback returned the configured URL in its error response.
+Local verification: `npm test` passed 13 unit and 26 browser tests; `npm run build` passed; `npm audit --audit-level=moderate` found zero vulnerabilities. `npm run dev` served the simulator over HTTPS, and a Chromium check loaded the simulator at `https://localhost:5173/simulator.html` with local certificate errors ignored. The OAuth start route returned the matching HTTPS callback. A local redirect-mismatch callback returned the configured URL in its error response.
+
+Real-channel check on 2026-10-27: the broadcaster and bot completed OAuth and EventSub reported connected. A broadcaster chat `!idea` appeared in `/api/ideas` with source `chat`; `!reject 1` changed that test idea to `rejected`. Twitch's Get Custom Reward API returned 403 with `The broadcaster must have partner or affiliate status`, so no reward exists to configure or redeem. Twitch's Send Chat Message API returned `is_sent: false`, `msg_rejected` for the connected bot account, and no second-account idea arrived. A subsequent broadcaster `!vote 1` showed the bot delivery warning in `/api/twitch/status`.
 
 ## Exit criteria
 
-- [ ] A second account's `!idea` appears in the store within two seconds on a real test channel — waiting for Twitch app registration and accounts; the simulator path and unit tests pass.
-- [ ] Redeeming the configured custom reward creates an idea on the real channel — waiting for an eligible channel, reward ID and authorization; normalization and simulator reward tests pass.
+- [ ] A second account's `!idea` appears in the store within two seconds on a real test channel — broadcaster chat ingestion works, but Twitch rejected bot-account test messages with `msg_rejected`; a second-account message has not arrived.
+- [ ] Redeeming the configured custom reward creates an idea on the real channel — Twitch returned 403 because the broadcaster lacks Affiliate or Partner status; no reward ID is available. Normalization and simulator reward tests pass.
 - [x] Moderator commands work only for moderators and the broadcaster — command authorization is tested with viewer, moderator and broadcaster inputs; the broadcaster is identified by Twitch user ID.
 - [x] The simulator drives the identical code path — Twitch and simulator payloads normalize to `InboundEvent` and call the same `ChatPipeline.ingest`; the browser test checks idea persistence and `onChat` delivery.
 - [x] WebSocket reconnects after a dropped connection — fake-socket unit tests verify new connection and subscription calls, and Twitch reconnect handoff without duplicate subscriptions. Keepalive timeouts also trigger reconnect.
@@ -37,7 +40,7 @@ Local verification: `npm test` passed 12 unit and 26 browser tests; `npm run bui
 
 ## Known gaps / risks
 
-- Real Twitch authentication, chat latency and custom-reward delivery require the operator's app, eligible channel and two accounts. They remain unverified in this development environment.
+- Real Twitch OAuth and broadcaster chat ingestion are verified. Bot chat sending failed because Twitch rejected test messages; the channel's chat settings did not show follower, subscriber, emote or slow restrictions. Twitch's API says the broadcaster currently lacks Affiliate or Partner status, so custom reward creation, subscription and redemption cannot be tested on this channel. The dashboard shows creator monetization onboarding; its personal details and agreement require operator action.
 - The simulator trusts role selection because it is a local development tool. Its event endpoint binds to the local development server, checks browser Origin, and can be disabled with `LIVE_PATCH_SIMULATOR_ENABLED=0`.
 - JSON persistence is suitable for one local server process. Concurrent writers or a hosted deployment would need a transactional store.
 - The most recent three pending ideas serve as provisional voting slots until Phase 4 adds timed rounds and triage.

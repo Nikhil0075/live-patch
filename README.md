@@ -35,6 +35,8 @@ npm run dev -- --game games/arena-survivor
 
 Idea text is limited to 200 characters and each viewer can submit one idea every three minutes across chat and reward input. The latest three pending ideas are numbered 1–3 for voting and moderation. EventSub reconnects and resubscribes after a dropped connection. Twitch may redeliver a notification, so message IDs are deduplicated. Tokens are validated at startup and hourly, and a refreshed access and refresh token pair is stored locally. The simulator can be disabled with `LIVE_PATCH_SIMULATOR_ENABLED=0`.
 
+The simulator shows a Twitch chat delivery warning if Twitch accepts a Send Chat Message API request but reports that the bot's message was dropped. EventSub can remain connected while bot replies fail, so check this warning during the real-channel test.
+
 Scopes are limited to `channel:read:redemptions` for the broadcaster and `user:read:chat` plus `user:write:chat` for the bot. See Twitch's [EventSub subscription types](https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/), [Send Chat Message API](https://dev.twitch.tv/docs/api/reference/#send-chat-message), [OAuth code grant](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/), and [token validation guidance](https://dev.twitch.tv/docs/authentication/validate-tokens/). No Twitch credentials are needed for the simulator or automated tests.
 
 ## Add a game or mutation
