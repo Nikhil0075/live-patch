@@ -12,7 +12,7 @@ npx playwright install chromium
 npm run dev
 ```
 
-Open http://127.0.0.1:5173. Move with WASD or arrow keys. Collect coins, avoid enemies and watch the active patches at right. Add, edit or delete a `.js` file in `games/arena-survivor/mutations/` while the game runs; its module updates without page navigation.
+Open http://127.0.0.1:5173. Move with WASD or arrow keys, use Space to attack, collect coins and watch the active patches at right. Add, edit or delete a `.js` file in `games/arena-survivor/mutations/` while the game runs; its module updates without page navigation.
 
 ```sh
 npm test
@@ -21,11 +21,11 @@ npm run build
 npm run dev -- --game games/arena-survivor
 ```
 
-`npm test` runs manifest and boundary checks plus five second browser smoke checks for each example, fault isolation and live reload. `npm run smoke` focuses on one mutation. The `--game` path can point at another game folder with a valid manifest. `npm run build` checks TypeScript and builds the engine client; Phase 1 runs games through the development server. The project needs no environment variables or Twitch OAuth scopes yet.
+`npm test` runs manifest and boundary checks plus five second browser smoke checks for each example, fault isolation and live reload. `npm run smoke` focuses on one mutation. Both commands copy the game to a temporary folder and use free ports, so they work while `npm run dev` is still running and never put test mutations into the live game. Set `LIVE_PATCH_GAME=path/to/game` to test another game. The `--game` path starts another game folder with a valid manifest; `package.json` → `livePatch.defaultGame` selects the default folder. `npm run build` checks TypeScript and builds the engine client; Phase 1 runs games through the development server. The project needs no environment variables or Twitch OAuth scopes yet.
 
 ## Add a game or mutation
 
-Read [the game contract](docs/adding-a-game.md) and [the Arena Survivor mutation API](games/arena-survivor/docs/mutation-api.md). Each mutation exports metadata and optional hooks. The loader rejects files over 120 lines or 12,000 bytes and direct use of forbidden APIs. It runs accepted modules in sandboxed, opaque-origin frames with a restrictive Content Security Policy. Each module can only request bounded game actions. A hook error disables that module and leaves the game running.
+Read [the game contract](docs/adding-a-game.md) and [the Arena Survivor mutation API](games/arena-survivor/docs/mutation-api.md). Each mutation exports metadata and optional hooks. The loader rejects files over 120 lines or 12,000 bytes and direct use of forbidden APIs. It runs accepted modules in dedicated Workers inside sandboxed, opaque-origin frames with a restrictive Content Security Policy. Load and hook deadlines stop loops without freezing the game. Each module can only request bounded game actions; failures disable that module and leave the game running.
 
 ## Research used for Phase 1
 

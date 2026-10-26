@@ -1,8 +1,8 @@
-export type Kind = 'enemy' | 'coin' | 'bomb';
-export type Parameter = 'enemySpeed' | 'coinValue' | 'playerSpeed' | 'spawnInterval' | 'gravityX' | 'gravityY';
-export interface Snapshot { player: { x: number; y: number; lives: number }; score: number; elapsed: number; enemies: number; coins: number; frame: number }
-export type GameEvent = { type: 'start' } | { type: 'tick'; delta: number } | { type: 'spawn'; kind: Kind; x: number; y: number } | { type: 'hit'; kind: Kind; x: number; y: number } | { type: 'collide'; kind: Kind; x: number; y: number } | { type: 'score'; amount: number };
-export type Action = { type: 'spawn'; kind: Kind; x: number; y: number } | { type: 'setParameter'; key: Parameter; value: number } | { type: 'drawShape'; x: number; y: number; radius: number; color: string } | { type: 'showMessage'; text: string };
-export interface GameHandle { readonly state: Snapshot; spawn(kind: Kind, x: number, y: number): void; setParameter(key: Parameter, value: number): void; drawShape(x: number, y: number, radius: number, color: string): void; showMessage(text: string): void }
-export interface Mutation { meta: { id: string; title: string; author: string; description: string }; onStart?(game: GameHandle): void; onTick?(game: GameHandle, event: Extract<GameEvent,{type:'tick'}>): void; onSpawn?(game: GameHandle, event: Extract<GameEvent,{type:'spawn'}>): void; onHit?(game: GameHandle, event: Extract<GameEvent,{type:'hit'}>): void; onCollide?(game: GameHandle, event: Extract<GameEvent,{type:'collide'}>): void; onScore?(game: GameHandle, event: Extract<GameEvent,{type:'score'}>): void }
-export interface GameAdapter { emit(event: GameEvent): void; apply(action: Action): void; resetMutations(): void; snapshot(): Snapshot; destroy(): void }
+export interface GameEvent { type: string; origin?: string; [key: string]: unknown }
+export interface GameAction { type: string; args: unknown[] }
+export interface GameAdapter {
+  apply(action: GameAction, origin: string): void;
+  removeMutation(origin: string): void;
+  snapshot(): unknown;
+  destroy(): void;
+}

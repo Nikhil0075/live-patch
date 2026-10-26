@@ -1,11 +1,25 @@
 {
   "name": "Arena Survivor",
+  "hint": "Move with WASD or arrows · Space attacks · Collect coins · Avoid enemies",
   "entry": "src/main.ts",
   "mutationDir": "mutations/",
   "apiDocs": "docs/mutation-api.md",
   "examples": ["mutations/"],
   "forbidden": ["fetch", "eval", "document", "window", "import("],
   "testCommand": "npm run smoke -- --mutation {file}",
-  "reload": { "type": "websocket", "url": "ws://127.0.0.1:5174/reload" },
+  "actions": {
+    "spawn": [{"type":"string","values":["enemy","coin","bomb","fire"]},{"type":"number","min":0,"max":960},{"type":"number","min":0,"max":640},{"type":"number","min":4,"max":45,"optional":true}],
+    "removeEntity": [{"type":"number","min":1}],
+    "moveEntity": [{"type":"number","min":1},{"type":"number","min":0,"max":960},{"type":"number","min":0,"max":640}],
+    "setVelocity": [{"type":"number","min":1},{"type":"number","min":-250,"max":250},{"type":"number","min":-250,"max":250}],
+    "setRadius": [{"type":"number","min":1},{"type":"number","min":4,"max":45}],
+    "setTag": [{"type":"number","min":1},{"type":"string","maxLength":24}],
+    "setParameter": [{"type":"string","values":["enemySpeed","coinValue","playerSpeed","spawnInterval","gravityX","gravityY"]},{"type":"number","min":-100,"max":500}],
+    "drawShape": [{"type":"number","min":0,"max":960},{"type":"number","min":0,"max":640},{"type":"number","min":1,"max":100},{"type":"string","maxLength":7}],
+    "drawText": [{"type":"string","maxLength":80},{"type":"number","min":0,"max":960},{"type":"number","min":0,"max":640}],
+    "showMessage": [{"type":"string","maxLength":100}]
+  },
+  "hooks": { "start": "onStart", "tick": "onTick", "spawn": "onSpawn", "hit": "onHit", "collide": "onCollide", "score": "onScore", "entityCollide": "onEntityCollide", "chat": "onChat" },
+  "reload": { "type": "websocket", "url": "ws://127.0.0.1:5173", "event": "live-patch:changed" },
   "maxFileLines": 120
 }

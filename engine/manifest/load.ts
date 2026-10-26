@@ -16,5 +16,16 @@ export function loadGame(root: string, argument: string): { directory: string; m
     if (!target.startsWith(directory + path.sep)) throw new Error(`Manifest ${field} escapes game directory`);
     if (!fs.existsSync(target)) throw new Error(`Manifest ${field} does not exist: ${target}`);
   }
+  for (const example of result.data.examples) {
+    const target = path.resolve(directory, example);
+    if (!target.startsWith(directory + path.sep)) throw new Error(`Manifest example escapes game directory: ${example}`);
+    if (!fs.existsSync(target)) throw new Error(`Manifest example does not exist: ${target}`);
+  }
   return { directory, manifest: result.data };
+}
+
+export function defaultGame(root: string): string {
+  const packageFile = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as { livePatch?: { defaultGame?: string } };
+  if (!packageFile.livePatch?.defaultGame) throw new Error('package.json livePatch.defaultGame is required');
+  return packageFile.livePatch.defaultGame;
 }
