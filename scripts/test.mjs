@@ -41,6 +41,7 @@ const isolatedGame = path.join(temp, 'game');
 fs.cpSync(directory, isolatedGame, { recursive: true });
 process.env.LIVE_PATCH_GAME = isolatedGame;
 process.env.LIVE_PATCH_HTTP_PORT = String(await freePort());
+process.env.LIVE_PATCH_TEST_SERVER = '1';
 let server;
 try {
   server = await createServer({ server: { host: '127.0.0.1' } });

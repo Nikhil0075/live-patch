@@ -1,4 +1,5 @@
 import { defineConfig, type Plugin } from 'vite';
+import basicSsl from '@vitejs/plugin-basic-ssl';
 import fs from 'node:fs';
 import path from 'node:path';
 import { defaultGame, loadGame } from './engine/manifest/load';
@@ -51,4 +52,4 @@ function livePatchPlugin(): Plugin {
   };
 }
 
-export default defineConfig({ plugins: [livePatchPlugin()], server: { port: Number(process.env.LIVE_PATCH_HTTP_PORT ?? new URL(manifest.reload.url).port), strictPort: true, fs: { allow: [root, directory] } } });
+export default defineConfig({ plugins: [...(process.env.LIVE_PATCH_TEST_SERVER === '1' ? [] : [basicSsl({ domains: ['localhost', '127.0.0.1'] })]), livePatchPlugin()], server: { port: Number(process.env.LIVE_PATCH_HTTP_PORT ?? new URL(manifest.reload.url).port), strictPort: true, fs: { allow: [root, directory] } } });

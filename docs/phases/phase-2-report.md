@@ -7,17 +7,17 @@
 - A shared typed-event pipeline for Twitch and simulator input, chat commands, moderator checks, bot replies, and a JSON idea store with status and votes.
 - A local simulator page, HTTP status and idea endpoints, and a chat bridge into mutation `onChat` hooks.
 - Phase 2 spec, Twitch setup instructions, `.env.example`, architecture updates, unit tests, and a browser simulator regression.
-- Corrected the local OAuth redirect to literal `localhost`, which Twitch accepts for HTTP development callbacks; the previous IP address required HTTPS. Verified that a fresh server generates the corrected authorization URL.
+- Switched the development server and OAuth callback to HTTPS because the operator's Twitch registration form requires an `https://` redirect. The test harness remains on isolated HTTP ports.
 
-`ws` was added for a supported WebSocket client and lifecycle on Node 20 or newer; `@types/ws` supplies strict TypeScript definitions. No other dependencies were added.
+`ws` was added for a supported WebSocket client and lifecycle on Node 20 or newer; `@types/ws` supplies strict TypeScript definitions. `@vitejs/plugin-basic-ssl` generates a local development certificate so Twitch can redirect to an HTTPS callback.
 
 ## How to run and test
 
-- `npm install`, `npx playwright install chromium`, then `npm run dev`. Open `http://127.0.0.1:5173/simulator.html` for offline chat and reward input.
+- `npm install`, `npx playwright install chromium`, then `npm run dev`. Open `https://localhost:5173/simulator.html` for offline chat and reward input. The local development certificate is self-signed and may prompt a browser warning.
 - `npm test` runs the unit and browser suites against a temporary game and idea store. `npm run build` checks TypeScript and bundles the browser client.
 - Follow the README's Twitch setup steps to register a confidential app, authorize separate accounts, configure a text-entry reward, and run the real-channel checks.
 
-Local verification: `npm test` passed 11 unit and 26 browser tests; `npm run build` passed; `npm audit --audit-level=moderate` found zero vulnerabilities. `npm run dev` served the simulator and JSON endpoints on a separate local port with Twitch offline.
+Local verification: `npm test` passed 11 unit and 26 browser tests; `npm run build` passed; `npm audit --audit-level=moderate` found zero vulnerabilities. `npm run dev` served the simulator over HTTPS, and a Chromium check loaded the simulator at `https://localhost:5173/simulator.html` with local certificate errors ignored. The OAuth start route returned the matching HTTPS callback.
 
 ## Exit criteria
 

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 
 export type Role = 'broadcaster' | 'bot';
+export const defaultTwitchRedirectUri = 'https://localhost:5173/api/twitch/auth/callback';
 export interface TwitchConfig { clientId: string; clientSecret: string; redirectUri: string; rewardId: string }
 interface Token { accessToken: string; refreshToken: string; userId: string; login: string; scopes: string[]; expiresAt: number; validatedAt: number }
 const scopes: Record<Role, string[]> = { broadcaster: ['channel:read:redemptions'], bot: ['user:read:chat', 'user:write:chat'] };
