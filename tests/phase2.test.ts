@@ -73,8 +73,9 @@ describe('Phase 2 idea pipeline', () => {
         expect(String(options?.body)).toContain(exchange === 1 ? 'authorization_code' : 'refresh_token');
         return new Response(JSON.stringify({ access_token: `access-${exchange}`, refresh_token: `refresh-${exchange}`, expires_in: exchange === 1 ? 0 : 3600, scope: ['channel:read:redemptions'] }), { status: 200 });
       }) as unknown as typeof fetch;
-      const auth = new TwitchAuth({ clientId: 'client', clientSecret: 'secret', redirectUri: 'http://127.0.0.1/callback', rewardId: 'r' }, file, request);
+      const auth = new TwitchAuth({ clientId: 'client', clientSecret: 'secret', redirectUri: 'http://localhost:5173/api/twitch/auth/callback', rewardId: 'r' }, file, request);
       const url = new URL(auth.authorizeUrl('broadcaster'));
+      expect(url.searchParams.get('redirect_uri')).toBe('http://localhost:5173/api/twitch/auth/callback');
       await expect(auth.complete('code', 'wrong')).rejects.toThrow(/state/);
       await auth.complete('code', url.searchParams.get('state')!);
       expect(await auth.token('broadcaster')).toBe('access-2');

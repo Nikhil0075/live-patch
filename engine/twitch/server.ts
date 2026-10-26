@@ -39,7 +39,7 @@ function localOrigin(req: IncomingMessage): boolean {
 
 export function configureTwitchServer(server: ViteDevServer, root: string) {
   loadLocalEnv(root);
-  const config: TwitchConfig = { clientId: process.env.TWITCH_CLIENT_ID ?? '', clientSecret: process.env.TWITCH_CLIENT_SECRET ?? '', redirectUri: process.env.TWITCH_REDIRECT_URI ?? 'http://127.0.0.1:5173/api/twitch/auth/callback', rewardId: process.env.TWITCH_PITCH_REWARD_ID ?? '' };
+  const config: TwitchConfig = { clientId: process.env.TWITCH_CLIENT_ID ?? '', clientSecret: process.env.TWITCH_CLIENT_SECRET ?? '', redirectUri: process.env.TWITCH_REDIRECT_URI ?? 'http://localhost:5173/api/twitch/auth/callback', rewardId: process.env.TWITCH_PITCH_REWARD_ID ?? '' };
   const dataDir = path.resolve(process.env.LIVE_PATCH_DATA_DIR ?? path.join(root, '.live-patch'));
   const auth = new TwitchAuth(config, path.join(dataDir, 'tokens.json'));
   const store = new IdeaStore(path.join(dataDir, 'ideas.json'));

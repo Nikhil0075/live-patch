@@ -7,6 +7,7 @@
 - A shared typed-event pipeline for Twitch and simulator input, chat commands, moderator checks, bot replies, and a JSON idea store with status and votes.
 - A local simulator page, HTTP status and idea endpoints, and a chat bridge into mutation `onChat` hooks.
 - Phase 2 spec, Twitch setup instructions, `.env.example`, architecture updates, unit tests, and a browser simulator regression.
+- Corrected the local OAuth redirect to literal `localhost`, which Twitch accepts for HTTP development callbacks; the previous IP address required HTTPS. Verified that a fresh server generates the corrected authorization URL.
 
 `ws` was added for a supported WebSocket client and lifecycle on Node 20 or newer; `@types/ws` supplies strict TypeScript definitions. No other dependencies were added.
 
