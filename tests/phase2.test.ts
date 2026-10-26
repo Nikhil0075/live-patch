@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import { IdeaStore } from '../engine/pipeline/ideas';
 import { ChatPipeline, type InboundEvent } from '../engine/pipeline/commands';
 import { normalizeEventSub, normalizeSimulator } from '../engine/twitch/events';
-import { TwitchAuth, defaultTwitchRedirectUri } from '../engine/twitch/auth';
+import { TwitchAuth, authorizationError, defaultTwitchRedirectUri } from '../engine/twitch/auth';
 import { EventSubClient } from '../engine/twitch/eventsub';
 
 function tempStore(run: (store: IdeaStore, file: string) => Promise<void> | void) {
@@ -17,6 +17,11 @@ const viewer = { id: '42', login: 'viewer', name: 'Viewer', moderator: false, br
 const inbound = (id: string, text: string): InboundEvent => ({ kind: 'chat', origin: 'simulator', id, viewer, text });
 
 describe('Phase 2 idea pipeline', () => {
+  it('explains a Twitch redirect mismatch using the configured callback URL', () => {
+    expect(authorizationError('redirect_mismatch', defaultTwitchRedirectUri)).toContain(`Register ${defaultTwitchRedirectUri} exactly`);
+    expect(authorizationError('redirect_mismatch', defaultTwitchRedirectUri)).toContain('localhost and 127.0.0.1');
+    expect(authorizationError('access_denied', defaultTwitchRedirectUri)).toContain('denied by the account');
+  });
   it('uses one path for chat and reward ideas, persists state and enforces length and cooldown', async () => tempStore(async store => {
     let now = 1_000_000;
     const replies: string[] = [];

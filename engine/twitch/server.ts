@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ViteDevServer } from 'vite';
 import { IdeaStore } from '../pipeline/ideas';
 import { ChatPipeline } from '../pipeline/commands';
-import { TwitchAuth, defaultTwitchRedirectUri, type Role, type TwitchConfig } from './auth';
+import { TwitchAuth, authorizationError, defaultTwitchRedirectUri, type Role, type TwitchConfig } from './auth';
 import { EventSubClient } from './eventsub';
 import { normalizeSimulator } from './events';
 
@@ -103,7 +103,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string) {
     }
     if (route === '/api/twitch/auth/callback' && req.method === 'GET') {
       try {
-        if (url.searchParams.has('error')) throw Error('Twitch authorization was denied');
+        if (url.searchParams.has('error')) throw Error(authorizationError(url.searchParams.get('error'), config.redirectUri));
         const identity = await auth.complete(url.searchParams.get('code') ?? '', url.searchParams.get('state') ?? '');
         void connect();
         res.statusCode = 303; res.setHeader('Location', `/simulator.html?connected=${identity.role}`); res.end();

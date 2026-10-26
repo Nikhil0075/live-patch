@@ -8,6 +8,7 @@
 - A local simulator page, HTTP status and idea endpoints, and a chat bridge into mutation `onChat` hooks.
 - Phase 2 spec, Twitch setup instructions, `.env.example`, architecture updates, unit tests, and a browser simulator regression.
 - Switched the development server and OAuth callback to HTTPS because the operator's Twitch registration form requires an `https://` redirect. The test harness remains on isolated HTTP ports.
+- OAuth callback errors now explain redirect mismatches and show the exact configured URL to register. An earlier callback on `127.0.0.1` exposed a host mismatch with the current `localhost` setting.
 
 `ws` was added for a supported WebSocket client and lifecycle on Node 20 or newer; `@types/ws` supplies strict TypeScript definitions. `@vitejs/plugin-basic-ssl` generates a local development certificate so Twitch can redirect to an HTTPS callback.
 
@@ -17,7 +18,7 @@
 - `npm test` runs the unit and browser suites against a temporary game and idea store. `npm run build` checks TypeScript and bundles the browser client.
 - Follow the README's Twitch setup steps to register a confidential app, authorize separate accounts, configure a text-entry reward, and run the real-channel checks.
 
-Local verification: `npm test` passed 11 unit and 26 browser tests; `npm run build` passed; `npm audit --audit-level=moderate` found zero vulnerabilities. `npm run dev` served the simulator over HTTPS, and a Chromium check loaded the simulator at `https://localhost:5173/simulator.html` with local certificate errors ignored. The OAuth start route returned the matching HTTPS callback.
+Local verification: `npm test` passed 12 unit and 26 browser tests; `npm run build` passed; `npm audit --audit-level=moderate` found zero vulnerabilities. `npm run dev` served the simulator over HTTPS, and a Chromium check loaded the simulator at `https://localhost:5173/simulator.html` with local certificate errors ignored. The OAuth start route returned the matching HTTPS callback. A local redirect-mismatch callback returned the configured URL in its error response.
 
 ## Exit criteria
 
