@@ -1,0 +1,11 @@
+{
+  "name": "Arena Survivor",
+  "entry": "src/main.ts",
+  "mutationDir": "mutations/",
+  "apiDocs": "docs/mutation-api.md",
+  "examples": ["mutations/"],
+  "forbidden": ["fetch", "eval", "document", "window", "import("],
+  "testCommand": "npm run smoke -- --mutation {file}",
+  "reload": { "type": "websocket", "url": "ws://127.0.0.1:5174/reload" },
+  "maxFileLines": 120
+}
