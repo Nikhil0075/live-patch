@@ -9,12 +9,12 @@
 - Three example mutations: Quick Feet, Gold Rush and Danger Zone.
 - Browser smoke tests, platform contract tests, README, architecture, API reference, adding-a-game guide and research record.
 
-Dependencies: Phaser renders the arena; Vite serves the game, watches mutation files and carries reload events; Zod validates manifests; TypeScript checks module boundaries and tokenizes mutation source; Vitest checks the contract; Playwright exercises the running browser game. `@types/node` provides development types. Review round 1 added no dependency.
+Dependencies: Phaser renders the arena; Vite serves the game, watches mutation files and carries reload events; Zod validates manifests; TypeScript checks module boundaries and parses mutation source; Vitest checks the contract; Playwright exercises the running browser game. `@types/node` provides development types. Review rounds 1 and 2 added no dependency.
 
 ## How to run and test
 
 - `npm install`, then `npx playwright install chromium`, then `npm run dev` and open http://127.0.0.1:5173.
-- `npm test` runs five unit checks and fifteen browser tests, including five seconds of game time for each example. It copies the selected game and picks a free port, so the live server may remain open.
+- `npm test` runs five unit checks and twenty-five browser tests, including five seconds of game time for each example and triggers for all six documented idea fixtures. It copies the selected game and picks a free port, so the live server may remain open.
 - `npm run smoke -- --mutation 01-quick-feet.js` runs one example's smoke test.
 - `npm run build` checks TypeScript and bundles the engine client; `npm audit --audit-level=moderate` checks dependencies.
 
@@ -30,7 +30,7 @@ Dependencies: Phaser renders the arena; Vite serves the game, watches mutation f
 - [x] Missing or invalid manifest fails with a readable error — unit tests passed.
 - [x] `docs/adding-a-game.md` describes the schema and game adapter.
 
-Final checks after review fixes: `npm test` passed (5 unit, 15 browser) while the live development server held port 5173; the focused `npm run smoke -- --mutation 01-quick-feet.js` passed; `npm run build` passed; `npm audit --audit-level=moderate` found zero vulnerabilities. A focused smoke run also passed with `LIVE_PATCH_GAME` pointing at a renamed copy of the game.
+Round-two checks: `npm test` passed (5 unit, 25 browser) while the live development server held port 5173; `npm run build` passed; `npm audit --audit-level=moderate` found zero vulnerabilities. The full suite covers a crowded Space attack, bounded arguments, nested Worker blocking, skipped tick time and all six documented ideas. The round-one renamed-game check remains valid; the engine/game boundary and game selection code did not change in round two.
 
 ## Deferred
 
@@ -54,13 +54,13 @@ Final checks after review fixes: `npm test` passed (5 unit, 15 browser) while th
 - **P1-R1-04 Fixed:** file-by-file reconciliation preserves unchanged Workers and `onStart` state; owned effects and parameter writes are removed only with their module. A regression test checks enemy counts across unrelated reloads.
 - **P1-R1-05 Fixed:** hooks may return promises; the Worker awaits them under the event deadline and reports rejections and global Worker errors. The async-error test disables the module.
 - **P1-R1-06 Fixed:** smoke checks maximum host frame gap, frame rate against a no-mutation baseline, and active status after five seconds. A deliberate three-second stall is disabled.
-- **P1-R1-07 Fixed:** spawned events carry their origin and skip that mutation, the host enforces 60 actions per second, and the arena refuses spawns at per-kind caps. The action-storm test verifies disablement.
+- **P1-R1-07 Fixed:** spawned events carry their origin and skip that mutation, the host applies at most 60 actions per second, and the arena refuses spawns at per-kind caps. The action-storm test verifies throttling.
 - **P1-R1-08 Fixed:** the engine now uses generic action and event envelopes; the manifest declares action argument schemas and hook mappings, while the game validates its own actions again.
 - **P1-R1-09 Fixed:** entity IDs, positions, tags, radius, movement, velocity, draw-text and entity-contact hooks support the six idea sketches in the API guide. Phase 2 will supply real Twitch chat events to the existing `onChat` hook.
 - **P1-R1-10 Fixed:** the default game path is in `package.json`; the selected game's own `tests/smoke/` suite and manifest mutation folder drive tests. `LIVE_PATCH_GAME` selects another game.
 - **P1-R1-11 Fixed:** tests copy the active game into a temporary folder, choose a free port, and never write fixture mutations to the live folder. A full run is performed while the live server is open.
 - **P1-R1-12 Fixed:** enemies and pickups expire, spawns have per-kind caps, and a new run clears the swarm and resets run time. A browser test caps 50 requested enemies and observes the clean reset.
-- **P1-R1-13 Fixed:** the source gate uses the TypeScript scanner to match identifiers outside strings and comments; false-positive examples and frame-escape identifiers have unit tests.
+- **P1-R1-13 Fixed:** the source gate parses JavaScript syntax to check free identifier references; false-positive examples and frame-escape identifiers have unit tests.
 - **P1-R1-14 Fixed:** the add-a-game guide lists every adapter method, ownership behavior, action descriptors and reload URL/event rules.
 - **P1-R1-15 Fixed:** ready and reply messages are shape-checked against load state and event ID; malformed messages disable the module.
 - **P1-R1-16 Fixed:** Vite's WebSocket reconnects and the client refetches mutations after each connection.
@@ -69,3 +69,11 @@ Final checks after review fixes: `npm test` passed (5 unit, 15 browser) while th
 - **P1-R1-19 Fixed:** every example path is checked for containment and existence, with an escape regression test.
 - **P1-R1-20 Fixed:** the boundary test parses import declarations and calls, resolves relative paths, and includes `vite.config.ts`.
 - **P1-R1-21 Fixed:** removed the empty temporary folder and the dead game-path check.
+- **P1-R2-01 Fixed:** Workers report exported hooks, so modules receive only events they handle. Full queues drop and count old events instead of disabling a healthy module. A crowded Space attack regression keeps all three examples active.
+- **P1-R2-02 Fixed:** the host clamps numeric arguments, truncates strings, drops bad types and unknown enum values, and skips valid actions past per-hook and per-second limits. The API guide now matches the behavior; all six ideas have runnable fixtures and browser coverage.
+- **P1-R2-03 Fixed:** AST-based source checking handles template literals and local variables without the raw-scanner bypass; unit tests cover both.
+- **P1-R2-04 Fixed:** Worker creation and `importScripts` are removed from mutation Worker globals before source import. A browser probe checks they are unavailable.
+- **P1-R2-05 Fixed:** architecture and API docs state that a development-server restart reloads the page and resets the run.
+- **P1-R2-06 Fixed:** the five-second smoke gate now presses Space, sends long chat text and spawns a small enemy cluster; fixture runs exercise their corresponding hooks.
+- **P1-R2-07 Fixed:** skipped tick durations accumulate into the next delivered `delta`; a deliberately slow hook regression checks the clock.
+- **P1-R2-08 Fixed:** the frame spoof test now sends a non-parent load message inside the frame and verifies it is ignored.

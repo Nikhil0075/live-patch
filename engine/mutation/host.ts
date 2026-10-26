@@ -10,6 +10,11 @@ interface Loaded {
   reason?: string;
   frame?: HTMLIFrameElement;
   queue: GameEvent[];
+  hooks: Set<string>;
+  skippedTickDelta: number;
+  droppedEvents: number;
+  droppedActions: number;
+  invalidActions: number;
   pending?: { id: number; timeout: number; eventType: string };
   loadTimeout?: number;
   budgetStart: number;
@@ -20,20 +25,28 @@ const LOAD_DEADLINE_MS = 1500;
 const EVENT_DEADLINE_MS = 200;
 const MAX_ACTIONS_PER_SECOND = 60;
 
-function validAction(action: GameAction, manifest: GameManifest): boolean {
-  if (!action || typeof action.type !== 'string' || !Array.isArray(action.args)) return false;
-  if (!Object.hasOwn(manifest.actions, action.type)) return false;
+function normalizeAction(action: GameAction, manifest: GameManifest): GameAction | null {
+  if (!action || typeof action.type !== 'string' || !Array.isArray(action.args)) return null;
+  if (!Object.hasOwn(manifest.actions, action.type)) return null;
   const schema = manifest.actions[action.type];
-  if (!schema || action.args.length > schema.length) return false;
-  return schema.every((rule, index) => {
+  if (!schema || action.args.length > schema.length) return null;
+  const args: (string | number | undefined)[] = [];
+  for (const [index, rule] of schema.entries()) {
     const value = action.args[index];
-    if (value === undefined) return rule.optional === true;
-    if (typeof value !== rule.type) return false;
-    if (rule.type === 'number' && (typeof value !== 'number' || !Number.isFinite(value) || (rule.min !== undefined && value < rule.min) || (rule.max !== undefined && value > rule.max))) return false;
-    if (rule.type === 'string' && (typeof value !== 'string' || (rule.maxLength !== undefined && value.length > rule.maxLength) || (rule.values && !rule.values.includes(value)))) return false;
-    return true;
-  });
+    if (value === undefined) { if (!rule.optional) return null; args.push(undefined); continue; }
+    if (typeof value !== rule.type) return null;
+    if (rule.type === 'number') {
+      if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+      args.push(Math.min(rule.max ?? Infinity, Math.max(rule.min ?? -Infinity, value)));
+    } else {
+      if (typeof value !== 'string' || (rule.values && !rule.values.includes(value))) return null;
+      args.push(value.slice(0, rule.maxLength ?? Infinity));
+    }
+  }
+  return { type: action.type, args };
 }
+
+function freshCounters() { return { hooks: new Set<string>(), skippedTickDelta: 0, droppedEvents: 0, droppedActions: 0, invalidActions: 0 }; }
 
 export class MutationHost {
   private loaded = new Map<string, Loaded>();
@@ -53,7 +66,7 @@ export class MutationHost {
       if (previous?.file.source === file.source && previous.file.error === file.error) continue;
       if (previous) { this.dispose(previous); this.game.removeMutation(file.name); this.loaded.delete(file.name); }
       if (file.error) {
-        this.loaded.set(file.name, { file, status: 'rejected', title: file.name, reason: file.error, queue: [], budgetStart: 0, budgetCount: 0 });
+        this.loaded.set(file.name, { file, status: 'rejected', title: file.name, reason: file.error, queue: [], budgetStart: 0, budgetCount: 0, ...freshCounters() });
         this.notice.textContent = `${file.name} rejected: ${file.error}`;
       } else this.load(file);
     }
@@ -63,9 +76,22 @@ export class MutationHost {
   emit(event: GameEvent) {
     for (const entry of this.loaded.values()) {
       if (entry.status !== 'active' || event.origin === entry.file.name) continue;
-      if (event.type === 'tick' && (entry.pending || entry.queue.some(item => item.type === 'tick'))) continue;
-      if (entry.queue.length >= 64) { this.disable(entry, 'Event queue limit exceeded'); continue; }
-      entry.queue.push(event);
+      if (!entry.hooks.has(event.type)) continue;
+      if (event.type === 'tick') {
+        const delta = typeof event.delta === 'number' ? event.delta : 0;
+        const queued = entry.queue.find(item => item.type === 'tick');
+        if (queued) { queued.delta = (typeof queued.delta === 'number' ? queued.delta : 0) + delta; continue; }
+        if (entry.pending) { entry.skippedTickDelta += delta; continue; }
+        entry.queue.push({ ...event, delta: delta + entry.skippedTickDelta });
+        entry.skippedTickDelta = 0;
+      } else {
+        if (entry.queue.length >= 64) {
+          const removed = entry.queue.shift();
+          if (removed?.type === 'tick' && typeof removed.delta === 'number') entry.skippedTickDelta += removed.delta;
+          entry.droppedEvents++;
+        }
+        entry.queue.push(event);
+      }
       this.pump(entry);
     }
   }
@@ -75,13 +101,13 @@ export class MutationHost {
     frame.sandbox.add('allow-scripts');
     frame.style.display = 'none';
     frame.srcdoc = frameDocument;
-    const entry: Loaded = { file, frame, status: 'loading', title: file.name, queue: [], budgetStart: 0, budgetCount: 0 };
+    const entry: Loaded = { file, frame, status: 'loading', title: file.name, queue: [], budgetStart: 0, budgetCount: 0, ...freshCounters() };
     this.loaded.set(file.name, entry);
     let loadCount = 0;
     frame.addEventListener('load', () => {
       loadCount++;
       if (loadCount > 1) { this.disable(entry, 'Mutation frame navigated'); return; }
-      frame.contentWindow?.postMessage({ type: 'load', source: file.source }, '*');
+      frame.contentWindow?.postMessage({ type: 'load', source: file.source, hooks: this.manifest.hooks }, '*');
     });
     entry.loadTimeout = window.setTimeout(() => this.disable(entry, 'Load deadline exceeded'), LOAD_DEADLINE_MS);
     document.body.append(frame);
@@ -95,28 +121,32 @@ export class MutationHost {
     if (!data || typeof data !== 'object' || typeof data.type !== 'string') { this.disable(entry, 'Malformed worker message'); return; }
     if (data.type === 'ready') {
       const meta = data.meta;
-      if (entry.status !== 'loading' || !meta || !['id', 'title', 'author', 'description'].every(key => typeof meta[key] === 'string' && meta[key].length > 0 && meta[key].length < 120)) {
+      if (entry.status !== 'loading' || !meta || !['id', 'title', 'author', 'description'].every(key => typeof meta[key] === 'string' && meta[key].length > 0 && meta[key].length < 120) || !Array.isArray(data.hooks) || !data.hooks.every((hook: unknown) => typeof hook === 'string' && Object.hasOwn(this.manifest.hooks, hook))) {
         this.disable(entry, 'Malformed ready message'); return;
       }
       window.clearTimeout(entry.loadTimeout);
-      entry.status = 'starting'; entry.title = meta.title;
+      entry.status = 'starting'; entry.title = meta.title; entry.hooks = new Set(data.hooks);
       entry.queue.push({ type: 'start' });
       this.pump(entry);
     } else if (data.type === 'reply') {
-      if (!['starting', 'active'].includes(entry.status) || !entry.pending || data.id !== entry.pending.id || !Array.isArray(data.actions) || data.actions.length > 20) {
+      if (!['starting', 'active'].includes(entry.status) || !entry.pending || data.id !== entry.pending.id || !Array.isArray(data.actions) || (data.skipped !== undefined && (!Number.isSafeInteger(data.skipped) || data.skipped < 0))) {
         this.disable(entry, 'Malformed event reply'); return;
       }
       const completedType = entry.pending.eventType;
       window.clearTimeout(entry.pending.timeout); entry.pending = undefined;
       const now = Date.now();
       if (now - entry.budgetStart >= 1000) { entry.budgetStart = now; entry.budgetCount = 0; }
-      entry.budgetCount += data.actions.length;
-      if (entry.budgetCount > MAX_ACTIONS_PER_SECOND) { this.disable(entry, 'Action rate limit exceeded'); return; }
-      for (const action of data.actions as GameAction[]) {
-        if (!validAction(action, this.manifest)) {
-          this.disable(entry, 'Invalid game action'); return;
+      entry.droppedActions += Math.max(0, data.actions.length - 20) + (data.skipped ?? 0);
+      for (const action of (data.actions as GameAction[]).slice(0, 20)) {
+        if (entry.budgetCount >= MAX_ACTIONS_PER_SECOND) { entry.droppedActions++; continue; }
+        const normalized = normalizeAction(action, this.manifest);
+        if (!normalized) {
+          entry.invalidActions++;
+          if (entry.invalidActions >= 10) { this.disable(entry, 'Repeated invalid game actions'); return; }
+          continue;
         }
-        try { this.game.apply(action, entry.file.name); }
+        entry.budgetCount++;
+        try { this.game.apply(normalized, entry.file.name); }
         catch (error) { this.disable(entry, `Game action failed: ${String(error)}`); return; }
       }
       if (completedType === 'start') entry.status = 'active';
@@ -154,7 +184,7 @@ export class MutationHost {
     this.list.replaceChildren();
     for (const entry of this.loaded.values()) {
       const li = document.createElement('li');
-      li.textContent = `${entry.title} · ${entry.status}${entry.reason ? ` · ${entry.reason}` : ''}`;
+      li.textContent = `${entry.title} · ${entry.status}${entry.reason ? ` · ${entry.reason}` : ''}${entry.droppedActions ? ` · ${entry.droppedActions} actions skipped` : ''}${entry.droppedEvents ? ` · ${entry.droppedEvents} events skipped` : ''}`;
       this.list.append(li);
     }
     if (!this.loaded.size) { const li = document.createElement('li'); li.textContent = 'No mutations yet'; this.list.append(li); }

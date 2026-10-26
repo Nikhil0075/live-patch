@@ -7,20 +7,26 @@ self.onmessage = event => {
   port.onmessage = async ({ data }) => {
     try {
       if (data.type === 'load') {
+        for (const name of ['Worker', 'SharedWorker', 'importScripts']) {
+          try { Object.defineProperty(self, name, { value: undefined, writable: false, configurable: false }); }
+          catch { self[name] = undefined; }
+        }
         const url = URL.createObjectURL(new Blob([data.source], { type: 'text/javascript' }));
         try { mutation = await import(url); } finally { URL.revokeObjectURL(url); }
         const meta = mutation.meta;
         if (!meta || !['id','title','author','description'].every(key => typeof meta[key] === 'string' && meta[key].length > 0 && meta[key].length < 120)) throw Error('Invalid mutation metadata');
-        port.postMessage({ type: 'ready', meta });
+        const hooks = Object.entries(data.hooks).filter(([, exportName]) => typeof mutation[exportName] === 'function').map(([eventName]) => eventName);
+        port.postMessage({ type: 'ready', meta, hooks });
       } else if (data.type === 'event') {
         const actions = [];
+        let skipped = 0;
         const game = Object.create(null);
         game.state = Object.freeze(data.state);
-        for (const name of data.actions) game[name] = (...args) => { actions.push({ type: name, args }); };
+        for (const name of data.actions) game[name] = (...args) => { if (actions.length < 20) actions.push({ type: name, args }); else skipped++; };
         Object.freeze(game);
         const hook = data.hooks[data.event.type];
         if (hook && typeof mutation?.[hook] === 'function') await mutation[hook](game, data.event);
-        port.postMessage({ type: 'reply', id: data.id, actions });
+        port.postMessage({ type: 'reply', id: data.id, actions, skipped });
       }
     } catch (error) { port.postMessage({ type: 'error', id: data.id, error: String(error) }); }
   };
@@ -49,7 +55,7 @@ addEventListener('message', event => {
     channel = new MessageChannel();
     channel.port1.onmessage = message => parent.postMessage(message.data, '*');
     worker.postMessage({ type: 'init' }, [channel.port2]);
-    channel.port1.postMessage({ type: 'load', source: data.source });
+    channel.port1.postMessage({ type: 'load', source: data.source, hooks: data.hooks });
   } else if (data.type === 'event' && loaded) channel?.port1.postMessage(data);
   else if (data.type === 'dispose') { worker?.terminate(); channel?.port1.close(); }
 });
