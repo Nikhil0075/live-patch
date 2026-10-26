@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { defaultGame, loadGame } from './engine/manifest/load';
 import { validateMutation } from './engine/mutation/validate';
+import { configureTwitchServer } from './engine/twitch/server';
 
 const root = process.cwd();
 const gamePath = process.env.LIVE_PATCH_GAME || defaultGame(root);
@@ -27,6 +28,7 @@ function livePatchPlugin(): Plugin {
   return {
     name: 'live-patch',
     configureServer(server) {
+      configureTwitchServer(server, root);
       server.watcher.add([mutationDirectory, manifestFile]);
       server.watcher.on('change', file => { if (path.resolve(file) === manifestFile) void server.restart(); });
       const changed = (file: string) => {

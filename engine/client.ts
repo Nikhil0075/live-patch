@@ -5,7 +5,7 @@ import { MutationHost, type MutationFile } from './mutation/host';
 
 let host: MutationHost | undefined;
 const app = document.querySelector<HTMLDivElement>('#app')!;
-app.innerHTML = `<main><header><div><p class="eyebrow">LIVE PATCH / PHASE ONE</p><h1 id="game-title"></h1></div><div id="status">Connecting…</div></header><div class="layout"><section><div id="game"></div><p class="hint" id="game-hint"></p></section><aside><h2>Active patches</h2><ul id="mutations"></ul><p id="notice" role="status"></p><p class="aside-note">Add or remove a .js file in the game's mutations folder to change this run live.</p></aside></div></main>`;
+app.innerHTML = `<main><header><div><p class="eyebrow">LIVE PATCH / ARENA</p><h1 id="game-title"></h1></div><div id="status">Connecting…</div></header><div class="layout"><section><div id="game"></div><p class="hint" id="game-hint"></p></section><aside><h2>Active patches</h2><ul id="mutations"></ul><p id="notice" role="status"></p><p class="aside-note">Add or remove a .js file in the game's mutations folder to change this run live.</p><a href="/simulator.html">Open chat simulator ↗</a></aside></div></main>`;
 
 async function start() {
   const info = await fetch('/api/game').then(r => r.json()) as GameManifest & { entry: string };
@@ -24,6 +24,9 @@ async function start() {
     if (current === version) host?.sync(selected ? files.filter(file => file.name === selected) : files);
   };
   if (info.reload.type === 'websocket') {
+    import.meta.hot?.on('live-patch:chat', (message: { text: string; author: string }) => {
+      host?.emit({ type: 'chat', text: message.text, author: message.author });
+    });
     import.meta.hot?.on(info.reload.event, (changed: MutationFile[]) => {
       version++;
       host?.sync(selected ? changed.filter(file => file.name === selected) : changed);

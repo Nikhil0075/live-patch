@@ -36,6 +36,7 @@ if (smoke && !fs.existsSync(path.join(directory, manifest.mutationDir, path.base
 if (!smoke && await run('node_modules/vitest/vitest.mjs', ['run', '--config', 'vitest.config.ts'], { ...process.env, LIVE_PATCH_GAME: directory })) process.exit(1);
 
 const temp = fs.mkdtempSync(path.join(root, '.live-patch-test-'));
+process.env.LIVE_PATCH_DATA_DIR = path.join(temp, 'data');
 const isolatedGame = path.join(temp, 'game');
 fs.cpSync(directory, isolatedGame, { recursive: true });
 process.env.LIVE_PATCH_GAME = isolatedGame;

@@ -14,7 +14,7 @@ Events:
 - `onCollide`: `{type:'collide', id, kind, x, y}` when the player begins touching an entity.
 - `onEntityCollide`: `{type:'entityCollide', a, b}` when two enemies begin touching; `a` and `b` each have `id,kind,x,y,radius`.
 - `onScore`: `{type:'score', amount}`.
-- `onChat`: `{type:'chat', text, author}`. The game accepts this event through the engine host; Twitch will supply it in Phase 2. Treat both strings as untrusted text.
+- `onChat`: `{type:'chat', text, author}`. Twitch EventSub and the local simulator both deliver chat through the engine host. Treat both strings as untrusted text.
 
 The `game` handle has only these methods. Bad arguments are ignored or bounded by the game:
 

@@ -300,3 +300,29 @@ for (const idea of ['split-enemy', 'flip-gravity', 'fleeing-coins', 'fire-trail'
     } finally { fs.rmSync(file, { force: true }); }
   });
 }
+
+test('simulator submits ideas and chat through the live game path as plain text', async ({ page, context }) => {
+  const file = path.join(mutationDir, 'zz-simulator-chat.js');
+  const simulator = await context.newPage();
+  try {
+    fs.writeFileSync(file, `export const meta={id:'sim-chat',title:'Sim Chat',author:'test',description:'chat'}; export function onChat(game,e){game.drawText(e.text,100,100);}`);
+    await page.goto('/?mutation=zz-simulator-chat.js');
+    await expect(page.locator('#mutations')).toContainText('Sim Chat · active');
+    await simulator.goto('/simulator.html');
+    await simulator.locator('textarea[name="text"]').fill('hello from simulator');
+    await simulator.getByRole('button', { name: 'Send' }).click();
+    await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().floatingTexts)).toBeGreaterThan(0);
+    await simulator.locator('textarea[name="text"]').fill('!idea <img src=x onerror=alert(1)>');
+    await simulator.getByRole('button', { name: 'Send' }).click();
+    await expect(simulator.locator('#ideas')).toContainText('<img src=x onerror=alert(1)>');
+    await expect(simulator.locator('#ideas img')).toHaveCount(0);
+    await simulator.locator('input[name="id"]').fill('viewer-2');
+    await simulator.locator('input[name="login"]').fill('viewer2');
+    await simulator.locator('select[name="kind"]').selectOption('reward');
+    await simulator.locator('textarea[name="text"]').fill('Coins flee from the player');
+    await simulator.getByRole('button', { name: 'Send' }).click();
+    await expect(simulator.locator('#ideas')).toContainText('Coins flee from the player');
+    const ideas = await simulator.request.get('/api/ideas').then(response => response.json()) as { ideas: unknown[] };
+    expect(ideas.ideas).toHaveLength(2);
+  } finally { await simulator.close(); fs.rmSync(file, { force: true }); }
+});

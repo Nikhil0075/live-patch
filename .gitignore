@@ -3,5 +3,6 @@ dist/
 playwright-report/
 test-results/
 .env
+.live-patch/
 *.log
 .live-patch-test-*/
