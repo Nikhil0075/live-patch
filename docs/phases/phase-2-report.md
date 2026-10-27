@@ -11,6 +11,7 @@
 - OAuth callback errors now explain redirect mismatches and show the exact configured URL to register. An earlier callback on `127.0.0.1` exposed a host mismatch with the current `localhost` setting.
 - Bot reply delivery checks Twitch's `is_sent` field and displays a dropped-message warning in the simulator, even when the Send Chat Message API returns HTTP 200.
 - Round-one fixes keep EventSub alive through transient token-validation failures, isolate optional reward subscription errors from chat, and deny HTTP access to private token and idea files. OAuth verification now forces Twitch's consent screen; denied commands no longer trigger unlimited bot replies; the game chat hook skips bot replies and control commands; simulator vote labels match pending candidates.
+- A later live reward check exposed Twitch's rule that one WebSocket session cannot contain subscriptions created by different users. Bot chat and broadcaster reward events now use separate EventSub sessions, each with its own reconnect and keepalive handling. Subscription errors include Twitch's message.
 
 `ws` was added for a supported WebSocket client and lifecycle on Node 20 or newer; `@types/ws` supplies strict TypeScript definitions. `@vitejs/plugin-basic-ssl` generates a local development certificate so Twitch can redirect to an HTTPS callback.
 
@@ -22,6 +23,10 @@
 
 Local verification: after round one, `npm test` passed 17 unit and 27 browser tests; `npm run build` passed; `npm audit --audit-level=moderate` found zero vulnerabilities. The browser test confirmed a harmless file in the isolated data directory was serveable while `tokens.json` was denied. The live HTTPS server returned 403 for `/.live-patch/tokens.json` and reported EventSub connected with no authorization issue. Earlier checks loaded the simulator in Chromium with local certificate errors ignored and confirmed the matching HTTPS OAuth callback.
 
+On 2026-10-27, after the operator created a custom reward, Twitch returned `websocket transport cannot have subscriptions created by different users` for the combined chat/reward session. A direct broadcaster-only subscription returned 202, and the revised live server reports `EventSub: connected` with the reward ID configured. The reward lookup confirms the configured ID matches an enabled reward, but `requiresInput` is currently false. A real viewer redemption has not been tested; the reward needs text input enabled first.
+
+Verification for this fix: `npm test` passed 18 unit and 27 browser tests, `npm run build` passed, and the live `/api/twitch/status` endpoint reported `eventsub: connected` and `rewardConfigured: true`. A regression test rejects mixed-user subscriptions on one session and confirms that chat and reward notifications arrive on separate sessions.
+
 Real-channel check on 2026-10-27: the broadcaster and bot completed OAuth and EventSub reported connected. A broadcaster chat `!idea` appeared in `/api/ideas` with source `chat`; `!reject 1` changed that test idea to `rejected`. Twitch's Get Custom Reward API returned 403 with `The broadcaster must have partner or affiliate status`, so no reward exists to configure or redeem. Twitch's Send Chat Message API returned `is_sent: false`, `msg_rejected` for the connected bot account, and no second-account idea arrived. A subsequent broadcaster `!vote 1` showed the bot delivery warning in `/api/twitch/status`.
 
 Later on 2026-10-27, the creator dashboard showed completed tools onboarding and activated Spendable Balance, and its navigation included Power-ups & Channel Points. The Channel Points panel was blank after a reload, and Get Custom Reward still returned 403; `TWITCH_PITCH_REWARD_ID` remained unset. Twitch's Channel Points FAQ says the feature can take up to 24 hours to appear after onboarding.
@@ -29,7 +34,7 @@ Later on 2026-10-27, the creator dashboard showed completed tools onboarding and
 ## Exit criteria
 
 - [ ] A second account's `!idea` appears in the store within two seconds on a real test channel — broadcaster chat ingestion works, but Twitch rejected bot-account test messages with `msg_rejected`; a second-account message has not arrived.
-- [ ] Redeeming the configured custom reward creates an idea on the real channel — Twitch returned 403 because the broadcaster lacks Affiliate or Partner status; no reward ID is available. Normalization and simulator reward tests pass.
+- [ ] Redeeming the configured custom reward creates an idea on the real channel — the reward and EventSub subscription are now available, but the reward currently does not require viewer text, and no real redemption has been tested. Normalization and simulator reward tests pass.
 - [x] Moderator commands work only for moderators and the broadcaster — command authorization is tested with viewer, moderator and broadcaster inputs; the broadcaster is identified by Twitch user ID.
 - [x] The simulator drives the identical code path — Twitch and simulator payloads normalize to `InboundEvent` and call the same `ChatPipeline.ingest`; the browser test checks idea persistence and `onChat` delivery.
 - [x] WebSocket reconnects after a dropped connection — fake-socket unit tests verify new connection and subscription calls, and Twitch reconnect handoff without duplicate subscriptions. Keepalive timeouts also trigger reconnect.
@@ -43,7 +48,7 @@ Later on 2026-10-27, the creator dashboard showed completed tools onboarding and
 
 ## Known gaps / risks
 
-- Real Twitch OAuth and broadcaster chat ingestion are verified. Bot chat sending failed because Twitch rejected test messages; the channel's chat settings did not show follower, subscriber, emote or slow restrictions. Creator tools onboarding is complete, but Twitch's custom-reward API still returns 403 and the Channel Points panel has not populated. Custom reward creation, subscription and redemption remain untested until Twitch enables the feature for this channel.
+- Real Twitch OAuth and broadcaster chat ingestion are verified. Bot chat sending failed because Twitch rejected test messages; the channel's chat settings did not show follower, subscriber, emote or slow restrictions. Creator tools onboarding is complete, the custom reward is enabled, and both EventSub subscriptions now connect. The reward needs viewer text input enabled before it can produce an idea; a real redemption remains untested.
 - The simulator trusts role selection because it is a local development tool. Its event endpoint binds to the local development server, checks browser Origin, and can be disabled with `LIVE_PATCH_SIMULATOR_ENABLED=0`.
 - JSON persistence is suitable for one local server process. Concurrent writers or a hosted deployment would need a transactional store.
 - The most recent three pending ideas serve as provisional voting slots until Phase 4 adds timed rounds and triage.

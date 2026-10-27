@@ -157,19 +157,55 @@ class MockSocket extends EventEmitter {
 it('keeps chat subscribed when the custom reward subscription is rejected', async () => {
   const sockets: MockSocket[] = [];
   const events: InboundEvent[] = [];
+  const subscriptions: { role: string; type: string; sessionId: string }[] = [];
   const auth = {
     identity: (role: string) => role === 'bot' ? { id: '2' } : { id: '1' },
-    helix: async (_role: string, route: string, body: { type: string }) => new Response('', { status: body.type === 'channel.chat.message' ? 202 : 403 })
+    helix: async (role: string, _route: string, body: { type: string; transport: { session_id: string } }) => {
+      subscriptions.push({ role, type: body.type, sessionId: body.transport.session_id });
+      return new Response('', { status: body.type === 'channel.chat.message' ? 202 : 403 });
+    }
   } as unknown as TwitchAuth;
   const client = new EventSubClient(auth, 'missing-reward', async event => { events.push(event); }, () => { const socket = new MockSocket(); sockets.push(socket); return socket as never; });
   try {
     client.start();
     sockets[0].receive({ metadata: { message_type: 'session_welcome' }, payload: { session: { id: 'first' } } });
-    await vi.waitFor(() => expect(client.status()).toContain('reward events unavailable'));
+    sockets[1].receive({ metadata: { message_type: 'session_welcome' }, payload: { session: { id: 'second' } } });
+    await vi.waitFor(() => expect(client.status()).toMatch(/^connected · reward events unavailable: .*subscription returned 403/));
     expect(client.status()).toContain('connected');
-    expect(sockets).toHaveLength(1);
+    expect(sockets).toHaveLength(2);
+    expect(subscriptions).toEqual([
+      { role: 'bot', type: 'channel.chat.message', sessionId: 'first' },
+      { role: 'broadcaster', type: 'channel.channel_points_custom_reward_redemption.add', sessionId: 'second' }
+    ]);
     sockets[0].receive({ metadata: { message_type: 'notification', subscription_type: 'channel.chat.message', message_id: 'event-1' }, payload: { event: { broadcaster_user_id: '1', chatter_user_id: '3', chatter_user_login: 'viewer', chatter_user_name: 'Viewer', message_id: 'chat-1', message: { text: '!idea Test' } } } });
     await vi.waitFor(() => expect(events).toHaveLength(1));
+  } finally { client.stop(); }
+});
+
+it('subscribes bot chat and broadcaster rewards on separate sessions and receives both events', async () => {
+  const sockets: MockSocket[] = [];
+  const events: InboundEvent[] = [];
+  const owners = new Map<string, string>();
+  const auth = {
+    identity: (role: string) => role === 'bot' ? { id: '2' } : { id: '1' },
+    helix: async (role: string, _route: string, body: { transport: { session_id: string } }) => {
+      const session = body.transport.session_id;
+      if (owners.has(session) && owners.get(session) !== role) return new Response(JSON.stringify({ message: 'websocket transport cannot have subscriptions created by different users' }), { status: 400 });
+      owners.set(session, role);
+      return new Response('', { status: 202 });
+    }
+  } as unknown as TwitchAuth;
+  const client = new EventSubClient(auth, 'reward-1', async event => { events.push(event); }, () => { const socket = new MockSocket(); sockets.push(socket); return socket as never; });
+  try {
+    client.start();
+    sockets[0].receive({ metadata: { message_type: 'session_welcome' }, payload: { session: { id: 'chat-session' } } });
+    sockets[1].receive({ metadata: { message_type: 'session_welcome' }, payload: { session: { id: 'reward-session' } } });
+    await vi.waitFor(() => expect(client.status()).toBe('connected'));
+    expect([...owners]).toEqual([['chat-session', 'bot'], ['reward-session', 'broadcaster']]);
+    sockets[0].receive({ metadata: { message_type: 'notification', subscription_type: 'channel.chat.message', message_id: 'chat-event' }, payload: { event: { broadcaster_user_id: '1', chatter_user_id: '3', chatter_user_login: 'viewer', chatter_user_name: 'Viewer', message_id: 'chat-1', message: { text: '!idea Weather' } } } });
+    sockets[1].receive({ metadata: { message_type: 'notification', subscription_type: 'channel.channel_points_custom_reward_redemption.add', message_id: 'reward-event' }, payload: { event: { id: 'redemption-1', broadcaster_user_id: '1', user_id: '4', user_login: 'viewer2', user_name: 'Viewer2', reward: { id: 'reward-1' }, user_input: 'Fleeing coins' } } });
+    await vi.waitFor(() => expect(events).toHaveLength(2));
+    expect(events.map(event => event.kind)).toEqual(['chat', 'reward']);
   } finally { client.stop(); }
 });
 
@@ -182,13 +218,14 @@ it('reconnects and resubscribes after an EventSub socket drop', async () => {
   try {
     client.start();
     sockets[0].receive({ metadata: { message_type: 'session_welcome' }, payload: { session: { id: 'first', keepalive_timeout_seconds: 10 } } });
+    sockets[1].receive({ metadata: { message_type: 'session_welcome' }, payload: { session: { id: 'reward', keepalive_timeout_seconds: 10 } } });
     await vi.waitFor(() => expect(client.status()).toBe('connected'));
     sockets[0].close();
     await vi.advanceTimersByTimeAsync(1000);
-    expect(sockets).toHaveLength(2);
-    sockets[1].receive({ metadata: { message_type: 'session_welcome' }, payload: { session: { id: 'second', keepalive_timeout_seconds: 10 } } });
+    expect(sockets).toHaveLength(3);
+    sockets[2].receive({ metadata: { message_type: 'session_welcome' }, payload: { session: { id: 'second', keepalive_timeout_seconds: 10 } } });
     await vi.waitFor(() => expect(client.status()).toBe('connected'));
-    expect(calls).toHaveLength(4);
+    expect(calls).toHaveLength(3);
   } finally { client.stop(); vi.useRealTimers(); }
 });
 
@@ -200,10 +237,11 @@ it('honors Twitch reconnect handoff without making duplicate subscriptions', asy
   try {
     client.start();
     sockets[0].receive({ metadata: { message_type: 'session_welcome' }, payload: { session: { id: 'first' } } });
+    sockets[1].receive({ metadata: { message_type: 'session_welcome' }, payload: { session: { id: 'reward' } } });
     await vi.waitFor(() => expect(client.status()).toBe('connected'));
     sockets[0].receive({ metadata: { message_type: 'session_reconnect' }, payload: { session: { reconnect_url: 'wss://eventsub.wss.twitch.tv/ws?handoff=1' } } });
-    expect(sockets).toHaveLength(2);
-    sockets[1].receive({ metadata: { message_type: 'session_welcome' }, payload: { session: { id: 'second' } } });
+    expect(sockets).toHaveLength(3);
+    sockets[2].receive({ metadata: { message_type: 'session_welcome' }, payload: { session: { id: 'second' } } });
     expect(client.status()).toBe('connected');
     expect(sockets[0].readyState).toBe(3);
     expect(calls).toHaveLength(2);

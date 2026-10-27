@@ -1,14 +1,14 @@
 import WebSocket from 'ws';
 import { normalizeEventSub } from './events';
 import type { InboundEvent } from '../pipeline/commands';
-import { TwitchAuth } from './auth';
+import { TwitchAuth, type Role } from './auth';
 
 interface Envelope {
   metadata?: { message_id?: string; message_type?: string; subscription_type?: string };
   payload?: { session?: { id?: string; reconnect_url?: string; keepalive_timeout_seconds?: number }; event?: unknown; subscription?: { type?: string; status?: string } };
 }
 
-export class EventSubClient {
+class EventSubStream {
   private socket?: WebSocket;
   private handoff?: WebSocket;
   private watchdog?: NodeJS.Timeout;
@@ -16,10 +16,19 @@ export class EventSubClient {
   private attempts = 0;
   private stopped = true;
   private state = 'offline';
-  private rewardIssue = '';
+  private issue = '';
   private keepaliveSeconds = 10;
-  constructor(private auth: TwitchAuth, private rewardId: string, private onEvent: (event: InboundEvent) => Promise<unknown>, private socketFactory: (url: string) => WebSocket = url => new WebSocket(url)) {}
-  status() { return this.rewardIssue && this.state === 'connected' ? `${this.state} · ${this.rewardIssue}` : this.state; }
+
+  constructor(
+    private auth: TwitchAuth,
+    private role: Role,
+    private type: string,
+    private condition: () => Record<string, string>,
+    private onEvent: (event: InboundEvent) => Promise<unknown>,
+    private socketFactory: (url: string) => WebSocket
+  ) {}
+
+  status() { return this.issue && this.state !== 'connected' ? `${this.state}: ${this.issue}` : this.state; }
   start() { if (!this.stopped) return; this.stopped = false; this.connect('wss://eventsub.wss.twitch.tv/ws', false); }
   stop() {
     this.stopped = true; this.state = 'offline';
@@ -35,7 +44,7 @@ export class EventSubClient {
     if (handoff) this.handoff = socket;
     else this.socket = socket;
     socket.on('message', data => { void this.handle(socket, data.toString(), handoff); });
-    socket.on('error', () => { /* close handles the retry without exposing URLs or tokens */ });
+    socket.on('error', () => { /* close handles retry without exposing URLs or tokens */ });
     socket.on('close', () => {
       if (this.stopped) return;
       if (this.handoff === socket) { this.handoff = undefined; if (!this.socket || this.socket.readyState !== WebSocket.OPEN) this.scheduleRetry(); }
@@ -55,9 +64,9 @@ export class EventSubClient {
         old?.close();
       } else {
         try { await this.subscribe(session.id); }
-        catch (error) { this.state = `subscription failed: ${String(error)}`; socket.close(); return; }
+        catch (error) { this.issue = String(error); this.state = 'subscription failed'; socket.close(); return; }
       }
-      this.attempts = 0; this.state = 'connected'; this.keepaliveSeconds = session.keepalive_timeout_seconds ?? 10; this.resetWatchdog(socket);
+      this.attempts = 0; this.issue = ''; this.state = 'connected'; this.keepaliveSeconds = session.keepalive_timeout_seconds ?? 10; this.resetWatchdog(socket);
       return;
     }
     if (socket !== this.socket) return;
@@ -74,22 +83,13 @@ export class EventSubClient {
     if (event) try { await this.onEvent(event); } catch (error) { console.error('EventSub event processing failed:', error); }
   }
   private async subscribe(sessionId: string) {
-    const broadcaster = this.auth.identity('broadcaster');
-    const bot = this.auth.identity('bot');
-    if (!broadcaster || !bot) throw Error('Both Twitch accounts must be connected');
-    const transport = { method: 'websocket', session_id: sessionId };
-    const create = async (role: 'bot' | 'broadcaster', type: string, condition: Record<string, string>) => {
-      const response = await this.auth.helix(role, 'eventsub/subscriptions', { type, version: '1', condition, transport });
-      if (!response.ok) throw Error(`${type} subscription returned ${response.status}`);
-    };
-    await create('bot', 'channel.chat.message', { broadcaster_user_id: broadcaster.id, user_id: bot.id });
-    if (!this.rewardId) return;
-    try {
-      await create('broadcaster', 'channel.channel_points_custom_reward_redemption.add', { broadcaster_user_id: broadcaster.id, reward_id: this.rewardId });
-      this.rewardIssue = '';
-    } catch (error) {
-      this.rewardIssue = `reward events unavailable: ${String(error)}`;
-      console.error(this.rewardIssue);
+    const response = await this.auth.helix(this.role, 'eventsub/subscriptions', {
+      type: this.type, version: '1', condition: this.condition(), transport: { method: 'websocket', session_id: sessionId }
+    });
+    if (!response.ok) {
+      let detail = '';
+      try { const body = await response.json() as { message?: string }; detail = body.message?.slice(0, 200) ?? ''; } catch { /* status remains useful */ }
+      throw Error(`${this.type} subscription returned ${response.status}${detail ? `: ${detail}` : ''}`);
     }
   }
   private resetWatchdog(socket: WebSocket) {
@@ -102,4 +102,30 @@ export class EventSubClient {
     const delay = Math.min(30_000, 1000 * 2 ** Math.min(this.attempts++, 5));
     this.retry = setTimeout(() => { this.retry = undefined; this.connect('wss://eventsub.wss.twitch.tv/ws', false); }, delay);
   }
+}
+
+export class EventSubClient {
+  private chat: EventSubStream;
+  private reward?: EventSubStream;
+  constructor(auth: TwitchAuth, rewardId: string, onEvent: (event: InboundEvent) => Promise<unknown>, socketFactory: (url: string) => WebSocket = url => new WebSocket(url)) {
+    const broadcasterId = () => {
+      const id = auth.identity('broadcaster')?.id;
+      if (!id) throw Error('Broadcaster account is not connected');
+      return id;
+    };
+    this.chat = new EventSubStream(auth, 'bot', 'channel.chat.message', () => {
+      const botId = auth.identity('bot')?.id;
+      if (!botId) throw Error('Bot account is not connected');
+      return { broadcaster_user_id: broadcasterId(), user_id: botId };
+    }, onEvent, socketFactory);
+    if (rewardId) this.reward = new EventSubStream(auth, 'broadcaster', 'channel.channel_points_custom_reward_redemption.add', () => ({ broadcaster_user_id: broadcasterId(), reward_id: rewardId }), onEvent, socketFactory);
+  }
+  status() {
+    const chat = this.chat.status();
+    if (chat !== 'connected') return chat;
+    const reward = this.reward?.status();
+    return reward && reward !== 'connected' ? `${chat} · reward events unavailable: ${reward}` : chat;
+  }
+  start() { this.chat.start(); this.reward?.start(); }
+  stop() { this.chat.stop(); this.reward?.stop(); }
 }
