@@ -2,13 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-export const ideaStatuses = ['submitted', 'shortlisted', 'voting', 'approved', 'building', 'shipped', 'rolled_back', 'failed', 'rejected'] as const;
+export const ideaStatuses = ['submitted', 'shortlisted', 'voting', 'approved', 'building', 'shipped', 'rolled_back', 'failed', 'rejected', 'merged'] as const;
 export type IdeaStatus = typeof ideaStatuses[number];
 export interface Idea {
   id: string;
   authorId: string;
   authorName: string;
   text: string;
+  spec?: string;
+  contributors?: string[];
+  mergedInto?: string;
   source: 'chat' | 'reward';
   status: IdeaStatus;
   votes: string[];
@@ -36,6 +39,19 @@ export class IdeaStore {
     const idea = this.data.ideas.find(item => item.id === id);
     if (!idea) return;
     idea.status = status; idea.updatedAt = new Date().toISOString(); this.save(); return { ...idea, votes: [...idea.votes] };
+  }
+  setSpec(id: string, spec: string): Idea | undefined {
+    const idea = this.data.ideas.find(item => item.id === id);
+    if (!idea) return;
+    idea.spec = spec.slice(0, 200); idea.updatedAt = new Date().toISOString(); this.save(); return { ...idea, votes: [...idea.votes] };
+  }
+  merge(id: string, targetId: string): void {
+    const idea = this.data.ideas.find(item => item.id === id);
+    const target = this.data.ideas.find(item => item.id === targetId);
+    if (!idea || !target || id === targetId) throw Error('Invalid idea merge');
+    idea.status = 'merged'; idea.mergedInto = target.id; idea.updatedAt = new Date().toISOString();
+    target.contributors = [...new Set([...(target.contributors ?? [target.authorName]), idea.authorName])];
+    target.updatedAt = new Date().toISOString(); this.save();
   }
   vote(id: string, viewerId: string): Idea | undefined {
     const idea = this.data.ideas.find(item => item.id === id);

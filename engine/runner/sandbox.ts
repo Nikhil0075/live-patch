@@ -30,7 +30,7 @@ export function runnerEnvironment(): Record<string, string> {
   return Object.fromEntries(allowed.filter(key => process.env[key]).map(key => [key, process.env[key]!]));
 }
 
-interface McpServer { name: string; enabled: boolean; transport: { type: string } }
+export interface McpServer { name: string; enabled: boolean; transport: { type: string } }
 
 function listMcpServers(binary: string, worktree: string, env: Record<string, string>, overrides: string[] = []): McpServer[] {
   const output = execFileSync(binary, ['mcp', 'list', '--json', ...overrides.flatMap(value => ['-c', value])], { cwd: worktree, env, encoding: 'utf8', timeout: 15_000, windowsHide: true });
@@ -39,15 +39,15 @@ function listMcpServers(binary: string, worktree: string, env: Record<string, st
   return servers as McpServer[];
 }
 
-export function disabledMcpConfig(binary: string, worktree: string, env: Record<string, string>) {
-  const servers = listMcpServers(binary, worktree, env);
+export function disabledMcpConfig(binary: string, worktree: string, env: Record<string, string>, list: (overrides: string[]) => McpServer[] = overrides => listMcpServers(binary, worktree, env, overrides)) {
+  const servers = list([]);
   if (servers.some(server => !/^[a-zA-Z0-9_-]+$/.test(server.name))) throw Error('Unsafe MCP server name in Codex configuration');
   if (servers.some(server => server.transport.type !== 'stdio')) throw Error('Unsupported MCP transport in Codex configuration');
   const overrides = servers.flatMap(server => [
     `mcp_servers.${server.name}.command=${JSON.stringify(process.execPath)}`,
     `mcp_servers.${server.name}.enabled=false`
   ]);
-  const effective = listMcpServers(binary, worktree, env, overrides);
+  const effective = list(overrides);
   if (effective.some(server => server.enabled)) throw Error('Codex MCP server remained enabled');
   return Object.fromEntries(servers.map(server => [server.name, { command: process.execPath, enabled: false }]));
 }

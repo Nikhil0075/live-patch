@@ -11,6 +11,9 @@ export interface PipelineOptions {
   reply: (text: string, event: InboundEvent) => Promise<void>;
   onChat?: (event: Extract<InboundEvent, { kind: 'chat' }>) => void;
   onControl?: (action: 'approve' | 'reject' | 'rollback', idea?: Idea) => void;
+  onIdea?: (idea: Idea) => void;
+  candidate?: (number: number) => Idea | undefined;
+  canVote?: () => boolean;
   now?: () => number;
 }
 const IDEA_MAX_LENGTH = 200;
@@ -36,9 +39,10 @@ export class ChatPipeline {
     const argument = (match[2] ?? '').trim();
     if (command === 'idea') return this.submit(event, argument, 'chat', now);
     if (command === 'vote') {
+      if (this.options.canVote && !this.options.canVote()) return this.respond(event, command, 'Voting is closed.');
       const number = Number(argument);
       if (!/^[1-3]$/.test(argument)) return this.respond(event, command, 'Vote for 1, 2, or 3.');
-      const candidate = this.store.candidate(number);
+      const candidate = this.options.candidate ? this.options.candidate(number) : this.store.candidate(number);
       if (!candidate) return this.respond(event, command, 'There is no idea at that number yet.');
       const idea = this.store.vote(candidate.id, event.viewer.id)!;
       await this.options.reply(`@${event.viewer.login} voted for ${number}. Voting is open for the latest three ideas.`, event);
@@ -50,7 +54,7 @@ export class ChatPipeline {
       this.options.onControl?.('rollback');
       return this.respond(event, command, 'Rollback requested. The runner will handle it in Phase 3.', true);
     }
-    const idea = this.store.find(argument);
+    const idea = /^\d+$/.test(argument) && this.options.candidate ? this.options.candidate(Number(argument)) : this.store.find(argument);
     if (!idea) return this.respond(event, command, 'Idea not found. Use its ID or current number.');
     if (!['submitted', 'shortlisted', 'voting'].includes(idea.status)) return this.respond(event, command, 'That idea is no longer pending.');
     const updated = this.store.setStatus(idea.id, command === 'approve' ? 'approved' : 'rejected')!;
@@ -62,8 +66,15 @@ export class ChatPipeline {
     if (!text || text.length > IDEA_MAX_LENGTH) return this.respond(event, 'idea', `Ideas must be 1–${IDEA_MAX_LENGTH} characters.`);
     if (this.store.recentBy(event.viewer.id, now - IDEA_COOLDOWN_MS)) return this.respond(event, 'idea', 'Please wait three minutes before another idea.');
     const idea = this.store.add(event.viewer.id, event.viewer.name, text, source, now);
+    this.options.onIdea?.(idea);
+    const updated = this.store.list().find(item => item.id === idea.id) ?? idea;
+    if (updated.status === 'rejected' || updated.status === 'merged') {
+      const message = updated.status === 'merged' ? 'Idea merged with an existing pitch' : 'Idea rejected during triage';
+      await this.options.reply(`@${event.viewer.login} ${message}.`, event);
+      return { accepted: false, command: 'idea', message, idea: updated };
+    }
     await this.options.reply(`@${event.viewer.login} idea received: ${text}`, event);
-    return { accepted: true, command: 'idea', message: 'Idea received', idea };
+    return { accepted: true, command: 'idea', message: 'Idea received', idea: updated };
   }
   private async respond(event: InboundEvent, command: string, message: string, accepted = false): Promise<Outcome> {
     const now = this.options.now?.() ?? Date.now();

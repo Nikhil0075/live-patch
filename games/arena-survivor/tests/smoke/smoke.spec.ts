@@ -361,3 +361,37 @@ test('simulator submits ideas and chat through the live game path as plain text'
     await expect(simulator.locator('#ideas li').filter({ hasText: '<img src=x' })).toContainText('Vote 1');
   } finally { await simulator.close(); fs.rmSync(file, { force: true }); }
 });
+
+test('operator controls timed voting and the OBS overlay renders viewer text safely', async ({ page }) => {
+  await page.goto('/control.html');
+  await expect(page.getByRole('heading', { name: 'Stream control' })).toBeVisible();
+  const denied = await page.request.post('/api/control', { headers: { Origin: 'https://outside.example', 'Content-Type': 'application/json' }, data: { action: 'advance' } });
+  expect(denied.status()).toBe(403);
+  const phase = async () => page.evaluate(async () => (await fetch('/api/round').then(response => response.json())).phase as string);
+  if (await phase() === 'paused') await page.getByRole('button', { name: 'Resume' }).click();
+  if (await phase() === 'vote' || await phase() === 'approval') {
+    await page.getByRole('button', { name: 'Next stage' }).click();
+    if (await phase() === 'approval') await page.getByRole('button', { name: 'Next stage' }).click();
+  }
+  expect(await phase()).toBe('pitch');
+  const pitch = `Glow <img src=x onerror=alert(1)> ${Date.now()}`;
+  const result = await page.evaluate(async text => {
+    const response = await fetch('/api/simulator/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: crypto.randomUUID(), kind: 'chat', viewer: { id: crypto.randomUUID(), login: 'overlayviewer', name: '<b>Viewer</b>', moderator: false, broadcaster: false }, text: `!idea ${text}` }) });
+    return response.json();
+  }, pitch) as { accepted: boolean };
+  expect(result.accepted).toBe(true);
+  await page.getByRole('button', { name: 'Next stage' }).click();
+  await expect(page.locator('#round')).toContainText('VOTE');
+  const overlay = await page.context().newPage();
+  try {
+    await overlay.goto('/overlay.html');
+    await expect(overlay.locator('#candidates')).toContainText(pitch);
+    await expect(overlay.locator('#candidates img')).toHaveCount(0);
+    await expect(overlay.locator('#candidates b')).toHaveCount(0);
+  } finally { await overlay.close(); }
+  const runsBefore = await page.evaluate(async () => (await fetch('/api/runs').then(response => response.json())).runs.length as number);
+  await page.locator('#candidates article').filter({ hasText: pitch }).getByRole('button', { name: 'Reject' }).click();
+  await expect(page.locator('#notice')).toContainText('rejected');
+  const runsAfter = await page.evaluate(async () => (await fetch('/api/runs').then(response => response.json())).runs.length as number);
+  expect(runsAfter).toBe(runsBefore);
+});

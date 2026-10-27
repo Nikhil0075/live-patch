@@ -290,7 +290,20 @@ describe('Phase 3 runner', () => {
   });
 
   it('disables every configured Codex MCP server for a runner thread', () => {
+    const calls: string[][] = [];
+    const list = (overrides: string[]) => {
+      calls.push(overrides);
+      return [{ name: 'local_tools', enabled: overrides.length === 0, transport: { type: 'stdio' } }];
+    };
+    const overrides = disabledMcpConfig('unused', 'unused', {}, list);
+    expect(Object.values(overrides).every(server => server.enabled === false)).toBe(true);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toContain('mcp_servers.local_tools.enabled=false');
+    expect(() => disabledMcpConfig('unused', 'unused', {}, () => [{ name: 'unsafe', enabled: true, transport: { type: 'stdio' } }])).toThrow('remained enabled');
+  });
+
+  it.skipIf(process.env.LIVE_PATCH_REAL_MCP !== '1')('checks the installed Codex MCP configuration', () => {
     const overrides = disabledMcpConfig(codexBinary(), process.cwd(), runnerEnvironment());
     expect(Object.values(overrides).every(server => server.enabled === false)).toBe(true);
-  });
+  }, 45_000);
 });

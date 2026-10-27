@@ -73,3 +73,4 @@ The browser smoke gate checks stability and coexistence, not semantic completene
 - **P3-R2-01 — Fixed:** rollback checks for a shipped patch before aborting a build; queued approvals cancelled by a real rollback get a run record with the cancellation reason.
 - **P3-R2-02 — Fixed:** the convenience filter now requires an access request directed at private files or a network destination; the four harmless examples from the review pass through. The sandbox and output gates remain the security boundary.
 - **P3-R2-03 — Fixed:** the README documents elevated Windows sandbox provisioning and probe troubleshooting; the simulator identifies sandbox setup failures separately from ordinary build failures.
+- **P3-R3-01 — Fixed during Phase 4:** the default MCP override test now uses a simulated server list and checks both the disable command and fail-closed verification. The real CLI/configuration check is opt-in with a 45-second timeout.
