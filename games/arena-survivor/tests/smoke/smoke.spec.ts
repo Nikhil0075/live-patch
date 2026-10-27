@@ -9,6 +9,17 @@ const mutationDir = path.join(gameDirectory, manifest.mutationDir);
 const examples = fs.readdirSync(mutationDir).filter(name => name.endsWith('.js'));
 const chosen = process.env.MUTATION_FILE ? path.basename(process.env.MUTATION_FILE) : undefined;
 
+test('Vite refuses the local OAuth token file', async ({ request }) => {
+  const dataDir = process.env.LIVE_PATCH_TEST_DATA_DIR;
+  expect(dataDir).toBeTruthy();
+  const tokenPath = '/' + path.relative(process.cwd(), path.join(dataDir!, 'tokens.json')).replaceAll('\\', '/');
+  const publicPath = '/' + path.relative(process.cwd(), path.join(dataDir!, 'public-probe.txt')).replaceAll('\\', '/');
+  const publicResponse = await request.get(publicPath);
+  expect(publicResponse.status()).toBe(200);
+  const response = await request.get(tokenPath);
+  expect([403, 404]).toContain(response.status());
+});
+
 for (const example of chosen ? [chosen] : examples) test(`game plays for five seconds with ${example}`, async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -324,5 +335,11 @@ test('simulator submits ideas and chat through the live game path as plain text'
     await expect(simulator.locator('#ideas')).toContainText('Coins flee from the player');
     const ideas = await simulator.request.get('/api/ideas').then(response => response.json()) as { ideas: unknown[] };
     expect(ideas.ideas).toHaveLength(2);
+    await simulator.locator('select[name="kind"]').selectOption('chat');
+    await simulator.locator('select[name="role"]').selectOption('broadcaster');
+    await simulator.locator('textarea[name="text"]').fill('!reject 1');
+    await simulator.getByRole('button', { name: 'Send' }).click();
+    await expect(simulator.locator('#ideas li').filter({ hasText: 'Coins flee from the player' })).not.toContainText('Vote 1');
+    await expect(simulator.locator('#ideas li').filter({ hasText: '<img src=x' })).toContainText('Vote 1');
   } finally { await simulator.close(); fs.rmSync(file, { force: true }); }
 });

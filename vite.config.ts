@@ -52,4 +52,4 @@ function livePatchPlugin(): Plugin {
   };
 }
 
-export default defineConfig({ plugins: [...(process.env.LIVE_PATCH_TEST_SERVER === '1' ? [] : [basicSsl({ domains: ['localhost', '127.0.0.1'] })]), livePatchPlugin()], server: { port: Number(process.env.LIVE_PATCH_HTTP_PORT ?? new URL(manifest.reload.url).port), strictPort: true, fs: { allow: [root, directory] } } });
+export default defineConfig({ plugins: [...(process.env.LIVE_PATCH_TEST_SERVER === '1' ? [] : [basicSsl({ domains: ['localhost', '127.0.0.1'] })]), livePatchPlugin()], server: { port: Number(process.env.LIVE_PATCH_HTTP_PORT ?? new URL(manifest.reload.url).port), strictPort: true, fs: { allow: [root, directory], deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/.live-patch/**', '**/tokens.json', '**/ideas.json'] } } });

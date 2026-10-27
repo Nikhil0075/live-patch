@@ -4,10 +4,11 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { IdeaStore } from '../engine/pipeline/ideas';
 import { ChatPipeline, type InboundEvent } from '../engine/pipeline/commands';
-import { normalizeEventSub, normalizeSimulator } from '../engine/twitch/events';
+import { forwardToGame, normalizeEventSub, normalizeSimulator } from '../engine/twitch/events';
 import { TwitchAuth, authorizationError, defaultTwitchRedirectUri } from '../engine/twitch/auth';
 import { EventSubClient } from '../engine/twitch/eventsub';
 import { chatDeliveryIssue } from '../engine/twitch/chat';
+import { TwitchConnection, rejectedTwitchCredentials } from '../engine/twitch/connection';
 
 function tempStore(run: (store: IdeaStore, file: string) => Promise<void> | void) {
   const directory = fs.mkdtempSync(path.join(process.cwd(), '.test-ideas-'));
@@ -15,9 +16,37 @@ function tempStore(run: (store: IdeaStore, file: string) => Promise<void> | void
   return Promise.resolve().then(() => run(new IdeaStore(file), file)).finally(() => fs.rmSync(directory, { recursive: true, force: true }));
 }
 const viewer = { id: '42', login: 'viewer', name: 'Viewer', moderator: false, broadcaster: false };
-const inbound = (id: string, text: string): InboundEvent => ({ kind: 'chat', origin: 'simulator', id, viewer, text });
+const inbound = (id: string, text: string): Extract<InboundEvent, { kind: 'chat' }> => ({ kind: 'chat', origin: 'simulator', id, viewer, text });
 
 describe('Phase 2 idea pipeline', () => {
+  it('keeps chat alive during a network blip and recovers from a startup failure', async () => {
+    vi.useFakeTimers();
+    const validateStored = vi.fn().mockRejectedValueOnce(new TypeError('fetch failed')).mockResolvedValueOnce(undefined).mockRejectedValueOnce(new TypeError('fetch failed')).mockResolvedValue(undefined);
+    const stream = { start: vi.fn(), stop: vi.fn() };
+    const connection = new TwitchConnection({ connected: () => true, validateStored }, stream);
+    try {
+      await connection.start();
+      expect(connection.status()).toContain('fetch failed');
+      expect(stream.start).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(validateStored).toHaveBeenCalledTimes(2);
+      expect(stream.start).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(60 * 60_000 - 5_000);
+      expect(connection.status()).toContain('fetch failed');
+      expect(stream.stop).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(connection.status()).toBe('');
+      expect(stream.start).toHaveBeenCalledTimes(2);
+      expect(rejectedTwitchCredentials(new Error('Twitch token refresh failed (401)'))).toBe(true);
+      validateStored.mockRejectedValueOnce(new Error('Twitch token refresh failed (401)'));
+      await connection.check();
+      expect(stream.stop).toHaveBeenCalledTimes(1);
+      expect(connection.status()).toContain('401');
+      await connection.check();
+      expect(connection.status()).toBe('');
+      expect(stream.start).toHaveBeenCalledTimes(3);
+    } finally { connection.stop(); vi.useRealTimers(); }
+  });
   it('reports a rejected Twitch chat send even when the API returns HTTP 200', async () => {
     const rejected = new Response(JSON.stringify({ data: [{ is_sent: false, drop_reason: { code: 'msg_rejected', message: 'Your message could not be sent' } }] }));
     expect(await chatDeliveryIssue(rejected)).toContain('msg_rejected');
@@ -65,6 +94,19 @@ describe('Phase 2 idea pipeline', () => {
     expect(new IdeaStore(file).list()[0].status).toBe('approved');
   }));
 
+  it('does not amplify denied commands into bot spam and rate-limits error replies', async () => tempStore(async store => {
+    let now = 1_000_000;
+    const replies: string[] = [];
+    const pipeline = new ChatPipeline(store, { rewardId: 'r', now: () => now, reply: async text => { replies.push(text); } });
+    for (let index = 0; index < 5; index++) await pipeline.ingest(inbound(`denied-${index}`, '!approve 1'));
+    expect(replies).toHaveLength(0);
+    for (let index = 0; index < 5; index++) await pipeline.ingest(inbound(`invalid-${index}`, '!vote 9'));
+    expect(replies).toHaveLength(1);
+    now += 30_000;
+    await pipeline.ingest(inbound('later', '!vote 9'));
+    expect(replies).toHaveLength(2);
+  }));
+
   it('normalizes Twitch chat and reward notifications into simulator-compatible typed events', () => {
     const chat = normalizeEventSub('channel.chat.message', 'm1', { broadcaster_user_id: '1', chatter_user_id: '2', chatter_user_login: 'mod', chatter_user_name: 'Mod', message_id: 'c1', message: { text: '!approve 1' }, badges: [{ set_id: 'moderator' }] }, '1');
     expect(chat?.viewer.moderator).toBe(true);
@@ -73,6 +115,12 @@ describe('Phase 2 idea pipeline', () => {
     expect(reward?.kind).toBe('reward');
     expect(normalizeSimulator({ id: 's1', kind: 'chat', viewer, text: '!idea Coins flee' }, 'reward-1')).toMatchObject({ kind: 'chat', origin: 'simulator', text: '!idea Coins flee' });
     expect(normalizeEventSub('channel.chat.message', 'm3', { broadcaster_user_id: 'other' }, '1')).toBeNull();
+  });
+
+  it('keeps bot replies and control commands out of the game chat hook', () => {
+    expect(forwardToGame({ ...inbound('bot', 'Idea received'), origin: 'twitch', viewer: { ...viewer, id: 'bot' } }, 'bot')).toBe(false);
+    expect(forwardToGame(inbound('command', '!approve 1'), 'bot')).toBe(false);
+    expect(forwardToGame(inbound('viewer', 'What if coins chased us?'), 'bot')).toBe(true);
   });
 
   it('checks OAuth state, scopes and identity and refreshes stored tokens', async () => {
@@ -90,6 +138,7 @@ describe('Phase 2 idea pipeline', () => {
       const auth = new TwitchAuth({ clientId: 'client', clientSecret: 'secret', redirectUri: defaultTwitchRedirectUri, rewardId: 'r' }, file, request);
       const url = new URL(auth.authorizeUrl('broadcaster'));
       expect(url.searchParams.get('redirect_uri')).toBe('https://localhost:5173/api/twitch/auth/callback');
+      expect(url.searchParams.get('force_verify')).toBe('true');
       await expect(auth.complete('code', 'wrong')).rejects.toThrow(/state/);
       await auth.complete('code', url.searchParams.get('state')!);
       expect(await auth.token('broadcaster')).toBe('access-2');
@@ -104,6 +153,25 @@ class MockSocket extends EventEmitter {
   terminate() { this.close(); }
   receive(message: unknown) { this.emit('message', Buffer.from(JSON.stringify(message))); }
 }
+
+it('keeps chat subscribed when the custom reward subscription is rejected', async () => {
+  const sockets: MockSocket[] = [];
+  const events: InboundEvent[] = [];
+  const auth = {
+    identity: (role: string) => role === 'bot' ? { id: '2' } : { id: '1' },
+    helix: async (_role: string, route: string, body: { type: string }) => new Response('', { status: body.type === 'channel.chat.message' ? 202 : 403 })
+  } as unknown as TwitchAuth;
+  const client = new EventSubClient(auth, 'missing-reward', async event => { events.push(event); }, () => { const socket = new MockSocket(); sockets.push(socket); return socket as never; });
+  try {
+    client.start();
+    sockets[0].receive({ metadata: { message_type: 'session_welcome' }, payload: { session: { id: 'first' } } });
+    await vi.waitFor(() => expect(client.status()).toContain('reward events unavailable'));
+    expect(client.status()).toContain('connected');
+    expect(sockets).toHaveLength(1);
+    sockets[0].receive({ metadata: { message_type: 'notification', subscription_type: 'channel.chat.message', message_id: 'event-1' }, payload: { event: { broadcaster_user_id: '1', chatter_user_id: '3', chatter_user_login: 'viewer', chatter_user_name: 'Viewer', message_id: 'chat-1', message: { text: '!idea Test' } } } });
+    await vi.waitFor(() => expect(events).toHaveLength(1));
+  } finally { client.stop(); }
+});
 
 it('reconnects and resubscribes after an EventSub socket drop', async () => {
   vi.useFakeTimers();

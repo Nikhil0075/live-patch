@@ -7,7 +7,8 @@ import { ChatPipeline } from '../pipeline/commands';
 import { TwitchAuth, authorizationError, defaultTwitchRedirectUri, type Role, type TwitchConfig } from './auth';
 import { chatDeliveryIssue } from './chat';
 import { EventSubClient } from './eventsub';
-import { normalizeSimulator } from './events';
+import { TwitchConnection } from './connection';
+import { forwardToGame, normalizeSimulator } from './events';
 
 function loadLocalEnv(root: string) {
   const file = path.join(root, '.env');
@@ -63,31 +64,18 @@ export function configureTwitchServer(server: ViteDevServer, root: string) {
       } catch (error) { chatIssue = `Twitch chat reply failed: ${String(error)}`; }
       if (chatIssue) console.error(chatIssue);
     },
-    onChat: event => server.ws.send({ type: 'custom', event: 'live-patch:chat', data: { text: event.text, author: event.viewer.name } })
+    onChat: event => { if (forwardToGame(event, auth.identity('bot')?.id)) server.ws.send({ type: 'custom', event: 'live-patch:chat', data: { text: event.text, author: event.viewer.name } }); }
   });
   const eventsub = new EventSubClient(auth, config.rewardId, event => pipeline.ingest(event));
-  let authIssue = '';
-  const connect = async (startup = false) => {
-    if (!auth.connected('broadcaster') || !auth.connected('bot')) return;
-    try {
-      if (startup) await auth.validateStored();
-      else { await auth.token('broadcaster'); await auth.token('bot'); }
-      authIssue = ''; eventsub.start();
-    } catch (error) { authIssue = String(error); console.error('Twitch authorization needs attention:', authIssue); }
-  };
-  void connect(true);
-  const validationTimer = setInterval(() => {
-    if (!auth.connected('broadcaster') || !auth.connected('bot')) return;
-    void auth.validateStored().then(() => { authIssue = ''; }).catch(error => { authIssue = String(error); eventsub.stop(); console.error('Twitch authorization needs attention:', authIssue); });
-  }, 60 * 60_000);
-  validationTimer.unref();
-  server.httpServer?.on('close', () => { clearInterval(validationTimer); eventsub.stop(); });
+  const connection = new TwitchConnection(auth, eventsub);
+  void connection.start();
+  server.httpServer?.on('close', () => connection.stop());
   server.middlewares.use(async (req, res, next) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? '127.0.0.1'}`);
     const route = url.pathname;
-    if (route === '/api/ideas' && req.method === 'GET') { json(res, 200, { ideas: store.list(), rollbackRequests: store.rollbackRequests(), replies }); return; }
+    if (route === '/api/ideas' && req.method === 'GET') { json(res, 200, { ideas: store.list(), candidateIds: [1, 2, 3].map(number => store.candidate(number)?.id ?? null), rollbackRequests: store.rollbackRequests(), replies }); return; }
     if (route === '/api/twitch/status' && req.method === 'GET') {
-      json(res, 200, { configured: auth.configured(), rewardConfigured: Boolean(config.rewardId), broadcaster: auth.identity('broadcaster'), bot: auth.identity('bot'), eventsub: eventsub.status(), authIssue, chatIssue, simulator }); return;
+      json(res, 200, { configured: auth.configured(), rewardConfigured: Boolean(config.rewardId), broadcaster: auth.identity('broadcaster'), bot: auth.identity('bot'), eventsub: eventsub.status(), authIssue: connection.status(), chatIssue, simulator }); return;
     }
     if (route === '/api/twitch/rewards' && req.method === 'GET') {
       const broadcaster = auth.identity('broadcaster');
@@ -110,7 +98,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string) {
       try {
         if (url.searchParams.has('error')) throw Error(authorizationError(url.searchParams.get('error'), config.redirectUri));
         const identity = await auth.complete(url.searchParams.get('code') ?? '', url.searchParams.get('state') ?? '');
-        void connect();
+        void connection.check();
         res.statusCode = 303; res.setHeader('Location', `/simulator.html?connected=${identity.role}`); res.end();
       } catch (error) { json(res, 400, { error: String(error) }); }
       return;

@@ -31,10 +31,11 @@ export class TwitchAuth {
   }
   authorizeUrl(role: Role) {
     if (!this.configured()) throw Error('Twitch app credentials are not configured');
+    for (const [key, pending] of this.pending) if (pending.expires < Date.now()) this.pending.delete(key);
     const state = randomBytes(24).toString('hex');
     this.pending.set(state, { role, expires: Date.now() + 5 * 60_000 });
     const url = new URL(`${endpoint}/authorize`);
-    url.search = new URLSearchParams({ response_type: 'code', client_id: this.config.clientId, redirect_uri: this.config.redirectUri, scope: scopes[role].join(' '), state }).toString();
+    url.search = new URLSearchParams({ response_type: 'code', client_id: this.config.clientId, redirect_uri: this.config.redirectUri, scope: scopes[role].join(' '), state, force_verify: 'true' }).toString();
     return url.toString();
   }
   async complete(code: string, state: string) {

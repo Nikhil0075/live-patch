@@ -18,6 +18,7 @@ const IDEA_COOLDOWN_MS = 3 * 60_000;
 
 export class ChatPipeline {
   private seen = new Map<string, number>();
+  private lastErrorReply = new Map<string, number>();
   constructor(private store: IdeaStore, private options: PipelineOptions) {}
   async ingest(event: InboundEvent): Promise<Outcome> {
     const now = this.options.now?.() ?? Date.now();
@@ -43,7 +44,7 @@ export class ChatPipeline {
       await this.options.reply(`@${event.viewer.login} voted for ${number}. Voting is open for the latest three ideas.`, event);
       return { accepted: true, command, message: 'Vote recorded', idea };
     }
-    if (!event.viewer.moderator && !event.viewer.broadcaster) return this.respond(event, command, 'Only a moderator or broadcaster can use that command.');
+    if (!event.viewer.moderator && !event.viewer.broadcaster) return { accepted: false, command, message: 'Only a moderator or broadcaster can use that command.' };
     if (command === 'rollback') {
       this.store.requestRollback(event.viewer.id);
       this.options.onControl?.('rollback');
@@ -65,7 +66,12 @@ export class ChatPipeline {
     return { accepted: true, command: 'idea', message: 'Idea received', idea };
   }
   private async respond(event: InboundEvent, command: string, message: string, accepted = false): Promise<Outcome> {
-    await this.options.reply(`@${event.viewer.login} ${message}`, event);
+    const now = this.options.now?.() ?? Date.now();
+    const last = this.lastErrorReply.get(event.viewer.id);
+    if (accepted || last === undefined || now - last >= 30_000) {
+      if (!accepted) this.lastErrorReply.set(event.viewer.id, now);
+      await this.options.reply(`@${event.viewer.login} ${message}`, event);
+    }
     return { accepted, command, message };
   }
 }

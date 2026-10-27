@@ -4,6 +4,11 @@ type ObjectValue = Record<string, unknown>;
 const object = (value: unknown): ObjectValue | null => value && typeof value === 'object' && !Array.isArray(value) ? value as ObjectValue : null;
 const string = (value: unknown): string | null => typeof value === 'string' && value.length > 0 ? value : null;
 
+export function forwardToGame(event: Extract<InboundEvent, { kind: 'chat' }>, botId: string | undefined): boolean {
+  if (event.origin === 'twitch' && event.viewer.id === botId) return false;
+  return !/^!(?:idea|vote|approve|reject|rollback)(?:\s|$)/i.test(event.text.trim());
+}
+
 export function normalizeEventSub(type: string, messageId: string, raw: unknown, broadcasterId: string): InboundEvent | null {
   const event = object(raw);
   if (!event || !string(messageId)) return null;

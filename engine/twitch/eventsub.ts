@@ -16,9 +16,10 @@ export class EventSubClient {
   private attempts = 0;
   private stopped = true;
   private state = 'offline';
+  private rewardIssue = '';
   private keepaliveSeconds = 10;
   constructor(private auth: TwitchAuth, private rewardId: string, private onEvent: (event: InboundEvent) => Promise<unknown>, private socketFactory: (url: string) => WebSocket = url => new WebSocket(url)) {}
-  status() { return this.state; }
+  status() { return this.rewardIssue && this.state === 'connected' ? `${this.state} · ${this.rewardIssue}` : this.state; }
   start() { if (!this.stopped) return; this.stopped = false; this.connect('wss://eventsub.wss.twitch.tv/ws', false); }
   stop() {
     this.stopped = true; this.state = 'offline';
@@ -81,10 +82,15 @@ export class EventSubClient {
       const response = await this.auth.helix(role, 'eventsub/subscriptions', { type, version: '1', condition, transport });
       if (!response.ok) throw Error(`${type} subscription returned ${response.status}`);
     };
-    await Promise.all([
-      create('bot', 'channel.chat.message', { broadcaster_user_id: broadcaster.id, user_id: bot.id }),
-      ...(this.rewardId ? [create('broadcaster', 'channel.channel_points_custom_reward_redemption.add', { broadcaster_user_id: broadcaster.id, reward_id: this.rewardId })] : [])
-    ]);
+    await create('bot', 'channel.chat.message', { broadcaster_user_id: broadcaster.id, user_id: bot.id });
+    if (!this.rewardId) return;
+    try {
+      await create('broadcaster', 'channel.channel_points_custom_reward_redemption.add', { broadcaster_user_id: broadcaster.id, reward_id: this.rewardId });
+      this.rewardIssue = '';
+    } catch (error) {
+      this.rewardIssue = `reward events unavailable: ${String(error)}`;
+      console.error(this.rewardIssue);
+    }
   }
   private resetWatchdog(socket: WebSocket) {
     if (this.watchdog) clearTimeout(this.watchdog);

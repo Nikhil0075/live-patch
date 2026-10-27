@@ -10,6 +10,7 @@
 - Switched the development server and OAuth callback to HTTPS because the operator's Twitch registration form requires an `https://` redirect. The test harness remains on isolated HTTP ports.
 - OAuth callback errors now explain redirect mismatches and show the exact configured URL to register. An earlier callback on `127.0.0.1` exposed a host mismatch with the current `localhost` setting.
 - Bot reply delivery checks Twitch's `is_sent` field and displays a dropped-message warning in the simulator, even when the Send Chat Message API returns HTTP 200.
+- Round-one fixes keep EventSub alive through transient token-validation failures, isolate optional reward subscription errors from chat, and deny HTTP access to private token and idea files. OAuth verification now forces Twitch's consent screen; denied commands no longer trigger unlimited bot replies; the game chat hook skips bot replies and control commands; simulator vote labels match pending candidates.
 
 `ws` was added for a supported WebSocket client and lifecycle on Node 20 or newer; `@types/ws` supplies strict TypeScript definitions. `@vitejs/plugin-basic-ssl` generates a local development certificate so Twitch can redirect to an HTTPS callback.
 
@@ -19,7 +20,7 @@
 - `npm test` runs the unit and browser suites against a temporary game and idea store. `npm run build` checks TypeScript and bundles the browser client.
 - Follow the README's Twitch setup steps to register a confidential app, authorize separate accounts, configure a text-entry reward, and run the real-channel checks.
 
-Local verification: `npm test` passed 13 unit and 26 browser tests; `npm run build` passed; `npm audit --audit-level=moderate` found zero vulnerabilities. `npm run dev` served the simulator over HTTPS, and a Chromium check loaded the simulator at `https://localhost:5173/simulator.html` with local certificate errors ignored. The OAuth start route returned the matching HTTPS callback. A local redirect-mismatch callback returned the configured URL in its error response.
+Local verification: after round one, `npm test` passed 17 unit and 27 browser tests; `npm run build` passed; `npm audit --audit-level=moderate` found zero vulnerabilities. The browser test confirmed a harmless file in the isolated data directory was serveable while `tokens.json` was denied. The live HTTPS server returned 403 for `/.live-patch/tokens.json` and reported EventSub connected with no authorization issue. Earlier checks loaded the simulator in Chromium with local certificate errors ignored and confirmed the matching HTTPS OAuth callback.
 
 Real-channel check on 2026-10-27: the broadcaster and bot completed OAuth and EventSub reported connected. A broadcaster chat `!idea` appeared in `/api/ideas` with source `chat`; `!reject 1` changed that test idea to `rejected`. Twitch's Get Custom Reward API returned 403 with `The broadcaster must have partner or affiliate status`, so no reward exists to configure or redeem. Twitch's Send Chat Message API returned `is_sent: false`, `msg_rejected` for the connected bot account, and no second-account idea arrived. A subsequent broadcaster `!vote 1` showed the bot delivery warning in `/api/twitch/status`.
 
@@ -49,4 +50,12 @@ Later on 2026-10-27, the creator dashboard showed completed tools onboarding and
 
 ## Review responses
 
-Pending Phase 2 review.
+- **P2-R1-01 Fixed:** `TwitchConnection` retries transient validation and starts EventSub after recovery; fake-timer tests cover startup and hourly blips. Credential rejection still stops the socket with a visible error.
+- **P2-R1-02 Fixed:** chat subscribes first and remains active when the optional reward subscription fails; the reward error stays visible without a reconnect loop. A fake-socket test delivers chat after a reward 403.
+- **P2-R1-03 Fixed:** Vite denies `.live-patch`, `tokens.json` and `ideas.json` while retaining its default secret-file denies; a browser request tests the token path.
+- **P2-R1-04 Fixed:** denied moderator commands produce no bot reply; other error replies are limited to one per viewer every 30 seconds. Unit tests cover a spam burst.
+- **P2-R1-05 Deferred to Phase 5:** reward ownership and cancellation require a new `channel:manage:redemptions` authorization and a managed reward creation flow. The README warns against enabling a paid reward until refunds exist; the operator has set reward-ID setup aside.
+- **P2-R1-06 Fixed:** authorization requests use `force_verify=true` and prune expired pending states when starting a new flow; the OAuth unit test checks the parameter.
+- **P2-R1-07 Fixed:** bot messages and recognized commands no longer reach the game's `onChat`; a unit test checks both filters.
+- **P2-R1-08 Fixed:** `/api/ideas` returns authoritative pending candidate IDs and the simulator labels only those with `Vote 1–3`; a browser test rejects one idea and checks the labels.
+- **P2-R1-09 Deferred to Phase 5:** the operator's Twitch registration form required HTTPS, so switching the live callback to HTTP would break their working OAuth flow. OBS certificate trust remains part of the Phase 5 browser-source check.

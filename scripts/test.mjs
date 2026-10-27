@@ -37,6 +37,9 @@ if (!smoke && await run('node_modules/vitest/vitest.mjs', ['run', '--config', 'v
 
 const temp = fs.mkdtempSync(path.join(root, '.live-patch-test-'));
 process.env.LIVE_PATCH_DATA_DIR = path.join(temp, 'data');
+fs.mkdirSync(process.env.LIVE_PATCH_DATA_DIR, { recursive: true });
+fs.writeFileSync(path.join(process.env.LIVE_PATCH_DATA_DIR, 'tokens.json'), '{}');
+fs.writeFileSync(path.join(process.env.LIVE_PATCH_DATA_DIR, 'public-probe.txt'), 'safe fixture');
 const isolatedGame = path.join(temp, 'game');
 fs.cpSync(directory, isolatedGame, { recursive: true });
 process.env.LIVE_PATCH_GAME = isolatedGame;
@@ -48,7 +51,7 @@ try {
   await server.listen();
   const address = server.httpServer.address();
   if (!address || typeof address === 'string') throw new Error('No test server address');
-  const env = { ...process.env, LIVE_PATCH_TEST_SERVER: '1', LIVE_PATCH_BASE_URL: `http://127.0.0.1:${address.port}`, LIVE_PATCH_TEST_GAME_DIR: isolatedGame, ...(selected ? { MUTATION_FILE: path.basename(selected) } : {}) };
+  const env = { ...process.env, LIVE_PATCH_TEST_SERVER: '1', LIVE_PATCH_BASE_URL: `http://127.0.0.1:${address.port}`, LIVE_PATCH_TEST_GAME_DIR: isolatedGame, LIVE_PATCH_TEST_DATA_DIR: process.env.LIVE_PATCH_DATA_DIR, ...(selected ? { MUTATION_FILE: path.basename(selected) } : {}) };
   const code = await run('node_modules/@playwright/test/cli.js', ['test', ...(smoke ? ['--grep', 'game plays'] : [])], env);
   process.exitCode = code;
 } finally {
