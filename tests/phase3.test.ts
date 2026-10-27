@@ -194,13 +194,47 @@ describe('Phase 3 runner', () => {
     const second = ideas.add('two', 'Two', 'Second patch', 'chat'); ideas.setStatus(second.id, 'approved');
     const building = runner.enqueue({ ...second, status: 'approved' });
     await started;
+    const third = ideas.add('three', 'Three', 'Queued patch', 'chat'); ideas.setStatus(third.id, 'approved');
+    const queued = runner.enqueue({ ...third, status: 'approved' });
     const before = Date.now();
     await runner.requestRollback();
     expect(Date.now() - before).toBeLessThan(5_000);
     expect(fs.readdirSync(path.join(game, 'mutations')).filter(name => name.endsWith('.js'))).toHaveLength(0);
-    await building;
-    expect(runs.list().map(record => record.status)).toEqual(['rolled_back', 'failed']);
+    await Promise.all([building, queued]);
+    expect(runs.list().map(record => record.status)).toEqual(['rolled_back', 'failed', 'failed']);
+    expect(runs.list().find(record => record.ideaId === third.id)?.error).toBe('Cancelled by moderator rollback');
+    expect(publicRun(runs.list().find(record => record.ideaId === third.id)!).error).toBe('Cancelled by moderator rollback');
     expect(ideas.list().find(idea => idea.id === first.id)?.status).toBe('rolled_back');
+  }), 30_000);
+
+  it('does not cancel an active build or queued approval when nothing has shipped', async () => fixture(async (root, game, gameManifest, ideas, runs) => {
+    let release!: () => void;
+    let notifyStarted!: () => void;
+    const started = new Promise<void>(resolve => { notifyStarted = resolve; });
+    const hold = new Promise<void>(resolve => { release = resolve; });
+    let calls = 0;
+    const agent: AgentFactory = (worktree, signal) => ({
+      threadId: () => 'held-thread',
+      async run(prompt) {
+        calls++;
+        if (calls === 1) { notifyStarted(); await hold; }
+        expect(signal.aborted).toBe(false);
+        const relative = /Write exactly one new file relative to the worktree root: ([^\r\n]+)/.exec(prompt)![1];
+        fs.writeFileSync(path.join(worktree, relative), good(`Patch ${calls}`));
+      }
+    });
+    const runner = new LiveRunner(root, game, gameManifest, ideas, runs, () => {}, agent, async () => {});
+    const first = ideas.add('one', 'One', 'First patch', 'chat'); ideas.setStatus(first.id, 'approved');
+    const building = runner.enqueue({ ...first, status: 'approved' });
+    await started;
+    const second = ideas.add('two', 'Two', 'Queued patch', 'chat'); ideas.setStatus(second.id, 'approved');
+    const queued = runner.enqueue({ ...second, status: 'approved' });
+    await expect(runner.requestRollback()).rejects.toThrow('No shipped mutation');
+    expect(ideas.list().find(idea => idea.id === first.id)?.status).toBe('building');
+    expect(ideas.list().find(idea => idea.id === second.id)?.status).toBe('approved');
+    release();
+    await Promise.all([building, queued]);
+    expect(runs.list().map(record => record.status)).toEqual(['shipped', 'shipped']);
   }), 30_000);
 
   it('reconciles a building record, idea and stale worktree at startup', async () => fixture(async (root, game, gameManifest, ideas, runs) => {
@@ -230,6 +264,7 @@ describe('Phase 3 runner', () => {
     expect(publicRecord).not.toContain('Operator');
     expect(publicRecord).not.toContain('secret');
     expect(publicRecord).toContain('Build failed');
+    expect(publicRun({ ...record, error: 'Error: Codex sandbox cannot write in its worktree' }).error).toBe('Sandbox setup failed; see README and local run record');
   });
 
   it('rejects reworded data-access requests and pins the no-shell Codex configuration', () => {
@@ -241,6 +276,12 @@ describe('Phase 3 runner', () => {
       'Visit example.org for new colors'
     ]) expect(unsafeIdea(idea)).toBe(true);
     expect(unsafeIdea('Make collected coins worth three points')).toBe(false);
+    for (const idea of [
+      'Enemies drop power-up tokens; check how many tokens the player has',
+      'When you grab a coin, send a web of lightning to nearby enemies',
+      'Coins open a portal to another site on the map',
+      'Show the twitch.tv chat name above the player'
+    ]) expect(unsafeIdea(idea)).toBe(false);
     expect(runnerConfig.windows.sandbox).toBe('elevated');
     expect(runnerConfig.sandbox_workspace_write.network_access).toBe(false);
     expect(runnerConfig.sandbox_workspace_write.writable_roots).toEqual([]);

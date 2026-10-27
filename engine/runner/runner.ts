@@ -7,7 +7,7 @@ import { Codex, type Thread } from '@openai/codex-sdk';
 import type { GameManifest } from '../manifest/schema';
 import type { Idea, IdeaStore } from '../pipeline/ideas';
 import { buildPrompt, gateCandidate, unsafeIdea } from './gates';
-import { RunStore, type RunRecord, type RunnerEvent } from './store';
+import { RunStore, publicFailure, type RunRecord, type RunnerEvent } from './store';
 import { codexBinary, disabledMcpConfig, runnerConfig, runnerEnvironment, verifySandbox } from './sandbox';
 
 const RUN_TIMEOUT_MS = 3 * 60_000;
@@ -127,13 +127,15 @@ export class LiveRunner {
   }
   requestRollback(): Promise<void> {
     if (this.closed) return Promise.reject(Error('Runner is stopped'));
+    const shipped = this.runs.lastShipped(this.gameDirectory);
+    if (!shipped?.branch || !shipped.commit || !shipped.mutationName) return Promise.reject(Error('No shipped mutation to roll back'));
     this.rollbackEpoch++;
     this.activeAbort?.abort('Moderator requested rollback');
     return Promise.resolve().then(() => this.rollback());
   }
   stop() { this.closed = true; this.activeAbort?.abort('Server stopped'); }
   private emit(record: RunRecord, type: RunnerEvent['type'], message?: string, threadId?: string) {
-    const publicMessage = type === 'file' && message ? path.basename(message) : type === 'failed' ? 'Build failed; see local run record' : message;
+    const publicMessage = type === 'file' && message ? path.basename(message) : type === 'failed' ? publicFailure(record.error) : message;
     this.onEvent({ runId: record.id, ideaId: record.ideaId, type, at: new Date().toISOString(), ...(publicMessage ? { message: publicMessage } : {}), ...(threadId ? { threadId } : {}) });
   }
   private prepare(id: string): { directory: string; branch: string; gameRelative: string; game: string; pointer: string } {
@@ -199,7 +201,13 @@ export class LiveRunner {
   private async build(idea: Idea, epoch: number) {
     if (this.closed) return;
     if (epoch !== this.rollbackEpoch) {
-      if (this.ideas.list().find(item => item.id === idea.id)?.status === 'approved') this.ideas.setStatus(idea.id, 'failed');
+      if (this.ideas.list().find(item => item.id === idea.id)?.status === 'approved') {
+        const now = new Date().toISOString();
+        const record: RunRecord = { id: randomUUID(), ideaId: idea.id, gameDirectory: this.gameDirectory, status: 'failed', startedAt: now, finishedAt: now, error: 'Cancelled by moderator rollback' };
+        this.runs.upsert(record);
+        this.ideas.setStatus(idea.id, 'failed');
+        this.emit(record, 'failed', record.error);
+      }
       return;
     }
     if (idea.status !== 'approved' || this.ideas.list().find(item => item.id === idea.id)?.status !== 'approved') return;

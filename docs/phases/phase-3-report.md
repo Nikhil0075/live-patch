@@ -6,6 +6,7 @@
 - Static path and source gates accept one new module in the active game's mutation directory. The manifest smoke command runs before an atomic live publish; a failed run leaves the live game unchanged.
 - Approved ideas enter a serial runner queue. Moderator rollback interrupts an active build, cancels queued approvals and removes the last shipped module without waiting for Codex. Run results are persisted in an ignored local JSON file; redacted summaries reach `/api/runs`, a Vite progress event, and the simulator.
 - Startup marks interrupted runs failed, removes any half-published module and stale worktree, and reconciles shipped ideas. Failed run branches are deleted; shipped branches remain for rollback.
+- Round-two fixes leave active and queued work untouched when there is no shipped patch to roll back, record a cancellation reason for queued ideas when rollback does proceed, narrow the idea prefilter to explicit file or network requests, and show sandbox setup failures separately in the simulator.
 
 `@openai/codex-sdk` was added because it provides the headless Codex thread, streaming events, sandbox options and abort signal required for the live runner.
 
@@ -15,7 +16,7 @@
 - In `/simulator.html`, submit `!idea <text>` and send `!approve 1` as a moderator or broadcaster. Watch Codex runs and the game mutation list. Send `!rollback` as a moderator or broadcaster to undo the latest shipped patch.
 - `npm test` runs controlled runner and browser tests. `LIVE_PATCH_REAL_AGENT=1 npx vitest run tests/phase3-real.test.ts` runs one signed-in Codex SDK and real browser smoke evaluation in a retained, ignored full repository clone. Set `LIVE_PATCH_REAL_BATCH=1` for the ten-idea evaluation. The test prints the evaluation directory and writes `results.json`; generated modules stay under its `repo/games/.../mutations/` folder.
 - `LIVE_PATCH_LIVE_EVAL=1 npx vitest run tests/phase3-live.test.ts` starts an isolated `npm run dev` server from a full repository clone, sends ten ideas through `/api/simulator/events`, and retains the clone and `results.json` under the sibling `live-patch-evaluations/` directory. Its one-idea preflight (`LIVE_PATCH_LIVE_EVAL_COUNT=1`) shipped through that HTTP path in 43.3 seconds.
-- Round-one verification on 28 October 2026: `npm test` passed 29 unit tests and 28 browser tests (two opt-in live tests skipped by default); `npm run build` passed; `npm audit --audit-level=high` found zero vulnerabilities. The focused signed-in run shipped with shell and MCP servers disabled and rejected a deliberate crash.
+- Round-two verification on 28 October 2026: `npm test` passed 30 unit tests and 28 browser tests (two opt-in live tests skipped by default); `npm run build` passed; `npm audit --audit-level=high` found zero vulnerabilities. The earlier focused signed-in run shipped with shell and MCP servers disabled and rejected a deliberate crash.
 
 ## Exit criteria
 
@@ -67,5 +68,8 @@ The browser smoke gate checks stability and coexistence, not semantic completene
 - **P3-R1-06 — Fixed:** failed run branches are deleted; shipped branches remain for rollback.
 - **P3-R1-07 — Fixed in part:** rollback removes the live file before Git history work and marks the idea rolled back; game docs now state that edits to other entities and earned score persist. Reversing those game-model effects is deferred to Phase 5.
 - **P3-R1-08 — Fixed:** events and `/api/runs` use short redacted messages; full diagnostics remain only in the ignored local run store.
-- **P3-R1-09 — Deferred to Phase 5:** synchronous Git calls remain; they are bounded by 20-second timeouts but can briefly block the dev server.
+- **P3-R1-09 — Deferred to Phase 5:** synchronous Git calls remain and can block the dev server. Most runner Git calls have 20-second timeouts, but the `gitPaths` status call has none; each run also makes two synchronous MCP-list calls with up to 15 seconds each.
 - **P3-R1-10 — Deferred to Phase 5:** separate repair-error and candidate-source variables are a readability cleanup.
+- **P3-R2-01 — Fixed:** rollback checks for a shipped patch before aborting a build; queued approvals cancelled by a real rollback get a run record with the cancellation reason.
+- **P3-R2-02 — Fixed:** the convenience filter now requires an access request directed at private files or a network destination; the four harmless examples from the review pass through. The sandbox and output gates remain the security boundary.
+- **P3-R2-03 — Fixed:** the README documents elevated Windows sandbox provisioning and probe troubleshooting; the simulator identifies sandbox setup failures separately from ordinary build failures.

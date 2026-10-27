@@ -5,11 +5,11 @@ import type { GameManifest } from '../manifest/schema';
 import { validateMutation } from '../mutation/validate';
 
 export function unsafeIdea(text: string): boolean {
-  const privateTarget = /\b(?:files?|documents?|desktop|downloads?|home directory|appdata|secrets?|tokens?|passwords?|credentials?|api keys?|browser history|private data|environment variables?)\b/i;
-  const accessIntent = /\b(?:read|open|inspect|copy|grab|take|send|post|upload|steal|exfiltrate|use|check|search|scan|peek|retrieve|dump)\b/i;
-  const networkIntent = /\b(?:open|visit|connect|request|call|contact|browse|ping|post|send|fetch|upload|download)\b.{0,80}\b(?:websites?|sites?|server|endpoint|domain|web|internet|urls?|https?)\b/i;
-  return (privateTarget.test(text) && accessIntent.test(text)) || networkIntent.test(text)
-    || /https?:\/\/|www\.|\b[a-z][\w-]+\.(?:com|net|org|io|dev|tv)\b|\b[a-z]:\\|\/users\/|\/home\/|\.env\b|\blocalStorage\b|\bdocument\.|\bwindow\.|\bfetch\b/i.test(text);
+  const access = /\b(?:read|open|inspect|copy|grab|take|send|post|upload|steal|exfiltrate|use|search|scan|peek|retrieve|dump)\b/i;
+  const privateTarget = /\b(?:api keys?|passwords?|credentials?|secrets?|browser history|private (?:files?|documents?|data)|environment variables?|appdata|downloads?|home directory|local files?)\b|\b(?:my|your|streamer'?s|broadcaster'?s)\s+(?:local\s+)?(?:files?|documents?|desktop|downloads?|tokens?)\b|(?:[a-z]:\\|\/users\/|\/home\/|\.env\b)/i;
+  const destination = /\b(?:websites?|servers?|endpoints?|internet|urls?)\b|https?:\/\/|www\.|\b[a-z][\w-]+\.(?:com|net|org|io|dev|tv)\b/i;
+  const networkAccess = /\b(?:visit|browse|open|connect\s+to|fetch\s+from|request\s+from|send\b.{0,40}\bto|post\b.{0,40}\bto|upload\b.{0,40}\bto|download\s+from)\b/i;
+  return (access.test(text) && privateTarget.test(text)) || (networkAccess.test(text) && destination.test(text));
 }
 
 function gitPaths(directory: string): string[] {

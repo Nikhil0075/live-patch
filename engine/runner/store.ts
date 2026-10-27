@@ -18,8 +18,16 @@ export interface RunRecord {
 }
 export interface RunnerEvent { runId: string; ideaId: string; type: 'started' | 'sandbox_verified' | 'thread' | 'file' | 'testing' | 'passed' | 'failed' | 'shipped' | 'rolled_back'; at: string; message?: string; threadId?: string }
 
+export function publicFailure(error?: string): string | undefined {
+  if (!error) return undefined;
+  if (error === 'Cancelled by moderator rollback') return error;
+  if (/Codex sandbox cannot write in its worktree|Codex sandbox can write outside its worktree|Sandbox probe path already exists/.test(error))
+    return 'Sandbox setup failed; see README and local run record';
+  return 'Build failed; see local run record';
+}
+
 export function publicRun(record: RunRecord) {
-  return { id: record.id, ideaId: record.ideaId, status: record.status, startedAt: record.startedAt, finishedAt: record.finishedAt, durationMs: record.durationMs, threadId: record.threadId, mutationName: record.mutationName, error: record.error ? 'Build failed; see local run record' : undefined };
+  return { id: record.id, ideaId: record.ideaId, status: record.status, startedAt: record.startedAt, finishedAt: record.finishedAt, durationMs: record.durationMs, threadId: record.threadId, mutationName: record.mutationName, error: publicFailure(record.error) };
 }
 
 export class RunStore {
