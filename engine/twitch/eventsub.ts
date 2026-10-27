@@ -8,6 +8,13 @@ interface Envelope {
   payload?: { session?: { id?: string; reconnect_url?: string; keepalive_timeout_seconds?: number }; event?: unknown; subscription?: { type?: string; status?: string } };
 }
 
+class SubscriptionError extends Error {
+  constructor(type: string, readonly statusCode: number, detail: string) {
+    super(`${type} subscription returned ${statusCode}${detail ? `: ${detail}` : ''}`);
+  }
+  get isConfigurationFailure() { return this.statusCode >= 400 && this.statusCode < 500 && this.statusCode !== 429; }
+}
+
 class EventSubStream {
   private socket?: WebSocket;
   private handoff?: WebSocket;
@@ -15,6 +22,7 @@ class EventSubStream {
   private retry?: NodeJS.Timeout;
   private attempts = 0;
   private stopped = true;
+  private permanentFailure = false;
   private state = 'offline';
   private issue = '';
   private keepaliveSeconds = 10;
@@ -29,7 +37,8 @@ class EventSubStream {
   ) {}
 
   status() { return this.issue && this.state !== 'connected' ? `${this.state}: ${this.issue}` : this.state; }
-  start() { if (!this.stopped) return; this.stopped = false; this.connect('wss://eventsub.wss.twitch.tv/ws', false); }
+  start() { if (!this.stopped || this.permanentFailure) return; this.stopped = false; this.connect('wss://eventsub.wss.twitch.tv/ws', false); }
+  resetAfterAuthChange() { this.stop(); this.permanentFailure = false; this.issue = ''; }
   stop() {
     this.stopped = true; this.state = 'offline';
     if (this.retry) clearTimeout(this.retry);
@@ -46,7 +55,7 @@ class EventSubStream {
     socket.on('message', data => { void this.handle(socket, data.toString(), handoff); });
     socket.on('error', () => { /* close handles retry without exposing URLs or tokens */ });
     socket.on('close', () => {
-      if (this.stopped) return;
+      if (this.stopped || this.permanentFailure) return;
       if (this.handoff === socket) { this.handoff = undefined; if (!this.socket || this.socket.readyState !== WebSocket.OPEN) this.scheduleRetry(); }
       else if (this.socket === socket) { this.socket = undefined; if (!this.handoff) this.scheduleRetry(); }
     });
@@ -64,7 +73,13 @@ class EventSubStream {
         old?.close();
       } else {
         try { await this.subscribe(session.id); }
-        catch (error) { this.issue = String(error); this.state = 'subscription failed'; socket.close(); return; }
+        catch (error) {
+          this.issue = String(error);
+          this.state = 'subscription failed';
+          this.permanentFailure = error instanceof SubscriptionError && error.isConfigurationFailure;
+          socket.close();
+          return;
+        }
       }
       this.attempts = 0; this.issue = ''; this.state = 'connected'; this.keepaliveSeconds = session.keepalive_timeout_seconds ?? 10; this.resetWatchdog(socket);
       return;
@@ -89,7 +104,7 @@ class EventSubStream {
     if (!response.ok) {
       let detail = '';
       try { const body = await response.json() as { message?: string }; detail = body.message?.slice(0, 200) ?? ''; } catch { /* status remains useful */ }
-      throw Error(`${this.type} subscription returned ${response.status}${detail ? `: ${detail}` : ''}`);
+      throw new SubscriptionError(this.type, response.status, detail);
     }
   }
   private resetWatchdog(socket: WebSocket) {
@@ -97,7 +112,7 @@ class EventSubStream {
     this.watchdog = setTimeout(() => { if (this.socket === socket) { this.state = 'timed out'; socket.terminate(); } }, (this.keepaliveSeconds + 5) * 1000);
   }
   private scheduleRetry() {
-    if (this.stopped || this.retry) return;
+    if (this.stopped || this.permanentFailure || this.retry) return;
     this.state = 'reconnecting';
     const delay = Math.min(30_000, 1000 * 2 ** Math.min(this.attempts++, 5));
     this.retry = setTimeout(() => { this.retry = undefined; this.connect('wss://eventsub.wss.twitch.tv/ws', false); }, delay);
@@ -128,4 +143,5 @@ export class EventSubClient {
   }
   start() { this.chat.start(); this.reward?.start(); }
   stop() { this.chat.stop(); this.reward?.stop(); }
+  resetAfterAuthChange() { this.chat.resetAfterAuthChange(); this.reward?.resetAfterAuthChange(); }
 }

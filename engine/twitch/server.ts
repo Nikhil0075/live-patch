@@ -98,6 +98,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string) {
       try {
         if (url.searchParams.has('error')) throw Error(authorizationError(url.searchParams.get('error'), config.redirectUri));
         const identity = await auth.complete(url.searchParams.get('code') ?? '', url.searchParams.get('state') ?? '');
+        eventsub.resetAfterAuthChange();
         void connection.check();
         res.statusCode = 303; res.setHeader('Location', `/simulator.html?connected=${identity.role}`); res.end();
       } catch (error) { json(res, 400, { error: String(error) }); }

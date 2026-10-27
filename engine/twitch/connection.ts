@@ -1,11 +1,10 @@
-import type { TwitchAuth } from './auth';
+import { TwitchCredentialError, type TwitchAuth } from './auth';
 import type { EventSubClient } from './eventsub';
 
 const hourlyMs = 60 * 60_000;
 
 export function rejectedTwitchCredentials(error: unknown): boolean {
-  const message = String(error);
-  return /Twitch token (?:validation|refresh) failed \((?:400|401|403)\)|token identity or scopes changed|OAuth account or scopes do not match/.test(message);
+  return error instanceof TwitchCredentialError;
 }
 
 export class TwitchConnection {

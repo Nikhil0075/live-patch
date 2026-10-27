@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import { IdeaStore } from '../engine/pipeline/ideas';
 import { ChatPipeline, type InboundEvent } from '../engine/pipeline/commands';
 import { forwardToGame, normalizeEventSub, normalizeSimulator } from '../engine/twitch/events';
-import { TwitchAuth, authorizationError, defaultTwitchRedirectUri } from '../engine/twitch/auth';
+import { TwitchAuth, TwitchCredentialError, authorizationError, defaultTwitchRedirectUri } from '../engine/twitch/auth';
 import { EventSubClient } from '../engine/twitch/eventsub';
 import { chatDeliveryIssue } from '../engine/twitch/chat';
 import { TwitchConnection, rejectedTwitchCredentials } from '../engine/twitch/connection';
@@ -37,11 +37,12 @@ describe('Phase 2 idea pipeline', () => {
       await vi.advanceTimersByTimeAsync(5_000);
       expect(connection.status()).toBe('');
       expect(stream.start).toHaveBeenCalledTimes(2);
-      expect(rejectedTwitchCredentials(new Error('Twitch token refresh failed (401)'))).toBe(true);
-      validateStored.mockRejectedValueOnce(new Error('Twitch token refresh failed (401)'));
+      expect(rejectedTwitchCredentials(new TwitchCredentialError('credentials revoked'))).toBe(true);
+      expect(rejectedTwitchCredentials(new Error('Twitch token refresh failed (401)'))).toBe(false);
+      validateStored.mockRejectedValueOnce(new TwitchCredentialError('credentials revoked'));
       await connection.check();
       expect(stream.stop).toHaveBeenCalledTimes(1);
-      expect(connection.status()).toContain('401');
+      expect(connection.status()).toContain('credentials revoked');
       await connection.check();
       expect(connection.status()).toBe('');
       expect(stream.start).toHaveBeenCalledTimes(3);
@@ -145,6 +146,19 @@ describe('Phase 2 idea pipeline', () => {
       expect(fs.readFileSync(file, 'utf8')).toContain('refresh-2');
     } finally { fs.rmSync(directory, { recursive: true, force: true }); }
   });
+  it('types rejected token responses without treating server failures as revoked credentials', async () => {
+    const directory = fs.mkdtempSync(path.join(process.cwd(), '.test-auth-'));
+    try {
+      const file = path.join(directory, 'tokens.json');
+      fs.writeFileSync(file, JSON.stringify({ broadcaster: { accessToken: 'expired', refreshToken: 'refresh', userId: '100', login: 'streamer', scopes: ['channel:read:redemptions'], expiresAt: 0, validatedAt: 0 } }));
+      for (const status of [401, 503]) {
+        const request = vi.fn(async () => new Response('', { status })) as unknown as typeof fetch;
+        const auth = new TwitchAuth({ clientId: 'client', clientSecret: 'secret', redirectUri: defaultTwitchRedirectUri, rewardId: 'r' }, file, request);
+        try { await auth.token('broadcaster'); expect.fail('expected token refresh to fail'); }
+        catch (error) { expect(rejectedTwitchCredentials(error)).toBe(status === 401); }
+      }
+    } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+  });
 });
 
 class MockSocket extends EventEmitter {
@@ -155,6 +169,7 @@ class MockSocket extends EventEmitter {
 }
 
 it('keeps chat subscribed when the custom reward subscription is rejected', async () => {
+  vi.useFakeTimers();
   const sockets: MockSocket[] = [];
   const events: InboundEvent[] = [];
   const subscriptions: { role: string; type: string; sessionId: string }[] = [];
@@ -179,7 +194,38 @@ it('keeps chat subscribed when the custom reward subscription is rejected', asyn
     ]);
     sockets[0].receive({ metadata: { message_type: 'notification', subscription_type: 'channel.chat.message', message_id: 'event-1' }, payload: { event: { broadcaster_user_id: '1', chatter_user_id: '3', chatter_user_login: 'viewer', chatter_user_name: 'Viewer', message_id: 'chat-1', message: { text: '!idea Test' } } } });
     await vi.waitFor(() => expect(events).toHaveLength(1));
-  } finally { client.stop(); }
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(subscriptions.filter(item => item.type === 'channel.channel_points_custom_reward_redemption.add')).toHaveLength(1);
+    client.resetAfterAuthChange();
+    client.start();
+    expect(sockets.length).toBeGreaterThan(2);
+  } finally { client.stop(); vi.useRealTimers(); }
+});
+
+it('retries a temporary reward subscription failure without interrupting chat', async () => {
+  vi.useFakeTimers();
+  const sockets: MockSocket[] = [];
+  let rewardAttempts = 0;
+  const auth = {
+    identity: (role: string) => role === 'bot' ? { id: '2' } : { id: '1' },
+    helix: async (_role: string, _route: string, body: { type: string }) => {
+      if (body.type === 'channel.chat.message') return new Response('', { status: 202 });
+      rewardAttempts++;
+      return new Response('', { status: rewardAttempts === 1 ? 503 : 202 });
+    }
+  } as unknown as TwitchAuth;
+  const client = new EventSubClient(auth, 'reward-1', async () => {}, () => { const socket = new MockSocket(); sockets.push(socket); return socket as never; });
+  try {
+    client.start();
+    sockets[0].receive({ metadata: { message_type: 'session_welcome' }, payload: { session: { id: 'chat' } } });
+    sockets[1].receive({ metadata: { message_type: 'session_welcome' }, payload: { session: { id: 'reward-first' } } });
+    await vi.waitFor(() => expect(client.status()).toContain('reward events unavailable'));
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(sockets).toHaveLength(3);
+    sockets[2].receive({ metadata: { message_type: 'session_welcome' }, payload: { session: { id: 'reward-second' } } });
+    await vi.waitFor(() => expect(client.status()).toBe('connected'));
+    expect(rewardAttempts).toBe(2);
+  } finally { client.stop(); vi.useRealTimers(); }
 });
 
 it('subscribes bot chat and broadcaster rewards on separate sessions and receives both events', async () => {

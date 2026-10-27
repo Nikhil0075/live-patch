@@ -12,6 +12,7 @@
 - Bot reply delivery checks Twitch's `is_sent` field and displays a dropped-message warning in the simulator, even when the Send Chat Message API returns HTTP 200.
 - Round-one fixes keep EventSub alive through transient token-validation failures, isolate optional reward subscription errors from chat, and deny HTTP access to private token and idea files. OAuth verification now forces Twitch's consent screen; denied commands no longer trigger unlimited bot replies; the game chat hook skips bot replies and control commands; simulator vote labels match pending candidates.
 - A later live reward check exposed Twitch's rule that one WebSocket session cannot contain subscriptions created by different users. Bot chat and broadcaster reward events now use separate EventSub sessions, each with its own reconnect and keepalive handling. Subscription errors include Twitch's message.
+- Round-two fixes stop retries after Twitch rejects a subscription with a configuration error while preserving its visible error; transient subscription failures still retry. Credential rejection now uses a typed error instead of matching message text.
 
 `ws` was added for a supported WebSocket client and lifecycle on Node 20 or newer; `@types/ws` supplies strict TypeScript definitions. `@vitejs/plugin-basic-ssl` generates a local development certificate so Twitch can redirect to an HTTPS callback.
 
@@ -27,7 +28,9 @@ On 2026-10-27, after the operator created a custom reward, Twitch returned `webs
 
 Verification for this fix: `npm test` passed 18 unit and 27 browser tests, `npm run build` passed, and the live `/api/twitch/status` endpoint reported `eventsub: connected` and `rewardConfigured: true`. A regression test rejects mixed-user subscriptions on one session and confirms that chat and reward notifications arrive on separate sessions.
 
-After viewer text input was enabled, the live reward lookup returned `requiresInput: true` and status still reported EventSub connected with no authorization or chat issue. The live idea store contains one earlier broadcaster chat idea and no reward idea or second-account chat idea, so the two real-channel exit criteria remain open.
+Round-two fix verification: `npm test` passed 20 unit and 27 browser tests; `npm run build` passed; `npm audit --audit-level=moderate` found zero vulnerabilities. The live server continued to report EventSub connected with no authorization or chat issue.
+
+After viewer text input was enabled, the live reward lookup returned `requiresInput: true` and status still reported EventSub connected with no authorization or chat issue. A later `!idea` from the second connected account appeared in the simulator and idea store with source `chat`. The operator confirmed no reward was redeemed, so the redemption exit criterion remains open.
 
 Real-channel check on 2026-10-27: the broadcaster and bot completed OAuth and EventSub reported connected. A broadcaster chat `!idea` appeared in `/api/ideas` with source `chat`; `!reject 1` changed that test idea to `rejected`. Twitch's Get Custom Reward API returned 403 with `The broadcaster must have partner or affiliate status`, so no reward exists to configure or redeem. Twitch's Send Chat Message API returned `is_sent: false`, `msg_rejected` for the connected bot account, and no second-account idea arrived. A subsequent broadcaster `!vote 1` showed the bot delivery warning in `/api/twitch/status`.
 
@@ -35,7 +38,7 @@ Later on 2026-10-27, the creator dashboard showed completed tools onboarding and
 
 ## Exit criteria
 
-- [ ] A second account's `!idea` appears in the store within two seconds on a real test channel — broadcaster chat ingestion works, but Twitch rejected bot-account test messages with `msg_rejected`; a second-account message has not arrived.
+- [x] A second account's `!idea` appears in the store within two seconds on a real test channel — the operator saw it arrive in the simulator, and the live idea store contains a new chat idea from the connected second account.
 - [ ] Redeeming the configured custom reward creates an idea on the real channel — the enabled reward requires viewer text and EventSub is connected, but no real redemption has been tested. Normalization and simulator reward tests pass.
 - [x] Moderator commands work only for moderators and the broadcaster — command authorization is tested with viewer, moderator and broadcaster inputs; the broadcaster is identified by Twitch user ID.
 - [x] The simulator drives the identical code path — Twitch and simulator payloads normalize to `InboundEvent` and call the same `ChatPipeline.ingest`; the browser test checks idea persistence and `onChat` delivery.
@@ -50,7 +53,7 @@ Later on 2026-10-27, the creator dashboard showed completed tools onboarding and
 
 ## Known gaps / risks
 
-- Real Twitch OAuth and broadcaster chat ingestion are verified. Bot chat sending failed because Twitch rejected test messages; the channel's chat settings did not show follower, subscriber, emote or slow restrictions. Creator tools onboarding is complete, the custom reward has viewer text input enabled, and both EventSub subscriptions now connect. A real redemption and a second-account chat idea remain untested.
+- Real Twitch OAuth and chat ingestion from a second account are verified. An earlier bot chat send failed with `msg_rejected`, though the latest second-account `!idea` arrived. Creator tools onboarding is complete, the custom reward has viewer text input enabled, and both EventSub subscriptions connect. A real redemption remains untested.
 - The simulator trusts role selection because it is a local development tool. Its event endpoint binds to the local development server, checks browser Origin, and can be disabled with `LIVE_PATCH_SIMULATOR_ENABLED=0`.
 - JSON persistence is suitable for one local server process. Concurrent writers or a hosted deployment would need a transactional store.
 - The most recent three pending ideas serve as provisional voting slots until Phase 4 adds timed rounds and triage.
@@ -66,3 +69,5 @@ Later on 2026-10-27, the creator dashboard showed completed tools onboarding and
 - **P2-R1-07 Fixed:** bot messages and recognized commands no longer reach the game's `onChat`; a unit test checks both filters.
 - **P2-R1-08 Fixed:** `/api/ideas` returns authoritative pending candidate IDs and the simulator labels only those with `Vote 1–3`; a browser test rejects one idea and checks the labels.
 - **P2-R1-09 Deferred to Phase 5:** the operator's Twitch registration form required HTTPS, so switching the live callback to HTTP would break their working OAuth flow. OBS certificate trust remains part of the Phase 5 browser-source check.
+- **P2-R2-01 Fixed:** rejected reward subscriptions (4xx except rate limiting) stop retrying and keep the error visible until configuration changes or reauthorization; 5xx failures still retry. Fake-timer tests cover both cases.
+- **P2-R2-02 Fixed:** credential rejection is a `TwitchCredentialError` type raised by OAuth validation and refresh paths; connection handling no longer depends on error wording. Tests distinguish 401 from 503 responses.

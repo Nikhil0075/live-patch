@@ -3,6 +3,7 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 
 export type Role = 'broadcaster' | 'bot';
+export class TwitchCredentialError extends Error {}
 export const defaultTwitchRedirectUri = 'https://localhost:5173/api/twitch/auth/callback';
 export interface TwitchConfig { clientId: string; clientSecret: string; redirectUri: string; rewardId: string }
 export function authorizationError(code: string | null, redirectUri: string): string {
@@ -46,7 +47,7 @@ export class TwitchAuth {
     if (!response.ok) throw Error(`Twitch token exchange failed (${response.status})`);
     const result = await response.json() as { access_token: string; refresh_token: string; expires_in: number; scope: string[] };
     const identity = await this.validateRaw(result.access_token);
-    if (identity.client_id !== this.config.clientId || !identity.user_id || !identity.login || !scopes[pending.role].every(scope => identity.scopes.includes(scope))) throw Error('OAuth account or scopes do not match the requested role');
+    if (identity.client_id !== this.config.clientId || !identity.user_id || !identity.login || !scopes[pending.role].every(scope => identity.scopes.includes(scope))) throw new TwitchCredentialError('OAuth account or scopes do not match the requested role');
     const other = this.tokens[pending.role === 'bot' ? 'broadcaster' : 'bot'];
     if (other?.userId === identity.user_id) throw Error('Use separate broadcaster and bot Twitch accounts');
     this.tokens[pending.role] = { accessToken: result.access_token, refreshToken: result.refresh_token, userId: identity.user_id, login: identity.login, scopes: identity.scopes, expiresAt: Date.now() + result.expires_in * 1000, validatedAt: Date.now() };
@@ -60,7 +61,7 @@ export class TwitchAuth {
     if (token.validatedAt < Date.now() - 60 * 60_000) {
       try {
         const identity = await this.validateRaw(token.accessToken);
-        if (identity.client_id !== this.config.clientId || identity.user_id !== token.userId || !scopes[role].every(scope => identity.scopes.includes(scope))) throw Error('Twitch token identity or scopes changed');
+        if (identity.client_id !== this.config.clientId || identity.user_id !== token.userId || !scopes[role].every(scope => identity.scopes.includes(scope))) throw new TwitchCredentialError('Twitch token identity or scopes changed');
         token.validatedAt = Date.now(); this.save();
       } catch { return this.refresh(role); }
     }
@@ -70,10 +71,13 @@ export class TwitchAuth {
     const token = this.tokens[role];
     if (!token) throw Error(`${role} account is not connected`);
     const response = await this.request(`${endpoint}/token`, { method: 'POST', body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: token.refreshToken, client_id: this.config.clientId, client_secret: this.config.clientSecret }), signal: AbortSignal.timeout(10000) });
-    if (!response.ok) throw Error(`Twitch token refresh failed (${response.status}); reconnect the ${role} account`);
+    if (!response.ok) {
+      const message = `Twitch token refresh failed (${response.status}); reconnect the ${role} account`;
+      throw response.status >= 400 && response.status < 500 && response.status !== 429 ? new TwitchCredentialError(message) : Error(message);
+    }
     const result = await response.json() as { access_token: string; refresh_token: string; expires_in: number; scope: string[] };
     const identity = await this.validateRaw(result.access_token);
-    if (identity.user_id !== token.userId || identity.client_id !== this.config.clientId || !scopes[role].every(scope => identity.scopes.includes(scope))) throw Error('Refreshed token identity or scopes changed');
+    if (identity.user_id !== token.userId || identity.client_id !== this.config.clientId || !scopes[role].every(scope => identity.scopes.includes(scope))) throw new TwitchCredentialError('Refreshed token identity or scopes changed');
     Object.assign(token, { accessToken: result.access_token, refreshToken: result.refresh_token, scopes: identity.scopes, expiresAt: Date.now() + result.expires_in * 1000, validatedAt: Date.now() });
     this.save();
     return token.accessToken;
@@ -86,7 +90,10 @@ export class TwitchAuth {
   }
   private async validateRaw(access: string): Promise<{ client_id: string; user_id: string; login: string; scopes: string[] }> {
     const response = await this.request(`${endpoint}/validate`, { headers: { Authorization: `OAuth ${access}` }, signal: AbortSignal.timeout(10000) });
-    if (!response.ok) throw Error(`Twitch token validation failed (${response.status})`);
+    if (!response.ok) {
+      const message = `Twitch token validation failed (${response.status})`;
+      throw response.status >= 400 && response.status < 500 && response.status !== 429 ? new TwitchCredentialError(message) : Error(message);
+    }
     return response.json() as Promise<{ client_id: string; user_id: string; login: string; scopes: string[] }>;
   }
   private save() {
