@@ -23,6 +23,8 @@ Local verification: `npm test` passed 13 unit and 26 browser tests; `npm run bui
 
 Real-channel check on 2026-10-27: the broadcaster and bot completed OAuth and EventSub reported connected. A broadcaster chat `!idea` appeared in `/api/ideas` with source `chat`; `!reject 1` changed that test idea to `rejected`. Twitch's Get Custom Reward API returned 403 with `The broadcaster must have partner or affiliate status`, so no reward exists to configure or redeem. Twitch's Send Chat Message API returned `is_sent: false`, `msg_rejected` for the connected bot account, and no second-account idea arrived. A subsequent broadcaster `!vote 1` showed the bot delivery warning in `/api/twitch/status`.
 
+Later on 2026-10-27, the creator dashboard showed completed tools onboarding and activated Spendable Balance, and its navigation included Power-ups & Channel Points. The Channel Points panel was blank after a reload, and Get Custom Reward still returned 403; `TWITCH_PITCH_REWARD_ID` remained unset. Twitch's Channel Points FAQ says the feature can take up to 24 hours to appear after onboarding.
+
 ## Exit criteria
 
 - [ ] A second account's `!idea` appears in the store within two seconds on a real test channel — broadcaster chat ingestion works, but Twitch rejected bot-account test messages with `msg_rejected`; a second-account message has not arrived.
@@ -40,7 +42,7 @@ Real-channel check on 2026-10-27: the broadcaster and bot completed OAuth and Ev
 
 ## Known gaps / risks
 
-- Real Twitch OAuth and broadcaster chat ingestion are verified. Bot chat sending failed because Twitch rejected test messages; the channel's chat settings did not show follower, subscriber, emote or slow restrictions. Twitch's API says the broadcaster currently lacks Affiliate or Partner status, so custom reward creation, subscription and redemption cannot be tested on this channel. The dashboard shows creator monetization onboarding; its personal details and agreement require operator action.
+- Real Twitch OAuth and broadcaster chat ingestion are verified. Bot chat sending failed because Twitch rejected test messages; the channel's chat settings did not show follower, subscriber, emote or slow restrictions. Creator tools onboarding is complete, but Twitch's custom-reward API still returns 403 and the Channel Points panel has not populated. Custom reward creation, subscription and redemption remain untested until Twitch enables the feature for this channel.
 - The simulator trusts role selection because it is a local development tool. Its event endpoint binds to the local development server, checks browser Origin, and can be disabled with `LIVE_PATCH_SIMULATOR_ENABLED=0`.
 - JSON persistence is suitable for one local server process. Concurrent writers or a hosted deployment would need a transactional store.
 - The most recent three pending ideas serve as provisional voting slots until Phase 4 adds timed rounds and triage.
