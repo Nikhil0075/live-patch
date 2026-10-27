@@ -12,6 +12,7 @@
     "build": "tsc --noEmit && vite build"
   },
   "dependencies": {
+    "@openai/codex-sdk": "^0.164.0",
     "phaser": "^3.90.0",
     "vite": "^7.1.0",
     "ws": "^8.22.0",

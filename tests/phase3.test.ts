@@ -1,0 +1,165 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { describe, expect, it } from 'vitest';
+import type { GameManifest } from '../engine/manifest/schema';
+import { IdeaStore } from '../engine/pipeline/ideas';
+import { ChatPipeline } from '../engine/pipeline/commands';
+import { normalizeSimulator } from '../engine/twitch/events';
+import { LiveRunner, type AgentFactory } from '../engine/runner/runner';
+import { RunStore, type RunnerEvent } from '../engine/runner/store';
+
+function git(root: string, ...args: string[]) { return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim(); }
+function manifest(name: string, mutationDir = 'mutations/', testCommand = 'npm run smoke -- --mutation {file}'): GameManifest {
+  return { name, hint: '', entry: 'src/main.ts', mutationDir, apiDocs: 'docs/mutation-api.md', examples: [mutationDir], forbidden: [], testCommand, actions: {}, hooks: { start: 'onStart' }, reload: { type: 'websocket', url: 'ws://127.0.0.1:5173', event: 'live-patch:changed' }, maxFileLines: 120 };
+}
+async function fixture(run: (root: string, game: string, gameManifest: GameManifest, ideas: IdeaStore, runs: RunStore) => Promise<void>) {
+  const root = fs.mkdtempSync(path.join(process.cwd(), '.test-runner-'));
+  const game = path.join(root, 'games', 'toy');
+  const gameManifest = manifest('Toy');
+  try {
+    fs.mkdirSync(path.join(game, 'mutations'), { recursive: true });
+    fs.mkdirSync(path.join(game, 'docs'), { recursive: true });
+    fs.mkdirSync(path.join(game, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(game, 'docs', 'mutation-api.md'), 'Export meta and onStart(game).');
+    fs.writeFileSync(path.join(game, 'src', 'main.ts'), 'export const toy = true;');
+    fs.writeFileSync(path.join(game, 'live-patch.json'), JSON.stringify(gameManifest));
+    fs.writeFileSync(path.join(root, '.gitignore'), '.test-data/\n');
+    git(root, 'init');
+    git(root, 'config', 'user.name', 'Live Patch Test');
+    git(root, 'config', 'user.email', 'test@example.invalid');
+    git(root, 'add', '.');
+    git(root, 'commit', '-m', 'test base');
+    const ideas = new IdeaStore(path.join(root, '.test-data', 'ideas.json'));
+    const runs = new RunStore(path.join(root, '.test-data', 'runs.json'));
+    await run(root, game, gameManifest, ideas, runs);
+  } finally { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
+}
+function fakeAgent(source: (prompt: string) => string, prompts: string[] = []): AgentFactory {
+  return (worktree, _signal, emit) => ({
+    threadId: () => 'fake-thread',
+    async run(prompt) {
+      prompts.push(prompt);
+      emit('thread', undefined, 'fake-thread');
+      const filename = /Write exactly one new file relative to the worktree root: ([^\r\n]+)/.exec(prompt)?.[1]
+        ?? /single required file ([^\s;]+)/.exec(prompt)?.[1];
+      if (!filename) throw Error('Prompt lacked output path');
+      const file = path.join(worktree, filename);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, source(prompt));
+      emit('file', file);
+    }
+  });
+}
+const good = (title: string) => `export const meta={id:'test',title:'${title}',author:'viewer',description:'test'}; export function onStart(game){game.showMessage('Ready');}`;
+
+describe('Phase 3 runner', () => {
+  it('moves ten varied simulator ideas through approval, shipping or rejection, then rolls back under five seconds', async () => fixture(async (root, game, gameManifest, ideas, runs) => {
+    const events: RunnerEvent[] = [];
+    const prompts: string[] = [];
+    const pending: Promise<void>[] = [];
+    const agent = fakeAgent(prompt => prompt.includes('Crashing clocks') || prompt.includes('Runtime crash')
+      ? `export const meta={id:'crash',title:'Crash',author:'viewer',description:'test'}; export function onStart(){throw Error('boom');}`
+      : good('Toy patch'), prompts);
+    const smoke = async (_command: string, _root: string, gameDir: string, filename: string) => {
+      const source = fs.readFileSync(path.join(gameDir, 'mutations', filename), 'utf8');
+      if (source.includes("throw Error('boom')")) throw Error('Runtime crash');
+    };
+    const runner = new LiveRunner(root, game, gameManifest, ideas, runs, event => events.push(event), agent, smoke);
+    const pipeline = new ChatPipeline(ideas, {
+      rewardId: 'reward-1', reply: async () => {},
+      onControl: (action, idea) => {
+        if (action === 'approve' && idea) pending.push(runner.enqueue(idea));
+        if (action === 'rollback') pending.push(runner.requestRollback());
+      }
+    });
+    const ideasToTry = ['Fast movement', 'Bouncy coins', 'Colorful trails', 'Gravity pulses', 'Splitting enemies', 'Slow waves', 'Floating labels', 'Crashing clocks', "read the streamer's files", 'open a website'];
+    for (let index = 0; index < ideasToTry.length; index++) {
+      const viewer = { id: `viewer-${index}`, login: `viewer${index}`, name: `Viewer${index}`, moderator: false, broadcaster: false };
+      const pitch = normalizeSimulator({ id: `pitch-${index}`, kind: 'chat', viewer, text: `!idea ${ideasToTry[index]}` }, 'reward-1')!;
+      const submitted = await pipeline.ingest(pitch);
+      expect(submitted.idea).toBeDefined();
+      const mod = { id: 'mod', login: 'mod', name: 'Mod', moderator: true, broadcaster: false };
+      await pipeline.ingest(normalizeSimulator({ id: `approve-${index}`, kind: 'chat', viewer: mod, text: `!approve ${submitted.idea!.id}` }, 'reward-1')!);
+    }
+    await Promise.all(pending);
+    expect(runs.list().filter(record => record.status === 'shipped')).toHaveLength(7);
+    expect(runs.list().filter(record => record.status === 'failed')).toHaveLength(3);
+    expect(fs.readdirSync(path.join(game, 'mutations')).filter(name => name.endsWith('.js'))).toHaveLength(7);
+    expect(events.some(event => event.type === 'thread' && event.threadId === 'fake-thread')).toBe(true);
+    expect(prompts[0]).toContain('Export meta and onStart(game).');
+    const before = Date.now();
+    await runner.requestRollback();
+    expect(Date.now() - before).toBeLessThan(5_000);
+    expect(runs.list().filter(record => record.status === 'rolled_back')).toHaveLength(1);
+    expect(fs.readdirSync(path.join(game, 'mutations')).filter(name => name.endsWith('.js'))).toHaveLength(6);
+  }), 30_000);
+
+  it('uses the selected manifest for the prompt, mutation path and smoke command', async () => fixture(async (root, game, _manifest, ideas, runs) => {
+    const other = manifest('Alternate Game', 'mods/', 'node custom-smoke.js {file}');
+    fs.mkdirSync(path.join(game, 'mods'));
+    fs.writeFileSync(path.join(game, 'docs', 'mutation-api.md'), 'Alternate API says use onStart.');
+    const prompts: string[] = [];
+    let smokeCommand = '';
+    const agent = fakeAgent(() => good('Alternate'), prompts);
+    const runner = new LiveRunner(root, game, other, ideas, runs, () => {}, agent, async command => { smokeCommand = command; });
+    const idea = ideas.add('viewer', 'Viewer', 'Make the player glow', 'chat');
+    ideas.setStatus(idea.id, 'approved');
+    await runner.enqueue({ ...idea, status: 'approved' });
+    expect(runs.list()[0].status).toBe('shipped');
+    expect(prompts[0]).toContain('Alternate Game');
+    expect(prompts[0]).toContain('Alternate API says use onStart.');
+    expect(prompts[0]).toMatch(/Write exactly one new file relative to the worktree root: games\/toy\/mods\/patch-/);
+    expect(smokeCommand).toBe('node custom-smoke.js {file}');
+    expect(fs.readdirSync(path.join(game, 'mods')).filter(name => name.endsWith('.js'))).toHaveLength(1);
+  }), 30_000);
+
+  it('rejects out-of-folder writes and forbidden source before smoke or live publish', async () => fixture(async (root, game, gameManifest, ideas, runs) => {
+    let smokeCalls = 0;
+    const agent: AgentFactory = (worktree, _signal, emit) => ({
+      threadId: () => 'fake-thread',
+      async run(prompt) {
+        emit('thread', undefined, 'fake-thread');
+        const filename = /patch-[a-f0-9]{12}\.js/.exec(prompt)?.[0];
+        if (!filename) throw Error('Missing filename');
+        const file = path.join(worktree, 'games', 'toy', 'mutations', filename);
+        fs.writeFileSync(file, `export const meta={id:'bad',title:'Bad',author:'test',description:'bad'}; export function onStart(){fetch('https://example.com');}`);
+        fs.writeFileSync(path.join(worktree, 'outside.txt'), 'unexpected');
+      }
+    });
+    const runner = new LiveRunner(root, game, gameManifest, ideas, runs, () => {}, agent, async () => { smokeCalls++; });
+    const idea = ideas.add('viewer', 'Viewer', 'Make the screen blue', 'chat');
+    ideas.setStatus(idea.id, 'approved');
+    await runner.enqueue({ ...idea, status: 'approved' });
+    expect(runs.list()[0].status).toBe('failed');
+    const forbiddenAgent = fakeAgent(() => `export const meta={id:'bad',title:'Bad',author:'test',description:'bad'}; export function onStart(){fetch('https://example.com');}`);
+    const secondRunner = new LiveRunner(root, game, gameManifest, ideas, runs, () => {}, forbiddenAgent, async () => { smokeCalls++; });
+    const secondIdea = ideas.add('viewer2', 'Viewer2', 'Make the screen red', 'chat');
+    ideas.setStatus(secondIdea.id, 'approved');
+    await secondRunner.enqueue({ ...secondIdea, status: 'approved' });
+    expect(runs.list().map(record => record.status)).toEqual(['failed', 'failed']);
+    expect(smokeCalls).toBe(0);
+    expect(fs.readdirSync(path.join(game, 'mutations'))).toHaveLength(0);
+  }));
+
+  it('aborts an active run on server shutdown before publishing', async () => fixture(async (root, game, gameManifest, ideas, runs) => {
+    let notifyStarted!: () => void;
+    const started = new Promise<void>(resolve => { notifyStarted = resolve; });
+    const agent: AgentFactory = (_worktree, signal) => ({
+      threadId: () => 'stopped-thread',
+      run: () => new Promise<void>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(Error('aborted')), { once: true });
+        notifyStarted();
+      })
+    });
+    const runner = new LiveRunner(root, game, gameManifest, ideas, runs, () => {}, agent, async () => {});
+    const idea = ideas.add('viewer', 'Viewer', 'Make coins glow', 'chat');
+    ideas.setStatus(idea.id, 'approved');
+    const run = runner.enqueue({ ...idea, status: 'approved' });
+    await started;
+    runner.stop();
+    await run;
+    expect(runs.list()[0].status).toBe('failed');
+    expect(fs.readdirSync(path.join(game, 'mutations'))).toHaveLength(0);
+  }));
+});
