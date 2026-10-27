@@ -11,7 +11,7 @@ import { TwitchConnection } from './connection';
 import { forwardToGame, normalizeSimulator } from './events';
 import type { GameManifest } from '../manifest/schema';
 import { LiveRunner } from '../runner/runner';
-import { RunStore } from '../runner/store';
+import { RunStore, publicRun } from '../runner/store';
 
 function loadLocalEnv(root: string) {
   const file = path.join(root, '.env');
@@ -85,7 +85,9 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? '127.0.0.1'}`);
     const route = url.pathname;
     if (route === '/api/ideas' && req.method === 'GET') { json(res, 200, { ideas: store.list(), candidateIds: [1, 2, 3].map(number => store.candidate(number)?.id ?? null), rollbackRequests: store.rollbackRequests(), replies }); return; }
-    if (route === '/api/runs' && req.method === 'GET') { json(res, 200, { runs: runs.list() }); return; }
+    if (route === '/api/runs' && req.method === 'GET') {
+      json(res, 200, { runs: runs.list().map(publicRun) }); return;
+    }
     if (route === '/api/twitch/status' && req.method === 'GET') {
       json(res, 200, { configured: auth.configured(), rewardConfigured: Boolean(config.rewardId), broadcaster: auth.identity('broadcaster'), bot: auth.identity('bot'), eventsub: eventsub.status(), authIssue: connection.status(), chatIssue, simulator }); return;
     }

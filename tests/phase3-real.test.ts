@@ -27,22 +27,24 @@ const batchIdeas = [
 ];
 
 it.skipIf(!enabled)('uses the signed-in Codex SDK and real browser smoke gate for one simulator idea', async () => {
-  const fixture = fs.mkdtempSync(path.join(root, '.test-phase3-real-'));
+  const evaluation = path.join(root, '.live-patch', 'evaluations', `phase3-round1-${new Date().toISOString().replaceAll(/[:.]/g, '-')}`);
+  const fixture = path.join(evaluation, 'repo');
   const game = path.join(fixture, 'games', 'arena-survivor');
+  fs.mkdirSync(evaluation, { recursive: true });
+  process.stdout.write(`RUNNER EVALUATION ${evaluation}\n`);
   try {
-    fs.mkdirSync(path.dirname(game), { recursive: true });
+    execFileSync('git', ['clone', '--local', root, fixture], { cwd: root, stdio: 'ignore' });
     fs.cpSync(path.join(root, 'games', 'arena-survivor'), game, { recursive: true });
     const manifestFile = path.join(game, 'live-patch.json');
     const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8')) as GameManifest;
     manifest.testCommand = `npm --prefix ${root} run smoke -- --mutation {file}`;
     fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2));
-    fs.writeFileSync(path.join(fixture, '.gitignore'), '.test-data/\n');
+    fs.appendFileSync(path.join(fixture, '.gitignore'), '\n.test-data/\n');
     const git = (...args: string[]) => execFileSync('git', args, { cwd: fixture, encoding: 'utf8' });
-    git('init');
     git('config', 'user.name', 'Live Patch Evaluation');
     git('config', 'user.email', 'eval@example.invalid');
-    git('add', '.');
-    git('commit', '-m', 'evaluation base');
+    git('add', '-A');
+    git('commit', '--allow-empty', '-m', 'evaluation base');
     const ideas = new IdeaStore(path.join(fixture, '.test-data', 'ideas.json'));
     const runs = new RunStore(path.join(fixture, '.test-data', 'runs.json'));
     const runner = new LiveRunner(fixture, game, manifest, ideas, runs, event => {
@@ -61,13 +63,14 @@ it.skipIf(!enabled)('uses the signed-in Codex SDK and real browser smoke gate fo
       await pipeline.ingest(normalizeSimulator({ id: `approve-${index}`, kind: 'chat', viewer: mod, text: `!approve ${submitted.idea!.id}` }, 'sim-pitch')!);
       await pending;
       const result = runs.list()[index];
-      process.stdout.write(`RUNNER RESULT ${JSON.stringify({ idea: ideasToRun[index], status: result.status, durationMs: result.durationMs, threadId: result.threadId, error: result.error })}\n`);
+      process.stdout.write(`RUNNER RESULT ${JSON.stringify({ idea: ideasToRun[index], status: result.status, durationMs: result.durationMs, threadId: result.threadId, module: result.mutationName, error: result.error })}\n`);
     }
     const results = runs.list();
     const shipped = results.filter(result => result.status === 'shipped');
     const durations = shipped.map(result => result.durationMs!).sort((a, b) => a - b);
     const median = durations.length ? (durations[Math.floor((durations.length - 1) / 2)] + durations[Math.floor(durations.length / 2)]) / 2 : null;
     process.stdout.write(`RUNNER SUMMARY ${JSON.stringify({ total: results.length, shipped: shipped.length, medianIdeaToShippedMs: median })}\n`);
+    fs.writeFileSync(path.join(evaluation, 'results.json'), JSON.stringify({ ideas: ideasToRun.map((idea, index) => ({ idea, ...results[index] })), medianIdeaToShippedMs: median }, null, 2));
     expect(shipped.length).toBeGreaterThanOrEqual(batch ? 7 : 1);
     expect(shipped.every(result => result.threadId && result.durationMs! > 0)).toBe(true);
     const liveBeforeCrash = fs.readdirSync(path.join(game, manifest.mutationDir)).filter(name => name.endsWith('.js')).sort();
@@ -88,5 +91,5 @@ it.skipIf(!enabled)('uses the signed-in Codex SDK and real browser smoke gate fo
     expect(runs.list().at(-1)?.status).toBe('failed');
     expect(fs.readdirSync(path.join(game, manifest.mutationDir)).filter(name => name.endsWith('.js')).sort()).toEqual(liveBeforeCrash);
     process.stdout.write('RUNNER CRASH REJECTED by real browser smoke gate\n');
-  } finally { fs.rmSync(fixture, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
+  } finally { process.stdout.write(`RUNNER RETAINED ${evaluation}\n`); }
 }, 40 * 60_000);

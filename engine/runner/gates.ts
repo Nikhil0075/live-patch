@@ -5,8 +5,11 @@ import type { GameManifest } from '../manifest/schema';
 import { validateMutation } from '../mutation/validate';
 
 export function unsafeIdea(text: string): boolean {
-  return /\b(?:read|open|upload|send|steal|exfiltrate)\b.{0,60}\b(?:files?|websites?|urls?|secrets?|tokens?|credentials?|\.env)\b/i.test(text)
-    || /\b(?:fetch|https?:\/\/|localStorage|document\.|window\.)\b/i.test(text);
+  const privateTarget = /\b(?:files?|documents?|desktop|downloads?|home directory|appdata|secrets?|tokens?|passwords?|credentials?|api keys?|browser history|private data|environment variables?)\b/i;
+  const accessIntent = /\b(?:read|open|inspect|copy|grab|take|send|post|upload|steal|exfiltrate|use|check|search|scan|peek|retrieve|dump)\b/i;
+  const networkIntent = /\b(?:open|visit|connect|request|call|contact|browse|ping|post|send|fetch|upload|download)\b.{0,80}\b(?:websites?|sites?|server|endpoint|domain|web|internet|urls?|https?)\b/i;
+  return (privateTarget.test(text) && accessIntent.test(text)) || networkIntent.test(text)
+    || /https?:\/\/|www\.|\b[a-z][\w-]+\.(?:com|net|org|io|dev|tv)\b|\b[a-z]:\\|\/users\/|\/home\/|\.env\b|\blocalStorage\b|\bdocument\.|\bwindow\.|\bfetch\b/i.test(text);
 }
 
 function gitPaths(directory: string): string[] {

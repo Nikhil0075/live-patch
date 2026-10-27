@@ -8,6 +8,7 @@ const manifest = JSON.parse(fs.readFileSync(path.join(gameDirectory, 'live-patch
 const mutationDir = path.join(gameDirectory, manifest.mutationDir);
 const examples = fs.readdirSync(mutationDir).filter(name => name.endsWith('.js'));
 const chosen = process.env.MUTATION_FILE ? path.basename(process.env.MUTATION_FILE) : undefined;
+const combined = process.env.LIVE_PATCH_SMOKE_COMBINED === '1';
 
 test('Vite refuses the local OAuth token file', async ({ request }) => {
   const dataDir = process.env.LIVE_PATCH_TEST_DATA_DIR;
@@ -27,10 +28,10 @@ for (const example of chosen ? [chosen] : examples) test(`game plays for five se
   await expect(page.locator('#status')).toContainText('LIVE');
   await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().frame)).toBeGreaterThan(60);
   const baseline = await page.evaluate(() => (window as any).__livePatch.game.snapshot().frameRate as number);
-  await page.goto(`/?mutation=${encodeURIComponent(example)}`);
+  await page.goto(combined ? '/' : `/?mutation=${encodeURIComponent(example)}`);
   await expect(page.locator('#status')).toContainText('LIVE');
-  await expect(page.locator('#mutations li')).toHaveCount(1);
-  await expect(page.locator('#mutations li')).toContainText('active');
+  await expect(page.locator('#mutations li')).toHaveCount(combined ? examples.length : 1);
+  await expect.poll(async () => (await page.locator('#mutations li').allTextContents()).every(text => text.includes('· active'))).toBe(true);
   const start = await page.evaluate(() => (window as any).__livePatch.game.snapshot().frame);
   await page.keyboard.down('ArrowRight');
   await page.waitForTimeout(2500);
@@ -53,10 +54,27 @@ for (const example of chosen ? [chosen] : examples) test(`game plays for five se
   expect(state.entities.every((entity: {x:number;y:number;radius:number}) => [entity.x, entity.y, entity.radius].every(Number.isFinite))).toBe(true);
   expect(state.maxFrameGap).toBeLessThan(350);
   expect(state.frameRate).toBeGreaterThan(baseline * .55);
-  await expect(page.locator('#mutations li')).toContainText('active');
+  expect((await page.locator('#mutations li').allTextContents()).every(text => text.includes('· active'))).toBe(true);
   await expect(page.locator('#notice')).toBeEmpty();
   expect(errors).toEqual([]);
   expect(examples).toContain(example);
+});
+
+test('combined smoke detects a conflict that candidate-only smoke misses', async ({ page }) => {
+  const watcher = path.join(mutationDir, 'zz-conflict-watcher.js');
+  const candidate = path.join(mutationDir, 'zz-conflict-candidate.js');
+  try {
+    fs.writeFileSync(watcher, "export const meta={id:'watch',title:'Conflict Watch',author:'test',description:'test'}; export function onSpawn(game,e){if(e.origin==='zz-conflict-candidate.js')throw Error('patch conflict');}");
+    fs.writeFileSync(candidate, "export const meta={id:'candidate',title:'Conflict Candidate',author:'test',description:'test'};let done=false;export function onTick(game){if(!done&&game.state.elapsed>2){done=true;game.spawn('coin',100,100);}}");
+    await page.goto('/?mutation=zz-conflict-candidate.js');
+    await expect(page.locator('#mutations')).toContainText('Conflict Candidate · active');
+    await page.waitForTimeout(2500);
+    await expect(page.locator('#mutations')).toContainText('Conflict Candidate · active');
+    await page.goto('/');
+    await expect(page.locator('#mutations')).toContainText('Conflict Watch · active');
+    await expect(page.locator('#mutations')).toContainText('Conflict Watch · failed', { timeout: 8000 });
+    await expect(page.locator('#mutations')).toContainText('Conflict Candidate · active');
+  } finally { fs.rmSync(watcher, { force: true }); fs.rmSync(candidate, { force: true }); }
 });
 
 test('an endless hook loop is stopped without freezing the game', async ({ page }) => {

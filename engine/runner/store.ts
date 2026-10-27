@@ -16,7 +16,11 @@ export interface RunRecord {
   mutationName?: string;
   error?: string;
 }
-export interface RunnerEvent { runId: string; ideaId: string; type: 'started' | 'thread' | 'file' | 'testing' | 'passed' | 'failed' | 'shipped' | 'rolled_back'; at: string; message?: string; threadId?: string }
+export interface RunnerEvent { runId: string; ideaId: string; type: 'started' | 'sandbox_verified' | 'thread' | 'file' | 'testing' | 'passed' | 'failed' | 'shipped' | 'rolled_back'; at: string; message?: string; threadId?: string }
+
+export function publicRun(record: RunRecord) {
+  return { id: record.id, ideaId: record.ideaId, status: record.status, startedAt: record.startedAt, finishedAt: record.finishedAt, durationMs: record.durationMs, threadId: record.threadId, mutationName: record.mutationName, error: record.error ? 'Build failed; see local run record' : undefined };
+}
 
 export class RunStore {
   private records: RunRecord[];

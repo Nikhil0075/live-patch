@@ -8,12 +8,18 @@ import type { GameManifest } from '../manifest/schema';
 import type { Idea, IdeaStore } from '../pipeline/ideas';
 import { buildPrompt, gateCandidate, unsafeIdea } from './gates';
 import { RunStore, type RunRecord, type RunnerEvent } from './store';
+import { codexBinary, disabledMcpConfig, runnerConfig, runnerEnvironment, verifySandbox } from './sandbox';
 
 const RUN_TIMEOUT_MS = 3 * 60_000;
 const RUNNER_ROOT_NAME = 'live-patch-runner';
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', timeout: 20_000, maxBuffer: 1024 * 1024 }).trim();
+}
+function deleteBranch(root: string, branch: string) {
+  try { execFileSync('git', ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: root, stdio: 'ignore', timeout: 20_000 }); }
+  catch { return; }
+  git(root, 'branch', '-D', branch);
 }
 function within(parent: string, child: string): boolean {
   const relative = path.relative(parent, child);
@@ -23,11 +29,14 @@ function safeRemove(runnerRoot: string, directory: string) {
   if (!within(runnerRoot, directory)) throw Error('Runner cleanup path escaped its root');
   fs.rmSync(directory, { recursive: true, force: true });
 }
-function safeEnvironment(): Record<string, string> {
-  const allowed = ['PATH', 'Path', 'PATHEXT', 'SystemRoot', 'WINDIR', 'ComSpec', 'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'HOMEDRIVE', 'HOMEPATH', 'HOME', 'CODEX_HOME', 'OPENAI_API_KEY'];
-  return Object.fromEntries(allowed.filter(key => process.env[key]).map(key => [key, process.env[key]!]));
+function stripBuilderInstructions(directory: string) {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    if (entry.name === '.git') continue;
+    const file = path.join(directory, entry.name);
+    if (entry.name === '.codex' || entry.name === 'AGENTS.md' || entry.name === 'AGENTS.override.md') fs.rmSync(file, { recursive: entry.isDirectory(), force: true });
+    else if (entry.isDirectory()) stripBuilderInstructions(file);
+  }
 }
-
 export interface AgentSession {
   run(prompt: string): Promise<void>;
   threadId(): string | undefined;
@@ -35,14 +44,25 @@ export interface AgentSession {
 export type AgentFactory = (worktree: string, signal: AbortSignal, emit: (type: RunnerEvent['type'], message?: string, threadId?: string) => void) => AgentSession;
 
 export function codexAgent(worktree: string, signal: AbortSignal, emit: (type: RunnerEvent['type'], message?: string, threadId?: string) => void): AgentSession {
-  const codex = new Codex({ env: safeEnvironment(), config: { sandbox_workspace_write: { network_access: false } } });
+  const binary = codexBinary();
+  const environment = runnerEnvironment();
+  const mcpServers = disabledMcpConfig(binary, worktree, environment);
+  const codex = new Codex({ codexPathOverride: binary, env: environment, config: { ...runnerConfig, mcp_servers: mcpServers } });
   const thread: Thread = codex.startThread({ workingDirectory: worktree, sandboxMode: 'workspace-write', networkAccessEnabled: false, webSearchMode: 'disabled', approvalPolicy: 'never' });
+  let verified = false;
   return {
     threadId: () => thread.id ?? undefined,
     async run(prompt) {
+      if (!verified) {
+        await verifySandbox(binary, worktree, process.cwd(), environment, signal);
+        verified = true;
+        emit('sandbox_verified');
+      }
       const { events } = await thread.runStreamed(prompt, { signal });
       for await (const event of events) {
         if (event.type === 'thread.started') emit('thread', undefined, event.thread_id);
+        else if (event.type === 'item.started' && ['command_execution', 'mcp_tool_call', 'web_search'].includes(event.item.type))
+          throw Error(`Codex attempted an unavailable tool: ${event.item.type}`);
         else if (event.type === 'item.completed' && event.item.type === 'file_change')
           for (const change of event.item.changes) emit('file', change.path);
         else if (event.type === 'turn.failed' || event.type === 'error') throw Error(event.type === 'error' ? event.message : event.error.message);
@@ -57,7 +77,7 @@ function smoke(command: string, root: string, gameDirectory: string, filename: s
   if (!/^[\w .\/\\{}:-]+$/.test(command)) throw Error('Manifest testCommand contains unsupported shell characters');
   const shellCommand = command.replaceAll('{file}', filename);
   return new Promise((resolve, reject) => {
-    const child = spawn(shellCommand, { cwd: root, env: { ...process.env, LIVE_PATCH_GAME: gameDirectory, LIVE_PATCH_TEST_SERVER: '1' }, shell: true, windowsHide: true, detached: process.platform !== 'win32', signal });
+    const child = spawn(shellCommand, { cwd: root, env: { ...process.env, LIVE_PATCH_GAME: gameDirectory, LIVE_PATCH_TEST_SERVER: '1', LIVE_PATCH_SMOKE_COMBINED: '1' }, shell: true, windowsHide: true, detached: process.platform !== 'win32', signal });
     const killTree = () => {
       if (!child.pid) return;
       if (process.platform === 'win32') {
@@ -82,6 +102,7 @@ export class LiveRunner {
   private queue: Promise<void> = Promise.resolve();
   private runnerRoot: string;
   private activeAbort?: AbortController;
+  private rollbackEpoch = 0;
   private closed = false;
   constructor(
     private root: string,
@@ -95,22 +116,25 @@ export class LiveRunner {
   ) {
     const fingerprint = createHash('sha256').update(path.resolve(root)).digest('hex').slice(0, 12);
     this.runnerRoot = path.join(os.tmpdir(), RUNNER_ROOT_NAME, fingerprint);
+    this.recoverInterrupted();
   }
   enqueue(idea: Idea): Promise<void> {
     if (this.closed) return Promise.reject(Error('Runner is stopped'));
-    const task = this.queue.then(() => this.build(idea));
+    const epoch = this.rollbackEpoch;
+    const task = this.queue.then(() => this.build(idea, epoch));
     this.queue = task.catch(error => { console.error(`Runner idea ${idea.id} failed:`, error); });
     return task;
   }
   requestRollback(): Promise<void> {
     if (this.closed) return Promise.reject(Error('Runner is stopped'));
-    const task = this.queue.then(() => this.rollback());
-    this.queue = task.catch(error => { console.error('Runner rollback failed:', error); });
-    return task;
+    this.rollbackEpoch++;
+    this.activeAbort?.abort('Moderator requested rollback');
+    return Promise.resolve().then(() => this.rollback());
   }
-  stop() { this.closed = true; this.activeAbort?.abort(); }
+  stop() { this.closed = true; this.activeAbort?.abort('Server stopped'); }
   private emit(record: RunRecord, type: RunnerEvent['type'], message?: string, threadId?: string) {
-    this.onEvent({ runId: record.id, ideaId: record.ideaId, type, at: new Date().toISOString(), ...(message ? { message } : {}), ...(threadId ? { threadId } : {}) });
+    const publicMessage = type === 'file' && message ? path.basename(message) : type === 'failed' ? 'Build failed; see local run record' : message;
+    this.onEvent({ runId: record.id, ideaId: record.ideaId, type, at: new Date().toISOString(), ...(publicMessage ? { message: publicMessage } : {}), ...(threadId ? { threadId } : {}) });
   }
   private prepare(id: string): { directory: string; branch: string; gameRelative: string; game: string; pointer: string } {
     const directory = path.join(this.runnerRoot, id);
@@ -133,7 +157,8 @@ export class LiveRunner {
           return true;
         }
       });
-      git(directory, 'add', '--', gameRelative);
+      stripBuilderInstructions(directory);
+      git(directory, 'add', '-A');
       git(directory, 'commit', '--allow-empty', '-m', `live patch: snapshot ${id}`);
       return { directory, branch, gameRelative, game, pointer: fs.readFileSync(path.join(directory, '.git'), 'utf8') };
     } catch (error) {
@@ -145,8 +170,38 @@ export class LiveRunner {
     if (!within(this.runnerRoot, directory)) throw Error('Runner cleanup path escaped its root');
     try { git(this.root, 'worktree', 'remove', '--force', directory); } finally { if (fs.existsSync(directory)) safeRemove(this.runnerRoot, directory); }
   }
-  private async build(idea: Idea) {
+  private recoverInterrupted() {
+    const mutationDir = path.resolve(this.gameDirectory, this.manifest.mutationDir);
+    for (const record of this.runs.list().filter(item => item.gameDirectory === this.gameDirectory && item.status === 'building')) {
+      const candidate = path.join(mutationDir, `patch-${record.id.replaceAll('-', '').slice(0, 12)}.js`);
+      if (within(mutationDir, candidate) && fs.existsSync(candidate) && fs.lstatSync(candidate).isFile()) fs.rmSync(candidate);
+      record.status = 'failed';
+      record.error = 'Server restarted during build';
+      record.finishedAt = new Date().toISOString();
+      this.runs.upsert(record);
+      if (this.ideas.list().find(idea => idea.id === record.ideaId)?.status === 'building') this.ideas.setStatus(record.ideaId, 'failed');
+      this.emit(record, 'failed', record.error);
+      const directory = path.join(this.runnerRoot, record.id);
+      if (fs.existsSync(directory)) try { this.cleanup(directory); } catch (error) { console.error(`Runner recovery ${record.id} cleanup failed:`, error); }
+      try { git(this.root, 'worktree', 'prune'); } catch (error) { console.error(`Runner recovery ${record.id} prune failed:`, error); }
+      try { deleteBranch(this.root, record.branch ?? `live-patch/run-${record.id}`); } catch (error) { console.error(`Runner recovery ${record.id} branch cleanup failed:`, error); }
+    }
+    for (const record of this.runs.list().filter(item => item.gameDirectory === this.gameDirectory && item.status === 'shipped')) {
+      const target = record.mutationName ? path.join(mutationDir, record.mutationName) : '';
+      if (target && within(mutationDir, target) && !fs.existsSync(target)) {
+        record.status = 'rolled_back';
+        this.runs.upsert(record);
+      }
+      const idea = this.ideas.list().find(item => item.id === record.ideaId);
+      if (idea?.status === 'building' || (record.status === 'rolled_back' && idea?.status === 'shipped')) this.ideas.setStatus(record.ideaId, record.status);
+    }
+  }
+  private async build(idea: Idea, epoch: number) {
     if (this.closed) return;
+    if (epoch !== this.rollbackEpoch) {
+      if (this.ideas.list().find(item => item.id === idea.id)?.status === 'approved') this.ideas.setStatus(idea.id, 'failed');
+      return;
+    }
     if (idea.status !== 'approved' || this.ideas.list().find(item => item.id === idea.id)?.status !== 'approved') return;
     const id = randomUUID();
     const record: RunRecord = { id, ideaId: idea.id, gameDirectory: this.gameDirectory, status: 'building', startedAt: new Date().toISOString() };
@@ -157,7 +212,7 @@ export class LiveRunner {
     let publishedFile: string | undefined;
     const abort = new AbortController();
     this.activeAbort = abort;
-    const timeout = setTimeout(() => abort.abort(), RUN_TIMEOUT_MS);
+    const timeout = setTimeout(() => abort.abort('Run timed out after three minutes'), RUN_TIMEOUT_MS);
     try {
       if (unsafeIdea(idea.text)) throw Error('Idea asks for files, secrets or network access outside the mutation API');
       worktree = this.prepare(id);
@@ -183,7 +238,7 @@ export class LiveRunner {
           await this.smokeTest(this.manifest.testCommand, this.root, worktree.game, filename, abort.signal);
           const after = gateCandidate(worktree.directory, worktree.gameRelative, this.manifest, filename, worktree.pointer);
           if (after.source !== source) throw Error('Mutation changed during smoke test');
-          if (abort.signal.aborted || this.closed) throw Error('Run stopped before publish');
+          if (abort.signal.aborted || this.closed || epoch !== this.rollbackEpoch) throw Error('Run stopped before publish');
           this.emit(record, 'passed');
           git(worktree.directory, 'add', '--', path.relative(worktree.directory, candidate.file));
           git(worktree.directory, 'commit', '-m', `live patch: ${idea.id}`);
@@ -210,7 +265,7 @@ export class LiveRunner {
     } catch (error) {
       if (publishedFile && fs.existsSync(publishedFile)) fs.rmSync(publishedFile);
       record.status = 'failed';
-      record.error = abort.signal.aborted ? 'Run timed out after three minutes' : String(error).slice(0, 1000);
+      record.error = abort.signal.aborted ? String(abort.signal.reason) : String(error).slice(0, 1000);
       record.finishedAt = new Date().toISOString();
       this.runs.upsert(record);
       this.ideas.setStatus(idea.id, 'failed');
@@ -218,7 +273,10 @@ export class LiveRunner {
     } finally {
       clearTimeout(timeout);
       if (this.activeAbort === abort) this.activeAbort = undefined;
-      if (worktree) this.cleanup(worktree.directory);
+      if (worktree) try { this.cleanup(worktree.directory); } catch (error) { console.error(`Runner cleanup ${id} failed:`, error); }
+      if (record.status === 'failed') {
+        try { deleteBranch(this.root, record.branch ?? `live-patch/run-${id}`); } catch (error) { console.error(`Runner ${id} branch cleanup failed:`, error); }
+      }
     }
   }
   private rollback() {
@@ -228,19 +286,22 @@ export class LiveRunner {
     const target = path.resolve(this.gameDirectory, this.manifest.mutationDir, record.mutationName);
     const mutationDir = path.resolve(this.gameDirectory, this.manifest.mutationDir);
     if (!within(mutationDir, target)) throw Error('Rollback path escaped mutation directory');
+    if (fs.existsSync(target)) {
+      if (!fs.lstatSync(target).isFile()) throw Error('Rollback target is not a regular file');
+      fs.rmSync(target);
+    }
+    record.status = 'rolled_back';
+    this.runs.upsert(record);
+    this.ideas.setStatus(record.ideaId, 'rolled_back');
+    this.emit(record, 'rolled_back', record.mutationName);
     const directory = path.join(this.runnerRoot, `rollback-${randomUUID()}`);
     if (!within(this.runnerRoot, directory)) throw Error('Rollback worktree path escaped its root');
     fs.mkdirSync(this.runnerRoot, { recursive: true });
-    git(this.root, 'worktree', 'add', directory, record.branch);
     try {
+      git(this.root, 'worktree', 'add', directory, record.branch);
       git(directory, 'revert', '--no-edit', record.commit);
-      if (fs.existsSync(target)) {
-        if (!fs.lstatSync(target).isFile()) throw Error('Rollback target is not a regular file');
-        fs.rmSync(target);
-      }
-      record.status = 'rolled_back';
-      this.runs.upsert(record);
-      this.emit(record, 'rolled_back', record.mutationName);
-    } finally { this.cleanup(directory); }
+    } catch (error) {
+      console.error(`Runner rollback ${record.id} Git history failed after live removal:`, error);
+    } finally { if (fs.existsSync(directory)) this.cleanup(directory); }
   }
 }
