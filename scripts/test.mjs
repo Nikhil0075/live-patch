@@ -25,15 +25,18 @@ function freePort() {
 const root = process.cwd();
 const args = process.argv.slice(2);
 const smoke = args.includes('--smoke');
+const browserOnly = args.includes('--browser-only');
+const browserGrepIndex = args.indexOf('--browser-grep');
+const browserGrep = browserGrepIndex >= 0 ? args[browserGrepIndex + 1] : undefined;
 const flag = args.indexOf('--mutation');
-const selected = flag >= 0 ? args[flag + 1] : args.find(arg => !arg.startsWith('-'));
+const selected = smoke ? (flag >= 0 ? args[flag + 1] : args.find(arg => !arg.startsWith('-'))) : undefined;
 if (smoke && !selected) throw new Error('Usage: npm run smoke -- --mutation <file>');
 const gamePath = process.env.LIVE_PATCH_GAME || JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).livePatch.defaultGame;
 const directory = path.resolve(root, gamePath);
 const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'live-patch.json'), 'utf8'));
 if (smoke && !fs.existsSync(path.join(directory, manifest.mutationDir, path.basename(selected)))) throw new Error(`Mutation does not exist: ${selected}`);
 
-if (!smoke && await run('node_modules/vitest/vitest.mjs', ['run', '--config', 'vitest.config.ts'], { ...process.env, LIVE_PATCH_GAME: directory })) process.exit(1);
+if (!smoke && !browserOnly && await run('node_modules/vitest/vitest.mjs', ['run', '--config', 'vitest.config.ts'], { ...process.env, LIVE_PATCH_GAME: directory })) process.exit(1);
 
 const temp = fs.mkdtempSync(path.join(root, '.live-patch-test-'));
 process.env.LIVE_PATCH_DATA_DIR = path.join(temp, 'data');
@@ -52,7 +55,7 @@ try {
   const address = server.httpServer.address();
   if (!address || typeof address === 'string') throw new Error('No test server address');
   const env = { ...process.env, LIVE_PATCH_TEST_SERVER: '1', LIVE_PATCH_BASE_URL: `http://127.0.0.1:${address.port}`, LIVE_PATCH_TEST_GAME_DIR: isolatedGame, LIVE_PATCH_TEST_DATA_DIR: process.env.LIVE_PATCH_DATA_DIR, ...(selected ? { MUTATION_FILE: path.basename(selected) } : {}) };
-  const code = await run('node_modules/@playwright/test/cli.js', ['test', ...(smoke ? ['--grep', 'game plays'] : [])], env);
+  const code = await run('node_modules/@playwright/test/cli.js', ['test', ...(smoke ? ['--grep', 'game plays'] : browserGrep ? ['--grep', browserGrep] : [])], env);
   process.exitCode = code;
 } finally {
   await server?.close();

@@ -262,6 +262,7 @@ test('one crowded Space attack keeps unrelated patches active', async ({ page })
     for (let i = 0; i < 28; i++) game.apply({ type: 'spawn', args: ['enemy', x + 48 + i % 3, y + i % 3] }, 'crowd');
   });
   await page.keyboard.down('Space'); await page.waitForTimeout(100); await page.keyboard.up('Space');
+  expect(await page.evaluate(() => (window as any).__livePatch.game.snapshot().particles)).toBeLessThanOrEqual(64);
   await page.waitForTimeout(600);
   await expect(page.locator('#mutations li')).toHaveCount(3);
   for (const patch of ['Quick Feet', 'Gold Rush', 'Danger Zone']) await expect(page.locator('#mutations')).toContainText(`${patch} · active`);
@@ -419,6 +420,7 @@ test('studio navigation, setup and build library keep viewer data plain text', a
   await expect(page.locator('#setup-checks')).toContainText('Codex CLI and sign-in', { timeout: 20_000 });
   await expect(page.locator('.setup-step')).toHaveCount(6);
   await page.getByRole('button', { name: '3 Sandbox' }).click();
+  await expect(page.locator('#setup-checks')).toHaveAttribute('aria-busy', 'false', { timeout: 25_000 });
   await expect(page.getByRole('button', { name: 'Run sandbox self-test' })).toBeVisible();
   await page.getByRole('button', { name: '← Back' }).click();
   await expect(page.getByRole('button', { name: '2 Codex sign-in' })).toHaveAttribute('aria-current', 'step');

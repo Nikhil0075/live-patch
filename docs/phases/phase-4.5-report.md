@@ -24,7 +24,7 @@
 - [x] Mutation sound/effect actions are declared and throttled — unit and browser spam checks.
 - [x] Pitch queue, confirmation and plain-text rendering — browser coverage.
 - [x] Asset provenance — `games/arena-survivor/assets/CREDITS.md`; all art and audio are original code-drawn or synthesized assets.
-- [x] Full suite, TypeScript build and dependency audit — `npm test`: 50 unit passed (4 opt-in skipped), 32 browser passed; `npm run build` passed; `npm audit --audit-level=high`: 0 vulnerabilities after the round-two fix pass.
+- [x] Full suite, TypeScript build and dependency audit — after the round-three fixes, two consecutive `npm test` runs each passed 52 unit tests (4 opt-in skipped) and 32 browser tests; `npm run build` passed; `npm audit --audit-level=high` found 0 vulnerabilities.
 
 ## Deferred
 - Channel-point bets, original-versus-evolved comparison, chat rollback voting and reward refunds remain in Phase 5.
@@ -71,3 +71,10 @@ Visual checks: [signed-in Setup step](phase-4.5-visual/after-setup-r2.png) shows
 - P45-R2-06: **Fixed** — removed the duplicate Stream control heading beneath Go Live.
 
 The operator-only checks remain: real elevated sandbox setup and self-test, Twitch reconnect with the actual accounts, and a timed first-run setup plus practice round. Phase 2's live reward redemption also remains open.
+
+## Round 3 fix pass
+
+- P45-R3-01: **Fixed** — Arena Survivor now starts at most four bursts in a game frame, gives later bursts 8, 5, 3 and 2 particles, caps all particles at 64, and draws them in one color-grouped circle pass without a stroke per particle. A unit test covers 28 kills in one frame and the next-frame reset. The crowded Space-attack browser test asserts the cap and that Quick Feet, Gold Rush and Danger Zone stay active. It passed **5 of 5** isolated runs. Two consecutive full `npm test` runs then passed **52 unit / 32 browser** each. The first full attempt exposed a separate Setup test timing assumption; its wait now follows the loading state, and the focused Setup test and both subsequent full runs passed.
+- P45-R3-02: **Fixed** — isolated test and smoke servers skip the startup Setup precheck when `LIVE_PATCH_TEST_SERVER=1`; real operator servers still warm the checks. The Setup browser test waits for `aria-busy=false` before expecting actions that appear after checks load.
+
+The operator still needs to run elevated sandbox setup and its self-test, reconnect the real Twitch accounts through Setup, and time a fresh setup plus practice round. No tag was created.

@@ -4,6 +4,7 @@ import type { GameManifest } from '../../../engine/manifest/schema';
 import { defaultSettings, type StudioSettings } from '../../../engine/studio/settings';
 import { ArenaAudio, soundEvents, type SoundEvent } from './audio';
 import { createArenaTextures } from './art';
+import { maxParticles, ParticleBudget } from './particle-budget';
 
 const width = 960, height = 640;
 type Kind = 'enemy' | 'coin' | 'bomb' | 'fire';
@@ -30,6 +31,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
   let writeOrder = 0;
   const effects: { x: number; y: number; radius: number; color: number; life: number; owner?: string }[] = [];
   const particles: { x: number; y: number; vx: number; vy: number; life: number; color: number; owner?: string }[] = [];
+  const particleBudget = new ParticleBudget();
   let hitStop = 0, flashLife = 0, flashColor = 0xffffff;
   let flashTimes: number[] = [];
   const messages: { text: string; life: number; owner?: string }[] = [];
@@ -40,7 +42,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
   const snapshot = () => ({
     player: { ...player }, score, elapsed, runElapsed, frame, maxFrameGap, flashesLastSecond: flashTimes.filter(time => performance.now() - time < 1000).length,
     frameRate: recentFrames.length > 1 ? (recentFrames.length - 1) * 1000 / (recentFrames.at(-1)! - recentFrames[0]) : 60,
-    enemies: active('enemy').length, coins: active('coin').length, floatingTexts: floating.length,
+    enemies: active('enemy').length, coins: active('coin').length, floatingTexts: floating.length, particles: particles.length,
     entities: entities.filter(entity => entity.alive).slice(0, 100).map(({ id, kind, x, y, radius, vx, vy, tag }) => ({ id, kind, x, y, radius, vx, vy, tag }))
   });
 
@@ -79,8 +81,8 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
   }
   function burst(kind: string, x: number, y: number, owner?: string) {
     const color = kind === 'coin' ? 0xffd263 : kind === 'slime' ? 0xff7f9d : kind === 'celebration' ? 0x8bffcf : 0xffffff;
-    const count = Math.round(8 * settings.effectsIntensity);
-    for (let i = 0; i < count && particles.length < 160; i++) {
+    const count = particleBudget.take(frame, particles.length, Math.round(8 * settings.effectsIntensity));
+    for (let i = 0; i < count; i++) {
       const angle = Math.PI * 2 * i / Math.max(1, count), speed = 45 + Math.random() * 100;
       particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: .35 + Math.random() * .25, color, owner });
     }
@@ -159,7 +161,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       const length = Math.hypot(dx, dy) || 1; dx /= length; dy /= length;
       player.x = clamp(player.x + (dx * parameters.playerSpeed + parameters.gravityX) * dt, 22, width - 22);
       player.y = clamp(player.y + (dy * parameters.playerSpeed + parameters.gravityY) * dt, 22, height - 22);
-      if ((dx || dy) && frame % 3 === 0 && particles.length < 160) particles.push({ x: player.x - dx * 18, y: player.y - dy * 18, vx: -dx * 45, vy: -dy * 45, life: .32, color: 0x69ffd2 });
+      if ((dx || dy) && frame % 3 === 0 && particles.length < maxParticles) particles.push({ x: player.x - dx * 18, y: player.y - dy * 18, vx: -dx * 45, vy: -dy * 45, life: .32, color: 0x69ffd2 });
       if (this.keys.SPACE.isDown && attackClock === 0) {
         attackClock = .45; effects.push({ x: player.x, y: player.y, radius: 72, color: 0x5df0bc, life: .25 });
         audio.play('hit');
@@ -240,7 +242,10 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
         if (entity.kind === 'coin') { entity.sprite?.setScale((entity.radius * 3.6 / 112) * (.38 + .62 * Math.abs(Math.cos(elapsed * 4 + entity.id))), entity.radius * 3.6 / 112); g.fillStyle(0xffe17d, .3); g.fillCircle(entity.x, entity.y, entity.radius * 2.4); }
       }
       for (const effect of effects) { g.lineStyle(5, effect.color, Math.min(.9, effect.life)); g.strokeCircle(effect.x, effect.y, effect.radius * (1.3 - effect.life * .2)); g.lineStyle(2, 0xffffff, effect.life * .6); g.strokeCircle(effect.x, effect.y, effect.radius * .65); }
-      for (const particle of particles) { const alpha = Math.min(1, particle.life * 2.4); g.lineStyle(2.4, particle.color, alpha); g.lineBetween(particle.x - particle.vx * .035, particle.y - particle.vy * .035, particle.x + particle.vx * .035, particle.y + particle.vy * .035); g.fillStyle(0xffffff, alpha); g.fillCircle(particle.x, particle.y, 2.8); }
+      for (const color of [0xff7f9d, 0xffd263, 0x8bffcf, 0x69ffd2, 0xffffff]) {
+        g.fillStyle(color, .85);
+        for (const particle of particles) if (particle.color === color) g.fillCircle(particle.x, particle.y, Math.max(1, particle.life * 5));
+      }
       this.avatar.setPosition(player.x, player.y).setAlpha(invincible > 0 && frame % 8 < 4 ? .65 : 1);
       if (player.lives === 1) { g.lineStyle(32, 0xff3e5f, .25); g.strokeRect(0, 0, width, height); }
       if (flashLife > 0) { g.fillStyle(flashColor, Math.min(.18, flashLife)); g.fillRect(0, 0, width, height); }
