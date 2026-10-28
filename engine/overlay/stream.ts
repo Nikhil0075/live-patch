@@ -6,24 +6,35 @@ root.innerHTML = '<div class="stream-shell"><header><div class="brand">LIVE PATC
 
 async function refresh() {
   try {
-    const { round, runs, mutations } = await dashboardData();
+    const { round, runs, mutations, ideas, events } = await dashboardData();
     document.querySelector('#phase')!.textContent = `ROUND ${round.number} · ${round.phase.toUpperCase()}`;
     document.querySelector('#clock')!.textContent = roundClock(round.remainingMs);
     const patches = document.querySelector<HTMLElement>('#patches')!; patches.replaceChildren();
     for (const mutation of mutations.filter(item => !item.error).slice(-10)) {
       const pill = document.createElement('div'); pill.className = 'patch';
       const title = /title\s*:\s*['"`]([^'"`]{1,80})/.exec(mutation.source)?.[1] ?? mutation.name;
-      const author = /author\s*:\s*['"`]([^'"`]{1,80})/.exec(mutation.source)?.[1] ?? '';
-      appendText(pill, 'strong', title); if (author) appendText(pill, 'small', `@${author}`);
+      const run = runs.find(item => item.status === 'shipped' && item.mutationName === mutation.name);
+      const idea = ideas.find(item => item.id === run?.ideaId);
+      const fallbackAuthor = /author\s*:\s*['"`]([^'"`]{1,80})/.exec(mutation.source)?.[1] ?? '';
+      const credit = idea?.contributors?.map(name => `@${name}`).join(', ') ?? (idea ? `@${idea.authorName}` : fallbackAuthor ? `@${fallbackAuthor}` : '');
+      appendText(pill, 'strong', title); if (credit) appendText(pill, 'small', credit);
       patches.append(pill);
     }
     const latest = runs.at(-1);
     const work = document.querySelector<HTMLElement>('#work')!; work.replaceChildren();
     if (latest) {
       appendText(work, 'strong', latest.status.toUpperCase(), `run-status ${latest.status}`);
-      const idea = round.candidates.find(item => item.id === latest.ideaId);
+      const idea = ideas.find(item => item.id === latest.ideaId);
       appendText(work, 'p', idea?.spec ?? idea?.text ?? latest.mutationName ?? 'Patch run');
-      appendText(work, 'small', latest.error ?? (latest.durationMs ? `${Math.round(latest.durationMs / 1000)}s` : 'Waiting for next step'));
+      if (idea) appendText(work, 'small', idea.contributors?.map(name => `@${name}`).join(', ') ?? `@${idea.authorName}`);
+      const steps = events.filter(event => event.runId === latest.id).slice(-5);
+      for (const step of steps) {
+        const label = step.type === 'file' ? `File: ${step.message ?? 'mutation'}` : step.type === 'testing' ? 'Smoke test running' : step.type === 'passed' ? 'Smoke test passed' : step.type === 'sandbox_verified' ? 'Sandbox verified' : step.type === 'failed' ? 'Build failed' : step.type === 'shipped' ? 'Patch shipped' : '';
+        if (label) appendText(work, 'small', label, 'work-step');
+      }
+      if (!steps.length && latest.mutationName) appendText(work, 'small', `File: ${latest.mutationName}`);
+      if (latest.error) appendText(work, 'small', latest.error);
+      else if (latest.durationMs) appendText(work, 'small', `${Math.round(latest.durationMs / 1000)}s`);
     } else appendText(work, 'p', 'Waiting for a chat idea');
     const candidates = document.querySelector<HTMLElement>('#candidates')!; candidates.replaceChildren();
     const maxVotes = Math.max(1, ...round.candidates.map(item => item.votes.length));

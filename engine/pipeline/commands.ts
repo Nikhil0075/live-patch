@@ -45,7 +45,7 @@ export class ChatPipeline {
       const candidate = this.options.candidate ? this.options.candidate(number) : this.store.candidate(number);
       if (!candidate) return this.respond(event, command, 'There is no idea at that number yet.');
       const idea = this.store.vote(candidate.id, event.viewer.id)!;
-      await this.options.reply(`@${event.viewer.login} voted for ${number}. Voting is open for the latest three ideas.`, event);
+      await this.options.reply(`@${event.viewer.login} voted for ${number}. Voting is open for the current ballot.`, event);
       return { accepted: true, command, message: 'Vote recorded', idea };
     }
     if (!event.viewer.moderator && !event.viewer.broadcaster) return { accepted: false, command, message: 'Only a moderator or broadcaster can use that command.' };
@@ -59,7 +59,7 @@ export class ChatPipeline {
     if (!['submitted', 'shortlisted', 'voting'].includes(idea.status)) return this.respond(event, command, 'That idea is no longer pending.');
     const updated = this.store.setStatus(idea.id, command === 'approve' ? 'approved' : 'rejected')!;
     this.options.onControl?.(command as 'approve' | 'reject', updated);
-    await this.options.reply(`${command === 'approve' ? 'Approved' : 'Rejected'} idea by @${idea.authorName}: ${idea.text}`, event);
+    await this.options.reply(`${command === 'approve' ? 'Approved' : 'Rejected'} idea by @${idea.authorName}: ${idea.spec ?? idea.text}`, event);
     return { accepted: true, command, message: updated.status, idea: updated };
   }
   private async submit(event: InboundEvent, text: string, source: Idea['source'], now: number): Promise<Outcome> {

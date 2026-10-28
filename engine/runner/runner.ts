@@ -103,6 +103,7 @@ export class LiveRunner {
   private runnerRoot: string;
   private activeAbort?: AbortController;
   private rollbackEpoch = 0;
+  private cancellationReason = 'Cancelled by moderator rollback';
   private closed = false;
   constructor(
     private root: string,
@@ -129,9 +130,16 @@ export class LiveRunner {
     if (this.closed) return Promise.reject(Error('Runner is stopped'));
     const shipped = this.runs.lastShipped(this.gameDirectory);
     if (!shipped?.branch || !shipped.commit || !shipped.mutationName) return Promise.reject(Error('No shipped mutation to roll back'));
+    this.cancellationReason = 'Cancelled by moderator rollback';
     this.rollbackEpoch++;
     this.activeAbort?.abort('Moderator requested rollback');
     return Promise.resolve().then(() => this.rollback());
+  }
+  cancelBuild() {
+    if (this.closed) throw Error('Runner is stopped');
+    this.cancellationReason = 'Cancelled by operator';
+    this.rollbackEpoch++;
+    this.activeAbort?.abort(this.cancellationReason);
   }
   stop() { this.closed = true; this.activeAbort?.abort('Server stopped'); }
   private emit(record: RunRecord, type: RunnerEvent['type'], message?: string, threadId?: string) {
@@ -203,7 +211,7 @@ export class LiveRunner {
     if (epoch !== this.rollbackEpoch) {
       if (this.ideas.list().find(item => item.id === idea.id)?.status === 'approved') {
         const now = new Date().toISOString();
-        const record: RunRecord = { id: randomUUID(), ideaId: idea.id, gameDirectory: this.gameDirectory, status: 'failed', startedAt: now, finishedAt: now, error: 'Cancelled by moderator rollback' };
+        const record: RunRecord = { id: randomUUID(), ideaId: idea.id, gameDirectory: this.gameDirectory, status: 'failed', startedAt: now, finishedAt: now, error: this.cancellationReason };
         this.runs.upsert(record);
         this.ideas.setStatus(idea.id, 'failed');
         this.emit(record, 'failed', record.error);
@@ -222,6 +230,8 @@ export class LiveRunner {
     this.activeAbort = abort;
     const timeout = setTimeout(() => abort.abort('Run timed out after three minutes'), RUN_TIMEOUT_MS);
     try {
+      const relativeGame = path.relative(this.root, this.gameDirectory);
+      if (relativeGame.split(path.sep)[0] === 'builds') throw Error('Saved builds are play-only; return to the original game to build new patches');
       if (unsafeIdea(idea.text)) throw Error('Idea asks for files, secrets or network access outside the mutation API');
       worktree = this.prepare(id);
       record.branch = worktree.branch; this.runs.upsert(record);

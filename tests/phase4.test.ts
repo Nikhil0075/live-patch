@@ -44,7 +44,7 @@ describe('Phase 4 rounds and builds', () => {
       expect((await pipeline.ingest(event('early-vote', 'voter', '!vote 1'))).accepted).toBe(false);
       now += 60_000; round.advance();
       expect(round.snapshot().phase).toBe('vote');
-      expect(round.snapshot().candidates.map(idea => idea.text)).toEqual(['Add mechanic 4', 'Add mechanic 3', 'Add mechanic 2']);
+      expect(round.snapshot().candidates.map(idea => idea.text)).toEqual(['Add mechanic 1', 'Add mechanic 2', 'Add mechanic 3']);
       const fixed = round.snapshot().candidateIds;
       await pipeline.ingest(event('late-idea', 'late', '!idea Add mechanic 5'));
       expect(round.snapshot().candidateIds).toEqual(fixed);
@@ -82,17 +82,73 @@ describe('Phase 4 rounds and builds', () => {
     try {
       const first = ideas.add('a', 'Alice', 'Coins sparkle', 'chat'); round.triage(first);
       const second = ideas.add('b', 'Bob', 'Coins shimmer', 'chat'); round.triage(second);
-      const applied = await round.aiTriage({ review: async () => [
+      const preview = await round.aiTriage({ review: async () => [
         { id: first.id, decision: 'accept', spec: 'Make coins shine when collected.' },
         { id: second.id, decision: 'merge', duplicateId: first.id },
         { id: 'unknown', decision: 'reject' }
       ] });
-      expect(applied).toBe(2);
+      expect(preview).toHaveLength(2);
+      expect(ideas.list().find(idea => idea.id === first.id)?.spec).toBe('Coins sparkle');
+      expect(round.applyTriagePreview()).toBe(2);
       expect(ideas.list().find(idea => idea.id === first.id)?.spec).toBe('Make coins shine when collected.');
       expect(ideas.list().find(idea => idea.id === first.id)?.contributors).toEqual(['Alice', 'Bob']);
       expect(ideas.list().find(idea => idea.id === second.id)?.status).toBe('merged');
       round.advance();
       await expect(round.aiTriage({ review: async () => [] })).rejects.toThrow('pitch window');
+    } finally { round.stop(); }
+  }));
+
+  it('retires losing ideas and starts the next ballot with old queued pitches at zero votes', async () => fixture((root, ideas) => {
+    const round = new RoundCoordinator(path.join(root, 'data', 'rounds.json'), ideas);
+    try {
+      const entries = ['A', 'B', 'C', 'D'].map(letter => {
+        const idea = ideas.add(letter, letter, `Mechanic ${letter}`, 'chat'); round.triage(idea); return idea;
+      });
+      round.advance();
+      expect(round.snapshot().candidateIds).toEqual(entries.slice(0, 3).map(idea => idea.id));
+      ideas.vote(entries[0].id, 'voter-1'); ideas.vote(entries[0].id, 'voter-2');
+      round.advance();
+      const winner = ideas.setStatus(entries[1].id, 'approved')!;
+      round.approved(winner); round.runFinished(winner.id);
+      expect(ideas.list().find(idea => idea.id === entries[0].id)?.status).toBe('lost_vote');
+      expect(ideas.list().find(idea => idea.id === entries[2].id)?.status).toBe('lost_vote');
+      const next = ['E', 'F'].map(letter => { const idea = ideas.add(letter, letter, `Mechanic ${letter}`, 'chat'); round.triage(idea); return idea; });
+      round.advance();
+      expect(round.snapshot().candidateIds).toEqual([entries[3].id, ...next.map(idea => idea.id)]);
+      expect(round.snapshot().candidates.map(idea => idea.votes.length)).toEqual([0, 0, 0]);
+    } finally { round.stop(); }
+  }));
+
+  it('previews model decisions, rejects backward merges and caps proposed rejections', async () => fixture(async (root, ideas) => {
+    const round = new RoundCoordinator(path.join(root, 'data', 'rounds.json'), ideas);
+    try {
+      const entries = ['A', 'B', 'C', 'D'].map(letter => { const idea = ideas.add(letter, letter, `Pitch ${letter}`, 'chat'); round.triage(idea); return idea; });
+      const preview = await round.aiTriage({ review: async () => [
+        { id: entries[0].id, decision: 'merge', duplicateId: entries[1].id },
+        ...entries.slice(1).map(idea => ({ id: idea.id, decision: 'reject' as const }))
+      ] });
+      expect(preview).toHaveLength(2);
+      expect(preview.every(item => item.decision === 'reject')).toBe(true);
+      expect(ideas.list().every(idea => idea.status === 'shortlisted')).toBe(true);
+      round.discardTriagePreview();
+      expect(round.snapshot().triagePreview).toBeUndefined();
+      expect(ideas.list().every(idea => idea.status === 'shortlisted')).toBe(true);
+    } finally { round.stop(); }
+  }));
+
+  it('lets the operator leave a stuck building round without restarting', async () => fixture((root, ideas) => {
+    const round = new RoundCoordinator(path.join(root, 'data', 'rounds.json'), ideas);
+    try {
+      const idea = ideas.add('builder', 'Builder', 'Add a new wave', 'chat'); round.triage(idea);
+      round.advance(); round.advance();
+      round.approved(ideas.setStatus(idea.id, 'approved')!);
+      expect(() => round.advance()).toThrow('building');
+      round.forceNext();
+      expect(round.snapshot().phase).toBe('pitch');
+      expect(round.snapshot().number).toBe(2);
+      expect(round.snapshot().selectedId).toBeUndefined();
+      expect(ideas.list().find(item => item.id === idea.id)?.status).toBe('failed');
+      expect(() => round.forceNext()).toThrow('No build');
     } finally { round.stop(); }
   }));
 
@@ -105,7 +161,8 @@ describe('Phase 4 rounds and builds', () => {
     fs.writeFileSync(path.join(game, 'mutations', 'patch-aaaaaaaaaaaa.js'), 'export const meta = {}');
     fs.writeFileSync(path.join(game, 'mutations', 'patch-bbbbbbbbbbbb.js'), 'export const meta = {}');
     fs.writeFileSync(path.join(game, '.env'), 'PRIVATE=secret');
-    const idea = ideas.add('a', '<script>Alice</script>', 'Coins give 3 points', 'chat');
+    const idea = ideas.add('a', '<script>Alice</script> [free](https://example.org)', 'Coins give 3 points', 'chat');
+    ideas.setSpec(idea.id, 'Coins give 3 points ![](https://example.org/image.png)');
     const copy = ideas.add('b', 'Bob', 'Coins give 3 points!', 'chat'); ideas.merge(copy.id, idea.id);
     runs.upsert({ id: 'run-a', ideaId: idea.id, gameDirectory: game, status: 'shipped', mutationName: 'patch-aaaaaaaaaaaa.js', startedAt: new Date().toISOString() });
     const result = saveBuild(root, game, { name: 'Toy', mutationDir: 'mutations' } as GameManifest, ideas, runs);
@@ -113,6 +170,8 @@ describe('Phase 4 rounds and builds', () => {
     expect(notes).toContain('Coins give 3 points');
     expect(notes).toContain('Bob');
     expect(notes).not.toContain('<script>');
+    expect(notes).not.toContain('[free](');
+    expect(notes).not.toContain('![](');
     expect(fs.existsSync(path.join(result.directory, 'game', '.env'))).toBe(false);
     expect(fs.existsSync(path.join(result.directory, 'game', 'mutations', 'patch-aaaaaaaaaaaa.js'))).toBe(true);
     expect(fs.existsSync(path.join(result.directory, 'game', 'mutations', 'patch-bbbbbbbbbbbb.js'))).toBe(false);

@@ -20,7 +20,8 @@ export interface RunnerEvent { runId: string; ideaId: string; type: 'started' | 
 
 export function publicFailure(error?: string): string | undefined {
   if (!error) return undefined;
-  if (error === 'Cancelled by moderator rollback') return error;
+  if (error === 'Cancelled by moderator rollback' || error === 'Cancelled by operator') return error;
+  if (error.startsWith('Error: Saved builds are play-only')) return 'Saved builds are play-only; return to the original game to build new patches';
   if (/Codex sandbox cannot write in its worktree|Codex sandbox can write outside its worktree|Sandbox probe path already exists/.test(error))
     return 'Sandbox setup failed; see README and local run record';
   return 'Build failed; see local run record';

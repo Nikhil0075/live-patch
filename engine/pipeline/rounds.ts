@@ -3,7 +3,7 @@ import path from 'node:path';
 import { unsafeIdea } from '../runner/gates';
 import type { Idea } from './ideas';
 import { IdeaStore } from './ideas';
-import type { TriageModel } from './triage';
+import type { TriageDecision, TriageModel } from './triage';
 
 export type RoundPhase = 'pitch' | 'vote' | 'approval' | 'building' | 'paused';
 interface RoundState {
@@ -15,6 +15,7 @@ interface RoundState {
   selectedId?: string;
   pausedFrom?: Exclude<RoundPhase, 'paused'>;
   remainingMs?: number;
+  triagePreview?: TriageDecision[];
 }
 export interface RoundSnapshot extends Omit<RoundState, 'remainingMs'> {
   candidates: Idea[];
@@ -49,39 +50,65 @@ export class RoundCoordinator {
   }
   canVote() { return this.state.phase === 'vote'; }
   triage(idea: Idea): void {
+    delete this.state.triagePreview;
     if (unsafeIdea(idea.text)) { this.ideas.setStatus(idea.id, 'rejected'); this.publish(); return; }
-    const duplicate = this.ideas.list().find(other => other.id !== idea.id && other.status !== 'rejected' && other.status !== 'merged' && norm(other.text) === norm(idea.text));
+    const duplicate = this.ideas.list().find(other => other.id !== idea.id && ['submitted', 'shortlisted', 'voting'].includes(other.status) && norm(other.text) === norm(idea.text));
     if (duplicate) { this.ideas.merge(idea.id, duplicate.id); this.publish(); return; }
     this.ideas.setSpec(idea.id, idea.text.replace(/\s+/g, ' ').trim().slice(0, 160));
     this.ideas.setStatus(idea.id, 'shortlisted');
     this.publish();
   }
-  async aiTriage(model: TriageModel): Promise<number> {
+  async aiTriage(model: TriageModel): Promise<TriageDecision[]> {
     if (this.state.phase !== 'pitch') throw Error('AI triage is available during the pitch window');
     const pending = this.ideas.list().filter(idea => ['submitted', 'shortlisted'].includes(idea.status)).slice(-12);
-    if (!pending.length) return 0;
+    if (!pending.length) return [];
     const decisions = await model.review(pending);
     if (this.state.phase !== 'pitch') throw Error('Round changed while AI triage was running');
-    const ids = new Set(pending.map(idea => idea.id));
-    let applied = 0;
+    const proposals: TriageDecision[] = [];
+    let rejected = 0;
     for (const item of decisions) {
-      if (!ids.has(item.id) || !['accept', 'reject', 'merge'].includes(item.decision)) continue;
+      const index = pending.findIndex(idea => idea.id === item.id);
+      if (index < 0 || proposals.some(proposal => proposal.id === item.id)) continue;
+      if (item.decision === 'merge' && item.duplicateId && pending.findIndex(idea => idea.id === item.duplicateId) < index && pending.some(idea => idea.id === item.duplicateId))
+        proposals.push({ id: item.id, decision: 'merge', duplicateId: item.duplicateId });
+      else if (item.decision === 'reject' && rejected < 2) { proposals.push({ id: item.id, decision: 'reject' }); rejected++; }
+      else if (item.decision === 'accept' && typeof item.spec === 'string' && item.spec.trim())
+        proposals.push({ id: item.id, decision: 'accept', spec: item.spec.replace(/[\r\n\x00-\x1f]+/g, ' ').trim().slice(0, 160) });
+    }
+    this.state.triagePreview = proposals;
+    this.publish();
+    return proposals;
+  }
+  applyTriagePreview(): number {
+    if (this.state.phase !== 'pitch' || !this.state.triagePreview) throw Error('No triage preview to apply');
+    const proposals = this.state.triagePreview;
+    const rejectedIds = new Set(proposals.filter(item => item.decision === 'reject').map(item => item.id));
+    let applied = 0;
+    for (const item of proposals) {
       const current = this.ideas.list().find(idea => idea.id === item.id);
       if (!current || !['submitted', 'shortlisted'].includes(current.status)) continue;
-      if (item.decision === 'merge' && item.duplicateId && ids.has(item.duplicateId) && item.duplicateId !== item.id) {
-        this.ideas.merge(item.id, item.duplicateId); applied++;
-      } else if (item.decision === 'reject') { this.ideas.setStatus(item.id, 'rejected'); applied++; }
-      else if (item.decision === 'accept' && typeof item.spec === 'string' && item.spec.trim()) {
-        this.ideas.setSpec(item.id, item.spec.replace(/[\r\n\x00-\x1f]+/g, ' ').trim().slice(0, 160)); applied++;
-      }
+      if (item.decision === 'merge' && item.duplicateId && !rejectedIds.has(item.duplicateId) && this.ideas.list().some(idea => idea.id === item.duplicateId && ['submitted', 'shortlisted'].includes(idea.status))) { this.ideas.merge(item.id, item.duplicateId); applied++; }
+      else if (item.decision === 'reject') { this.ideas.setStatus(item.id, 'rejected'); applied++; }
+      else if (item.decision === 'accept' && item.spec) { this.ideas.setSpec(item.id, item.spec); applied++; }
     }
+    delete this.state.triagePreview;
     this.publish();
     return applied;
+  }
+  discardTriagePreview() {
+    if (!this.state.triagePreview) return;
+    delete this.state.triagePreview; this.publish();
   }
   approved(idea: Idea) {
     this.state.phase = 'building'; this.state.deadlineAt = null; this.state.selectedId = idea.id; this.publish();
   }
   runFinished(ideaId: string) { if (this.state.phase === 'building' && this.state.selectedId === ideaId) this.startPitch(true); }
+  forceNext() {
+    if (this.state.phase !== 'building' && !(this.state.phase === 'paused' && this.state.pausedFrom === 'building')) throw Error('No build to cancel');
+    const selected = this.state.selectedId && this.ideas.list().find(idea => idea.id === this.state.selectedId);
+    if (selected && ['approved', 'building'].includes(selected.status)) this.ideas.setStatus(selected.id, 'failed');
+    this.startPitch(true);
+  }
   pause() {
     if (this.state.phase === 'paused') return;
     this.state.remainingMs = this.state.deadlineAt === null ? undefined : Math.max(0, this.state.deadlineAt - this.now());
@@ -97,9 +124,11 @@ export class RoundCoordinator {
     if (this.state.phase === 'paused') throw Error('Resume the round before advancing');
     if (this.state.phase === 'building') throw Error('A patch is building');
     if (this.state.phase === 'pitch') {
-      const candidates = this.ideas.list().filter(idea => ['submitted', 'shortlisted', 'voting'].includes(idea.status)).slice(-3).reverse();
+      delete this.state.triagePreview;
+      const candidates = this.ideas.list().filter(idea => ['submitted', 'shortlisted'].includes(idea.status)).slice(0, 3);
       if (!candidates.length) { this.state.deadlineAt = this.now() + PITCH_MS; this.publish(); return; }
       this.state.candidateIds = candidates.map(idea => idea.id);
+      this.ideas.clearVotes(this.state.candidateIds);
       for (const idea of candidates) this.ideas.setStatus(idea.id, 'voting');
       this.state.phase = 'vote'; this.state.deadlineAt = this.now() + VOTE_MS; this.publish(); return;
     }
@@ -110,8 +139,11 @@ export class RoundCoordinator {
     if (this.state.deadlineAt !== null && this.now() >= this.state.deadlineAt) this.advance();
   }
   private startPitch(increment: boolean) {
+    for (const id of this.state.candidateIds) {
+      if (this.ideas.list().find(idea => idea.id === id)?.status === 'voting') this.ideas.setStatus(id, 'lost_vote');
+    }
     if (increment) this.state.number++;
-    this.state.phase = 'pitch'; this.state.deadlineAt = this.now() + PITCH_MS; this.state.candidateIds = []; delete this.state.selectedId;
+    this.state.phase = 'pitch'; this.state.deadlineAt = this.now() + PITCH_MS; this.state.candidateIds = []; delete this.state.selectedId; delete this.state.triagePreview;
     this.publish();
   }
   private publish() {

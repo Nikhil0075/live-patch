@@ -12,7 +12,7 @@ import { TwitchConnection } from './connection';
 import { forwardToGame, normalizeSimulator } from './events';
 import type { GameManifest } from '../manifest/schema';
 import { LiveRunner } from '../runner/runner';
-import { RunStore, publicRun } from '../runner/store';
+import { RunStore, publicRun, type RunnerEvent } from '../runner/store';
 import { RoundCoordinator } from '../pipeline/rounds';
 import { saveBuild } from '../overlay/builds';
 import { CodexTriage } from '../pipeline/triage';
@@ -53,8 +53,10 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
   const auth = new TwitchAuth(config, path.join(dataDir, 'tokens.json'));
   const store = new IdeaStore(path.join(dataDir, 'ideas.json'));
   const runs = new RunStore(path.join(dataDir, 'runs.json'));
+  const progress: RunnerEvent[] = [];
   let rounds: RoundCoordinator;
   const runner = new LiveRunner(root, gameDirectory, manifest, store, runs, event => {
+    progress.push(event); if (progress.length > 120) progress.shift();
     server.ws.send({ type: 'custom', event: 'live-patch:runner', data: event });
     if (event.type === 'shipped' || event.type === 'failed') rounds?.runFinished(event.ideaId);
   });
@@ -108,7 +110,10 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
         if (body.action === 'pause') rounds.pause();
         else if (body.action === 'resume') rounds.resume();
         else if (body.action === 'advance') rounds.advance();
-        else if (body.action === 'triage') { const applied = await rounds.aiTriage(new CodexTriage()); json(res, 200, { applied, round: rounds.snapshot() }); return; }
+        else if (body.action === 'triage') { const preview = await rounds.aiTriage(new CodexTriage()); json(res, 200, { preview, round: rounds.snapshot() }); return; }
+        else if (body.action === 'triage-apply') { const applied = rounds.applyTriagePreview(); json(res, 200, { applied, round: rounds.snapshot() }); return; }
+        else if (body.action === 'triage-discard') rounds.discardTriagePreview();
+        else if (body.action === 'force-next') { rounds.forceNext(); runner.cancelBuild(); }
         else if (body.action === 'save') { json(res, 200, saveBuild(root, gameDirectory, manifest, store, runs)); return; }
         else if (['approve', 'reject', 'rollback'].includes(body.action ?? '')) {
           const text = body.action === 'rollback' ? '!rollback' : `!${body.action} ${body.ideaId ?? ''}`;
@@ -122,6 +127,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
     if (route === '/api/runs' && req.method === 'GET') {
       json(res, 200, { runs: runs.list().map(publicRun) }); return;
     }
+    if (route === '/api/runner-events' && req.method === 'GET') { json(res, 200, { events: progress }); return; }
     if (route === '/api/twitch/status' && req.method === 'GET') {
       json(res, 200, { configured: auth.configured(), rewardConfigured: Boolean(config.rewardId), broadcaster: auth.identity('broadcaster'), bot: auth.identity('bot'), eventsub: eventsub.status(), authIssue: connection.status(), chatIssue, simulator }); return;
     }

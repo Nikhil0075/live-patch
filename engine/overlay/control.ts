@@ -2,14 +2,14 @@ import './control.css';
 import { appendText, dashboardData, roundClock } from './shared';
 
 const root = document.querySelector<HTMLDivElement>('#control')!;
-root.innerHTML = '<main><header><div><p class="eyebrow">LIVE PATCH / OPERATOR</p><h1>Stream control</h1></div><nav><a href="/">Game</a><a href="/overlay.html">Overlay</a><a href="/simulator.html">Simulator</a></nav></header><div class="grid"><section><h2>Round</h2><p id="round"></p><div class="actions"><button data-action="pause">Pause</button><button data-action="resume">Resume</button><button data-action="advance">Next stage</button><button data-action="triage">AI triage pitches</button></div><p class="hint">Pitch: 60 seconds · Vote: 45 seconds · Approval waits for a moderator. AI triage is optional; basic safety and duplicate checks run immediately.</p><div id="candidates"></div></section><section><h2>Codex runs</h2><div id="runs"></div><h2>Active patches</h2><div id="patches"></div><div class="actions"><button data-action="rollback" class="danger">Roll back latest</button><button data-action="save">Save build and patch notes</button></div><h2>Saved builds</h2><div id="builds"></div></section></div><p id="notice" role="status"></p></main>';
+root.innerHTML = '<main><header><div><p class="eyebrow">LIVE PATCH / OPERATOR</p><h1>Stream control</h1></div><nav><a href="/">Game</a><a href="/overlay.html">Overlay</a><a href="/simulator.html">Simulator</a></nav></header><div class="grid"><section><h2>Round</h2><p id="round"></p><div class="actions"><button data-action="pause">Pause</button><button data-action="resume">Resume</button><button data-action="advance">Next stage</button><button data-action="triage">Preview AI triage</button><button data-action="force-next" class="danger">Cancel build and next round</button></div><p class="hint">Pitch: 60 seconds · Vote: 45 seconds · Approval waits for a moderator. Ballot slots use the oldest pending pitches first.</p><div id="triage-preview"></div><div id="candidates"></div></section><section><h2>Codex runs</h2><div id="runs"></div><h2>Active patches</h2><div id="patches"></div><div class="actions"><button data-action="rollback" class="danger">Roll back latest</button><button data-action="save">Save build and patch notes</button></div><h2>Saved builds</h2><div id="builds"></div></section></div><p id="notice" role="status"></p></main>';
 
 async function action(name: string, ideaId?: string) {
   const notice = document.querySelector('#notice')!;
   try {
     const response = await fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: name, ideaId }) });
-    const data = await response.json() as { error?: string; message?: string; id?: string; applied?: number };
-    notice.textContent = response.ok ? (data.message ?? (data.id ? `Saved build ${data.id}` : data.applied !== undefined ? `AI triage updated ${data.applied} pitch(es)` : `${name} complete`)) : (data.error ?? data.message ?? `HTTP ${response.status}`);
+    const data = await response.json() as { error?: string; message?: string; id?: string; applied?: number; preview?: unknown[] };
+    notice.textContent = response.ok ? (data.message ?? (data.id ? `Saved build ${data.id}` : data.preview ? `Review ${data.preview.length} AI suggestion(s) below` : data.applied !== undefined ? `AI triage updated ${data.applied} pitch(es)` : `${name} complete`)) : (data.error ?? data.message ?? `HTTP ${response.status}`);
     await refresh();
   } catch (error) { notice.textContent = String(error); }
 }
@@ -20,8 +20,22 @@ root.addEventListener('click', event => {
 
 async function refresh() {
   try {
-    const { round, runs, mutations } = await dashboardData();
+    const { round, runs, mutations, ideas } = await dashboardData();
     document.querySelector('#round')!.textContent = `Round ${round.number} · ${round.phase.toUpperCase()} · ${roundClock(round.remainingMs)}`;
+    const preview = document.querySelector<HTMLElement>('#triage-preview')!; preview.replaceChildren();
+    if (round.triagePreview?.length) {
+      appendText(preview, 'h3', 'AI triage preview');
+      for (const proposal of round.triagePreview) {
+        const original = ideas.find(idea => idea.id === proposal.id);
+        const target = ideas.find(idea => idea.id === proposal.duplicateId);
+        appendText(preview, 'p', `${original?.text ?? proposal.id} → ${proposal.decision === 'accept' ? proposal.spec : proposal.decision === 'merge' ? `merge into ${target?.text ?? proposal.duplicateId}` : 'reject'}`);
+      }
+      const actions = document.createElement('div'); actions.className = 'actions';
+      for (const [name, label] of [['triage-apply', 'Apply suggestions'], ['triage-discard', 'Discard suggestions']]) {
+        const button = document.createElement('button'); button.dataset.action = name; button.textContent = label; actions.append(button);
+      }
+      preview.append(actions);
+    }
     const candidates = document.querySelector<HTMLElement>('#candidates')!; candidates.replaceChildren();
     for (const [index, idea] of round.candidates.entries()) {
       const card = document.createElement('article');

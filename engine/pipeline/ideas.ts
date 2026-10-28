@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-export const ideaStatuses = ['submitted', 'shortlisted', 'voting', 'approved', 'building', 'shipped', 'rolled_back', 'failed', 'rejected', 'merged'] as const;
+export const ideaStatuses = ['submitted', 'shortlisted', 'voting', 'approved', 'building', 'shipped', 'rolled_back', 'failed', 'rejected', 'merged', 'lost_vote'] as const;
 export type IdeaStatus = typeof ideaStatuses[number];
 export interface Idea {
   id: string;
@@ -52,6 +52,11 @@ export class IdeaStore {
     idea.status = 'merged'; idea.mergedInto = target.id; idea.updatedAt = new Date().toISOString();
     target.contributors = [...new Set([...(target.contributors ?? [target.authorName]), idea.authorName])];
     target.updatedAt = new Date().toISOString(); this.save();
+  }
+  clearVotes(ids: string[]): void {
+    const selected = new Set(ids);
+    for (const idea of this.data.ideas) if (selected.has(idea.id)) idea.votes = [];
+    this.save();
   }
   vote(id: string, viewerId: string): Idea | undefined {
     const idea = this.data.ideas.find(item => item.id === id);

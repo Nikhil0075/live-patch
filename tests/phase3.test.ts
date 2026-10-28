@@ -111,15 +111,29 @@ describe('Phase 3 runner', () => {
     const agent = fakeAgent(() => good('Alternate'), prompts);
     const runner = new LiveRunner(root, game, other, ideas, runs, () => {}, agent, async command => { smokeCommand = command; });
     const idea = ideas.add('viewer', 'Viewer', 'Make the player glow', 'chat');
-    ideas.setStatus(idea.id, 'approved');
-    await runner.enqueue({ ...idea, status: 'approved' });
+    ideas.setSpec(idea.id, 'Draw a blue ring around the player');
+    const approved = ideas.setStatus(idea.id, 'approved')!;
+    await runner.enqueue(approved);
     expect(runs.list()[0].status).toBe('shipped');
     expect(prompts[0]).toContain('Alternate Game');
     expect(prompts[0]).toContain('Alternate API says use onStart.');
+    expect(prompts[0]).toContain('Approved mechanic (implement this exact voted-on specification): "Draw a blue ring around the player"');
+    expect(prompts[0]).toContain('Original viewer pitch (context only; the approved mechanic above takes precedence): "Make the player glow"');
     expect(prompts[0]).toMatch(/Write exactly one new file relative to the worktree root: games\/toy\/mods\/patch-/);
     expect(smokeCommand).toBe('node custom-smoke.js {file}');
     expect(fs.readdirSync(path.join(game, 'mods')).filter(name => name.endsWith('.js'))).toHaveLength(1);
   }), 30_000);
+
+  it('refuses to build in a reopened saved build with a clear result', async () => fixture(async (root, _game, gameManifest, ideas, runs) => {
+    const savedGame = path.join(root, 'builds', 'saved-one', 'game');
+    fs.mkdirSync(path.join(savedGame, 'mutations'), { recursive: true });
+    const runner = new LiveRunner(root, savedGame, gameManifest, ideas, runs, () => {}, fakeAgent(() => good('Unused')), async () => {});
+    const idea = ideas.add('viewer', 'Viewer', 'Give coins a glow', 'chat');
+    await runner.enqueue(ideas.setStatus(idea.id, 'approved')!);
+    expect(runs.list()[0].status).toBe('failed');
+    expect(publicRun(runs.list()[0]).error).toMatch(/Saved builds are play-only/);
+    expect(fs.readdirSync(path.join(savedGame, 'mutations'))).toHaveLength(0);
+  }));
 
   it('rejects out-of-folder writes and forbidden source before smoke or live publish', async () => fixture(async (root, game, gameManifest, ideas, runs) => {
     let smokeCalls = 0;
@@ -167,6 +181,29 @@ describe('Phase 3 runner', () => {
     runner.stop();
     await run;
     expect(runs.list()[0].status).toBe('failed');
+    expect(fs.readdirSync(path.join(game, 'mutations'))).toHaveLength(0);
+  }));
+
+  it('cancels an operator-stopped build and queued work without publishing', async () => fixture(async (root, game, gameManifest, ideas, runs) => {
+    let notifyStarted!: () => void;
+    const started = new Promise<void>(resolve => { notifyStarted = resolve; });
+    const agent: AgentFactory = (_worktree, signal) => ({
+      threadId: () => 'stopped-thread',
+      run: () => new Promise<void>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(Error('aborted')), { once: true });
+        notifyStarted();
+      })
+    });
+    const runner = new LiveRunner(root, game, gameManifest, ideas, runs, () => {}, agent, async () => {});
+    const first = ideas.add('viewer1', 'Viewer 1', 'Make coins glow', 'chat');
+    const second = ideas.add('viewer2', 'Viewer 2', 'Make enemies glow', 'chat');
+    const building = runner.enqueue(ideas.setStatus(first.id, 'approved')!);
+    await started;
+    const queued = runner.enqueue(ideas.setStatus(second.id, 'approved')!);
+    runner.cancelBuild();
+    await Promise.all([building, queued]);
+    expect(runs.list().map(run => run.status)).toEqual(['failed', 'failed']);
+    expect(runs.list().find(run => run.ideaId === second.id)?.error).toBe('Cancelled by operator');
     expect(fs.readdirSync(path.join(game, 'mutations'))).toHaveLength(0);
   }));
 

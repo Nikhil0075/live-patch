@@ -5,7 +5,9 @@ import type { GameManifest } from '../manifest/schema';
 import type { IdeaStore } from '../pipeline/ideas';
 import type { RunStore } from '../runner/store';
 
-const safeText = (text: string) => text.replace(/[<>&`]/g, char => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '`': '\\`' })[char] ?? char).replace(/[\r\n]+/g, ' ').slice(0, 220);
+const safeText = (text: string) => text.replace(/[\r\n]+/g, ' ').slice(0, 220)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/[\\`*_{}\[\]()#+.!|:]/g, char => `\\${char}`);
 
 export function saveBuild(root: string, gameDirectory: string, manifest: GameManifest, ideas: IdeaStore, runs: RunStore) {
   const id = `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`;
@@ -38,7 +40,7 @@ export function saveBuild(root: string, gameDirectory: string, manifest: GameMan
     if (!credits.length) notes.push('No viewer patches had shipped yet.', '');
     fs.writeFileSync(path.join(directory, 'patch-notes.md'), notes.join('\n'));
     fs.writeFileSync(path.join(directory, 'build.json'), JSON.stringify({ id, game: manifest.name, createdAt: new Date().toISOString(), patches: credits }, null, 2));
-    fs.writeFileSync(path.join(directory, 'README.md'), `# Saved Live Patch build\n\nFrom the repository root, run \`npm run dev -- --game builds/${id}/game\` to play this saved game.\n`);
+    fs.writeFileSync(path.join(directory, 'README.md'), `# Saved Live Patch build\n\nThis snapshot is play-only. From the repository root, run \`npm run dev -- --game builds/${id}/game\` to play it. Return to the original game folder to build more patches.\n`);
     return { id, directory, patches: credits.length };
   } catch (error) {
     fs.rmSync(directory, { recursive: true, force: true });
