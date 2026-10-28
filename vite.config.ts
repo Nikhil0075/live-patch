@@ -12,9 +12,12 @@ const { directory, manifest } = loadGame(root, gamePath);
 const manifestFile = path.join(directory, 'live-patch.json');
 const mutationDirectory = path.resolve(directory, manifest.mutationDir);
 const gameEntry = path.resolve(directory, manifest.entry);
-const entryUrl = gameEntry.startsWith(root + path.sep)
-  ? '/' + path.relative(root, gameEntry).replaceAll('\\', '/')
-  : '/@fs/' + gameEntry.replaceAll('\\', '/');
+const savedBundle = path.join(path.dirname(directory), 'game-entry.js');
+const entryUrl = directory.startsWith(path.join(root, 'builds') + path.sep) && fs.existsSync(savedBundle)
+  ? '/' + path.relative(root, savedBundle).replaceAll('\\', '/')
+  : gameEntry.startsWith(root + path.sep)
+    ? '/' + path.relative(root, gameEntry).replaceAll('\\', '/')
+    : '/@fs/' + gameEntry.replaceAll('\\', '/');
 
 function files() {
   return fs.readdirSync(mutationDirectory).filter(name => name.endsWith('.js') && !name.startsWith('.'));
@@ -62,4 +65,4 @@ function livePatchPlugin(): Plugin {
   };
 }
 
-export default defineConfig({ envDir: false, define: { __LIVE_PATCH_TEST_SERVER__: JSON.stringify(process.env.LIVE_PATCH_TEST_SERVER === '1') }, plugins: [...(process.env.LIVE_PATCH_TEST_SERVER === '1' ? [] : [basicSsl({ domains: ['localhost', '127.0.0.1'] })]), livePatchPlugin()], build: { rollupOptions: { input: { game: path.join(root, 'index.html'), simulator: path.join(root, 'simulator.html'), overlay: path.join(root, 'overlay.html'), preview: path.join(root, 'preview.html'), control: path.join(root, 'control.html') } } }, server: { port: Number(process.env.LIVE_PATCH_HTTP_PORT ?? new URL(manifest.reload.url).port), strictPort: true, fs: { allow: [root, directory], deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/.live-patch/**', '**/tokens.json', '**/ideas.json', '**/runs.json', '**/rounds.json', '**/settings.json', '**/smoke-results.json', '**/imported-games.json', '**/active-game.json'] } } });
+export default defineConfig({ envDir: false, define: { __LIVE_PATCH_TEST_SERVER__: JSON.stringify(process.env.LIVE_PATCH_TEST_SERVER === '1') }, plugins: [...(process.env.LIVE_PATCH_TEST_SERVER === '1' ? [] : [basicSsl({ domains: ['localhost', '127.0.0.1'] })]), livePatchPlugin()], build: { rollupOptions: { input: { game: path.join(root, 'index.html'), simulator: path.join(root, 'simulator.html'), overlay: path.join(root, 'overlay.html'), preview: path.join(root, 'preview.html'), compare: path.join(root, 'compare.html'), control: path.join(root, 'control.html') } } }, server: { port: Number(process.env.LIVE_PATCH_HTTP_PORT ?? new URL(manifest.reload.url).port), strictPort: true, fs: { allow: [root, directory], deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/.live-patch/**', '**/tokens.json', '**/ideas.json', '**/runs.json', '**/rounds.json', '**/settings.json', '**/refunds.json', '**/predictions.json', '**/rollback-votes.json', '**/smoke-results.json', '**/imported-games.json', '**/active-game.json'] } } });

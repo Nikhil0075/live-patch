@@ -2,16 +2,22 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import { Codex, type Thread } from '@openai/codex-sdk';
 import type { GameManifest } from '../manifest/schema';
 import type { Idea, IdeaStore } from '../pipeline/ideas';
-import { buildPrompt, gateCandidate, unsafeIdea } from './gates';
+import { buildPrompt, gateCandidateAsync, unsafeIdea } from './gates';
 import { RunStore, publicFailure, type RunRecord, type RunnerEvent } from './store';
-import { codexBinary, disabledMcpConfig, runnerConfig, runnerEnvironment, verifySandbox } from './sandbox';
+import { codexBinary, disabledMcpConfigAsync, runnerConfig, runnerEnvironment, verifySandbox } from './sandbox';
 
 const RUN_TIMEOUT_MS = 3 * 60_000;
 const RUNNER_ROOT_NAME = 'live-patch-runner';
+const execFileAsync = promisify(execFile);
+async function gitAsync(cwd: string, ...args: string[]): Promise<string> {
+  const { stdout } = await execFileAsync('git', args, { cwd, encoding: 'utf8', timeout: 20_000, maxBuffer: 1024 * 1024, windowsHide: true });
+  return stdout.trim();
+}
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', timeout: 20_000, maxBuffer: 1024 * 1024 }).trim();
@@ -20,6 +26,10 @@ function deleteBranch(root: string, branch: string) {
   try { execFileSync('git', ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: root, stdio: 'ignore', timeout: 20_000 }); }
   catch { return; }
   git(root, 'branch', '-D', branch);
+}
+async function deleteBranchAsync(root: string, branch: string) {
+  try { await gitAsync(root, 'show-ref', '--verify', '--quiet', `refs/heads/${branch}`); } catch { return; }
+  await gitAsync(root, 'branch', '-D', branch);
 }
 function within(parent: string, child: string): boolean {
   const relative = path.relative(parent, child);
@@ -46,13 +56,16 @@ export type AgentFactory = (worktree: string, signal: AbortSignal, emit: (type: 
 export function codexAgent(worktree: string, signal: AbortSignal, emit: (type: RunnerEvent['type'], message?: string, threadId?: string) => void): AgentSession {
   const binary = codexBinary();
   const environment = runnerEnvironment();
-  const mcpServers = disabledMcpConfig(binary, worktree, environment);
-  const codex = new Codex({ codexPathOverride: binary, env: environment, config: { ...runnerConfig, mcp_servers: mcpServers } });
-  const thread: Thread = codex.startThread({ workingDirectory: worktree, sandboxMode: 'workspace-write', networkAccessEnabled: false, webSearchMode: 'disabled', approvalPolicy: 'never' });
+  let thread: Thread | undefined;
   let verified = false;
   return {
-    threadId: () => thread.id ?? undefined,
+    threadId: () => thread?.id ?? undefined,
     async run(prompt) {
+      if (!thread) {
+        const mcpServers = await disabledMcpConfigAsync(binary, worktree, environment);
+        const codex = new Codex({ codexPathOverride: binary, env: environment, config: { ...runnerConfig, mcp_servers: mcpServers } });
+        thread = codex.startThread({ workingDirectory: worktree, sandboxMode: 'workspace-write', networkAccessEnabled: false, webSearchMode: 'disabled', approvalPolicy: 'never' });
+      }
       if (!verified) {
         await verifySandbox(binary, worktree, process.cwd(), environment, signal);
         verified = true;
@@ -146,12 +159,12 @@ export class LiveRunner {
     const publicMessage = type === 'file' && message ? path.basename(message) : type === 'failed' ? publicFailure(record.error) : message;
     this.onEvent({ runId: record.id, ideaId: record.ideaId, type, at: new Date().toISOString(), ...(publicMessage ? { message: publicMessage } : {}), ...(threadId ? { threadId } : {}) });
   }
-  private prepare(id: string): { directory: string; branch: string; gameRelative: string; game: string; pointer: string } {
+  private async prepare(id: string): Promise<{ directory: string; branch: string; gameRelative: string; game: string; pointer: string }> {
     const directory = path.join(this.runnerRoot, id);
     if (!within(this.runnerRoot, directory)) throw Error('Runner worktree path escaped its root');
     fs.mkdirSync(this.runnerRoot, { recursive: true });
     const branch = `live-patch/run-${id}`;
-    git(this.root, 'worktree', 'add', '-b', branch, directory, 'HEAD');
+    await gitAsync(this.root, 'worktree', 'add', '-b', branch, directory, 'HEAD');
     try {
       const relative = path.relative(this.root, this.gameDirectory);
       const gameRelative = within(this.root, this.gameDirectory) ? relative : path.join('games', `external-${id}`);
@@ -168,15 +181,19 @@ export class LiveRunner {
         }
       });
       stripBuilderInstructions(directory);
-      git(directory, 'add', '-A');
-      git(directory, 'commit', '--allow-empty', '-m', `live patch: snapshot ${id}`);
+      await gitAsync(directory, 'add', '-A');
+      await gitAsync(directory, 'commit', '--allow-empty', '-m', `live patch: snapshot ${id}`);
       return { directory, branch, gameRelative, game, pointer: fs.readFileSync(path.join(directory, '.git'), 'utf8') };
     } catch (error) {
-      this.cleanup(directory);
+      await this.cleanup(directory);
       throw error;
     }
   }
-  private cleanup(directory: string) {
+  private async cleanup(directory: string) {
+    if (!within(this.runnerRoot, directory)) throw Error('Runner cleanup path escaped its root');
+    try { await gitAsync(this.root, 'worktree', 'remove', '--force', directory); } finally { if (fs.existsSync(directory)) safeRemove(this.runnerRoot, directory); }
+  }
+  private cleanupSync(directory: string) {
     if (!within(this.runnerRoot, directory)) throw Error('Runner cleanup path escaped its root');
     try { git(this.root, 'worktree', 'remove', '--force', directory); } finally { if (fs.existsSync(directory)) safeRemove(this.runnerRoot, directory); }
   }
@@ -192,7 +209,7 @@ export class LiveRunner {
       if (this.ideas.list().find(idea => idea.id === record.ideaId)?.status === 'building') this.ideas.setStatus(record.ideaId, 'failed');
       this.emit(record, 'failed', record.error);
       const directory = path.join(this.runnerRoot, record.id);
-      if (fs.existsSync(directory)) try { this.cleanup(directory); } catch (error) { console.error(`Runner recovery ${record.id} cleanup failed:`, error); }
+      if (fs.existsSync(directory)) try { this.cleanupSync(directory); } catch (error) { console.error(`Runner recovery ${record.id} cleanup failed:`, error); }
       try { git(this.root, 'worktree', 'prune'); } catch (error) { console.error(`Runner recovery ${record.id} prune failed:`, error); }
       try { deleteBranch(this.root, record.branch ?? `live-patch/run-${record.id}`); } catch (error) { console.error(`Runner recovery ${record.id} branch cleanup failed:`, error); }
     }
@@ -224,7 +241,7 @@ export class LiveRunner {
     this.runs.upsert(record);
     this.ideas.setStatus(idea.id, 'building');
     this.emit(record, 'started');
-    let worktree: ReturnType<LiveRunner['prepare']> | undefined;
+    let worktree: Awaited<ReturnType<LiveRunner['prepare']>> | undefined;
     let publishedFile: string | undefined;
     const abort = new AbortController();
     this.activeAbort = abort;
@@ -233,7 +250,7 @@ export class LiveRunner {
       const relativeGame = path.relative(this.root, this.gameDirectory);
       if (relativeGame.split(path.sep)[0] === 'builds') throw Error('Saved builds are play-only; return to the original game to build new patches');
       if (unsafeIdea(idea.text)) throw Error('Idea asks for files, secrets or network access outside the mutation API');
-      worktree = this.prepare(id);
+      worktree = await this.prepare(id);
       record.branch = worktree.branch; this.runs.upsert(record);
       const filename = `patch-${id.replaceAll('-', '').slice(0, 12)}.js`;
       const mutationDir = path.resolve(this.gameDirectory, this.manifest.mutationDir);
@@ -246,21 +263,22 @@ export class LiveRunner {
         this.emit(record, type, message, threadId);
       });
       let source = '';
+      let repairReason = '';
       for (let attempt = 0; attempt < 2; attempt++) {
-        await agent.run(attempt === 0 ? prompt : `The host rejected the previous output: ${source}. Repair the worktree. Keep only the single required file ${path.posix.join(worktree.gameRelative.replaceAll('\\', '/'), this.manifest.mutationDir, filename)} relative to the worktree root; do not touch anything else.`);
+        await agent.run(attempt === 0 ? prompt : `The host rejected the previous output: ${repairReason}. Repair the worktree. Keep only the single required file ${path.posix.join(worktree.gameRelative.replaceAll('\\', '/'), this.manifest.mutationDir, filename)} relative to the worktree root; do not touch anything else.`);
         if (agent.threadId() && !record.threadId) { record.threadId = agent.threadId(); this.runs.upsert(record); }
         try {
-          const candidate = gateCandidate(worktree.directory, worktree.gameRelative, this.manifest, filename, worktree.pointer);
+          const candidate = await gateCandidateAsync(worktree.directory, worktree.gameRelative, this.manifest, filename, worktree.pointer);
           source = candidate.source;
           this.emit(record, 'testing');
           await this.smokeTest(this.manifest.testCommand, this.root, worktree.game, filename, abort.signal);
-          const after = gateCandidate(worktree.directory, worktree.gameRelative, this.manifest, filename, worktree.pointer);
+          const after = await gateCandidateAsync(worktree.directory, worktree.gameRelative, this.manifest, filename, worktree.pointer);
           if (after.source !== source) throw Error('Mutation changed during smoke test');
           if (abort.signal.aborted || this.closed || epoch !== this.rollbackEpoch) throw Error('Run stopped before publish');
           this.emit(record, 'passed');
-          git(worktree.directory, 'add', '--', path.relative(worktree.directory, candidate.file));
-          git(worktree.directory, 'commit', '-m', `live patch: ${idea.id}`);
-          record.commit = git(worktree.directory, 'rev-parse', 'HEAD');
+          await gitAsync(worktree.directory, 'add', '--', path.relative(worktree.directory, candidate.file));
+          await gitAsync(worktree.directory, 'commit', '-m', `live patch: ${idea.id}`);
+          record.commit = await gitAsync(worktree.directory, 'rev-parse', 'HEAD');
           const target = path.join(mutationDir, filename);
           if (fs.existsSync(target)) throw Error('Mutation target already exists');
           const temp = path.join(mutationDir, `.${filename}.tmp`);
@@ -277,7 +295,7 @@ export class LiveRunner {
           return;
         } catch (error) {
           if (attempt === 1 || abort.signal.aborted) throw error;
-          source = String(error).slice(-4000);
+          repairReason = String(error).slice(-4000);
         }
       }
     } catch (error) {
@@ -291,13 +309,13 @@ export class LiveRunner {
     } finally {
       clearTimeout(timeout);
       if (this.activeAbort === abort) this.activeAbort = undefined;
-      if (worktree) try { this.cleanup(worktree.directory); } catch (error) { console.error(`Runner cleanup ${id} failed:`, error); }
+      if (worktree) try { await this.cleanup(worktree.directory); } catch (error) { console.error(`Runner cleanup ${id} failed:`, error); }
       if (record.status === 'failed') {
-        try { deleteBranch(this.root, record.branch ?? `live-patch/run-${id}`); } catch (error) { console.error(`Runner ${id} branch cleanup failed:`, error); }
+        try { await deleteBranchAsync(this.root, record.branch ?? `live-patch/run-${id}`); } catch (error) { console.error(`Runner ${id} branch cleanup failed:`, error); }
       }
     }
   }
-  private rollback() {
+  private async rollback() {
     if (this.closed) throw Error('Runner is stopped');
     const record = this.runs.lastShipped(this.gameDirectory);
     if (!record?.branch || !record.commit || !record.mutationName) throw Error('No shipped mutation to roll back');
@@ -316,10 +334,10 @@ export class LiveRunner {
     if (!within(this.runnerRoot, directory)) throw Error('Rollback worktree path escaped its root');
     fs.mkdirSync(this.runnerRoot, { recursive: true });
     try {
-      git(this.root, 'worktree', 'add', directory, record.branch);
-      git(directory, 'revert', '--no-edit', record.commit);
+      await gitAsync(this.root, 'worktree', 'add', directory, record.branch);
+      await gitAsync(directory, 'revert', '--no-edit', record.commit);
     } catch (error) {
       console.error(`Runner rollback ${record.id} Git history failed after live removal:`, error);
-    } finally { if (fs.existsSync(directory)) this.cleanup(directory); }
+    } finally { if (fs.existsSync(directory)) await this.cleanup(directory); }
   }
 }

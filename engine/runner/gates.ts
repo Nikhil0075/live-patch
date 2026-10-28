@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { promisify } from 'node:util';
 import type { GameManifest } from '../manifest/schema';
 import { validateMutation } from '../mutation/validate';
 
@@ -13,8 +14,15 @@ export function unsafeIdea(text: string): boolean {
 }
 
 function gitPaths(directory: string): string[] {
-  const output = execFileSync('git', ['status', '--porcelain=1', '-z', '--untracked-files=all', '--ignored'], { cwd: directory });
-  const entries = output.toString('utf8').split('\0').filter(Boolean);
+  const output = execFileSync('git', ['status', '--porcelain=1', '-z', '--untracked-files=all', '--ignored'], { cwd: directory, timeout: 20_000, maxBuffer: 1024 * 1024 });
+  return parseGitPaths(output.toString('utf8'));
+}
+async function gitPathsAsync(directory: string): Promise<string[]> {
+  const { stdout } = await promisify(execFile)('git', ['status', '--porcelain=1', '-z', '--untracked-files=all', '--ignored'], { cwd: directory, timeout: 20_000, maxBuffer: 1024 * 1024, encoding: 'utf8', windowsHide: true });
+  return parseGitPaths(stdout);
+}
+function parseGitPaths(output: string): string[] {
+  const entries = output.split('\0').filter(Boolean);
   const paths: string[] = [];
   for (let index = 0; index < entries.length; index++) {
     const entry = entries[index];
@@ -25,11 +33,16 @@ function gitPaths(directory: string): string[] {
 }
 
 export function gateCandidate(worktree: string, gameRelative: string, manifest: GameManifest, filename: string, expectedGitFile: string): { file: string; source: string } {
+  return gateCandidateWithPaths(worktree, gameRelative, manifest, filename, expectedGitFile, gitPaths(worktree));
+}
+export async function gateCandidateAsync(worktree: string, gameRelative: string, manifest: GameManifest, filename: string, expectedGitFile: string): Promise<{ file: string; source: string }> {
+  return gateCandidateWithPaths(worktree, gameRelative, manifest, filename, expectedGitFile, await gitPathsAsync(worktree));
+}
+function gateCandidateWithPaths(worktree: string, gameRelative: string, manifest: GameManifest, filename: string, expectedGitFile: string, changed: string[]): { file: string; source: string } {
   if (!/^patch-[a-f0-9]{12}\.js$/.test(filename)) throw Error('Unsafe mutation filename');
   const relative = path.posix.join(gameRelative.replaceAll('\\', '/'), manifest.mutationDir, filename);
   const pointer = fs.readFileSync(path.join(worktree, '.git'), 'utf8');
   if (pointer !== expectedGitFile) throw Error('Worktree Git pointer changed');
-  const changed = gitPaths(worktree);
   if (changed.length !== 1 || changed[0].replaceAll('\\', '/') !== relative) throw Error(`Only one new mutation file is allowed; found: ${changed.join(', ')}`);
   const mutationDir = path.resolve(worktree, gameRelative, manifest.mutationDir);
   const file = path.resolve(mutationDir, filename);

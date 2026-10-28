@@ -41,7 +41,7 @@ The `game` handle has only these methods. Bad arguments are ignored or bounded b
 - `drawText(text,x,y)`: plain-text label at a position for two seconds, up to 80 characters.
 - `showMessage(text)`: plain-text banner for two seconds, up to 100 characters.
 
-The host applies at most 20 actions from one hook call and 60 from one module per second. Further valid actions are skipped and counted in the patch list. Numbers outside declared bounds are clamped and long strings are truncated. Wrong types and unknown enum values are ignored; repeated invalid actions disable the module. Use `game.state.elapsed` for timing; do not create timers. Rendering text as HTML is never allowed.
+The host processes matching events in ordered batches of up to 16 and applies at most 20 actions from one batch and 60 from one module per second. Further valid actions are skipped and counted in the patch list. Numbers outside declared bounds are clamped and long strings are truncated. Wrong types and unknown enum values are ignored; ten invalid actions within a rolling 60-second window disable the module. Use `game.state.elapsed` for timing; do not create timers. Rendering text as HTML is never allowed.
 
 Example:
 

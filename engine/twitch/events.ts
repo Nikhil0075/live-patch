@@ -32,7 +32,7 @@ export function normalizeEventSub(type: string, messageId: string, raw: unknown,
     const name = string(event.user_name);
     const rewardId = string(object(event.reward)?.id);
     if (!id || !userId || !login || !name || !rewardId || typeof event.user_input !== 'string') return null;
-    return { kind: 'reward', origin: 'twitch', id: messageId, viewer: { id: userId, login, name, broadcaster: userId === broadcasterId, moderator: false }, rewardId, text: event.user_input };
+    return { kind: 'reward', origin: 'twitch', id: messageId, redemptionId: id, viewer: { id: userId, login, name, broadcaster: userId === broadcasterId, moderator: false }, rewardId, text: event.user_input };
   }
   return null;
 }

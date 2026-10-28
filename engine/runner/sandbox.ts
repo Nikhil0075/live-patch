@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 
 const require = createRequire(import.meta.url);
 
@@ -37,6 +38,23 @@ function listMcpServers(binary: string, worktree: string, env: Record<string, st
   const servers: unknown = JSON.parse(output);
   if (!Array.isArray(servers) || !servers.every(server => server && typeof server.name === 'string' && typeof server.enabled === 'boolean' && typeof server.transport?.type === 'string')) throw Error('Cannot verify Codex MCP server configuration');
   return servers as McpServer[];
+}
+
+async function listMcpServersAsync(binary: string, worktree: string, env: Record<string, string>, overrides: string[] = []): Promise<McpServer[]> {
+  const { stdout } = await promisify(execFile)(binary, ['mcp', 'list', '--json', ...overrides.flatMap(value => ['-c', value])], { cwd: worktree, env, encoding: 'utf8', timeout: 15_000, windowsHide: true });
+  const servers: unknown = JSON.parse(stdout);
+  if (!Array.isArray(servers) || !servers.every(server => server && typeof server.name === 'string' && typeof server.enabled === 'boolean' && typeof server.transport?.type === 'string')) throw Error('Cannot verify Codex MCP server configuration');
+  return servers as McpServer[];
+}
+
+export async function disabledMcpConfigAsync(binary: string, worktree: string, env: Record<string, string>) {
+  const servers = await listMcpServersAsync(binary, worktree, env);
+  if (servers.some(server => !/^[a-zA-Z0-9_-]+$/.test(server.name))) throw Error('Unsafe MCP server name in Codex configuration');
+  if (servers.some(server => server.transport.type !== 'stdio')) throw Error('Unsupported MCP transport in Codex configuration');
+  const overrides = servers.flatMap(server => [`mcp_servers.${server.name}.command=${JSON.stringify(process.execPath)}`, `mcp_servers.${server.name}.enabled=false`]);
+  const effective = await listMcpServersAsync(binary, worktree, env, overrides);
+  if (effective.some(server => server.enabled)) throw Error('Codex MCP server remained enabled');
+  return Object.fromEntries(servers.map(server => [server.name, { command: process.execPath, enabled: false }]));
 }
 
 export function disabledMcpConfig(binary: string, worktree: string, env: Record<string, string>, list: (overrides: string[]) => McpServer[] = overrides => listMcpServers(binary, worktree, env, overrides)) {

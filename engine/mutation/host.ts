@@ -2,6 +2,7 @@ import type { GameAction, GameAdapter, GameEvent } from '../game-api';
 import type { GameManifest } from '../manifest/schema';
 import { frameDocument } from './frame';
 import { EffectLimits } from './effect-limits';
+import { WindowCounter } from './window-counter';
 
 export interface MutationFile { name: string; source: string; error: string | null }
 interface Loaded {
@@ -13,9 +14,9 @@ interface Loaded {
   queue: GameEvent[];
   hooks: Set<string>;
   skippedTickDelta: number;
-  droppedEvents: number;
-  droppedActions: number;
-  invalidActions: number;
+  droppedEvents: WindowCounter;
+  droppedActions: WindowCounter;
+  invalidActions: WindowCounter;
   pending?: { id: number; timeout: number; eventType: string };
   loadTimeout?: number;
   budgetStart: number;
@@ -47,7 +48,7 @@ function normalizeAction(action: GameAction, manifest: GameManifest): GameAction
   return { type: action.type, args };
 }
 
-function freshCounters() { return { hooks: new Set<string>(), skippedTickDelta: 0, droppedEvents: 0, droppedActions: 0, invalidActions: 0 }; }
+function freshCounters() { return { hooks: new Set<string>(), skippedTickDelta: 0, droppedEvents: new WindowCounter(10_000), droppedActions: new WindowCounter(10_000), invalidActions: new WindowCounter(60_000) }; }
 
 export class MutationHost {
   private loaded = new Map<string, Loaded>();
@@ -91,7 +92,7 @@ export class MutationHost {
         if (entry.queue.length >= 64) {
           const removed = entry.queue.shift();
           if (removed?.type === 'tick' && typeof removed.delta === 'number') entry.skippedTickDelta += removed.delta;
-          entry.droppedEvents++;
+          entry.droppedEvents.add();
         }
         entry.queue.push(event);
       }
@@ -139,16 +140,15 @@ export class MutationHost {
       window.clearTimeout(entry.pending.timeout); entry.pending = undefined;
       const now = Date.now();
       if (now - entry.budgetStart >= 1000) { entry.budgetStart = now; entry.budgetCount = 0; }
-      entry.droppedActions += Math.max(0, data.actions.length - 20) + (data.skipped ?? 0);
+      entry.droppedActions.add(Math.max(0, data.actions.length - 20) + (data.skipped ?? 0));
       for (const action of (data.actions as GameAction[]).slice(0, 20)) {
-        if (entry.budgetCount >= MAX_ACTIONS_PER_SECOND) { entry.droppedActions++; continue; }
+        if (entry.budgetCount >= MAX_ACTIONS_PER_SECOND) { entry.droppedActions.add(); continue; }
         const normalized = normalizeAction(action, this.manifest);
         if (!normalized) {
-          entry.invalidActions++;
-          if (entry.invalidActions >= 10) { this.disable(entry, 'Repeated invalid game actions'); return; }
+          if (entry.invalidActions.add() >= 10) { this.disable(entry, 'Repeated invalid game actions'); return; }
           continue;
         }
-        if (!this.effectLimits.allow(normalized, entry.file.name)) { entry.droppedActions++; continue; }
+        if (!this.effectLimits.allow(normalized, entry.file.name)) { entry.droppedActions.add(); continue; }
         entry.budgetCount++;
         try { this.game.apply(normalized, entry.file.name); }
         catch (error) { this.disable(entry, `Game action failed: ${String(error)}`); return; }
@@ -162,10 +162,10 @@ export class MutationHost {
 
   private pump(entry: Loaded) {
     if (!['starting', 'active'].includes(entry.status) || entry.pending || !entry.queue.length) return;
-    const event = entry.queue.shift()!;
+    const events = entry.status === 'starting' ? [entry.queue.shift()!] : entry.queue.splice(0, 16);
     const id = this.nextId++;
-    entry.pending = { id, eventType: event.type, timeout: window.setTimeout(() => this.disable(entry, 'Event deadline exceeded'), EVENT_DEADLINE_MS) };
-    entry.frame?.contentWindow?.postMessage({ type: 'event', id, event, state: this.game.snapshot(), actions: Object.keys(this.manifest.actions), hooks: this.manifest.hooks }, '*');
+    entry.pending = { id, eventType: events[0].type, timeout: window.setTimeout(() => this.disable(entry, 'Event deadline exceeded'), EVENT_DEADLINE_MS) };
+    entry.frame?.contentWindow?.postMessage({ type: 'event', id, events, state: this.game.snapshot(), actions: Object.keys(this.manifest.actions), hooks: this.manifest.hooks }, '*');
   }
 
   private disable(entry: Loaded, reason: string) {
@@ -188,7 +188,8 @@ export class MutationHost {
     this.list.replaceChildren();
     for (const entry of this.loaded.values()) {
       const li = document.createElement('li');
-      li.textContent = `${entry.title} · ${entry.status}${entry.reason ? ` · ${entry.reason}` : ''}${entry.droppedActions ? ` · ${entry.droppedActions} actions skipped` : ''}${entry.droppedEvents ? ` · ${entry.droppedEvents} events skipped` : ''}`;
+      const droppedActions = entry.droppedActions.current(), droppedEvents = entry.droppedEvents.current();
+      li.textContent = `${entry.title} · ${entry.status}${entry.reason ? ` · ${entry.reason}` : ''}${droppedActions ? ` · ${droppedActions} actions skipped in 10s` : ''}${droppedEvents ? ` · ${droppedEvents} events skipped in 10s` : ''}`;
       this.list.append(li);
     }
     if (!this.loaded.size) { const li = document.createElement('li'); li.textContent = 'No mutations yet'; this.list.append(li); }

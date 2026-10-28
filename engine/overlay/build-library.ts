@@ -20,7 +20,7 @@ fetch('/api/builds').then(response => response.json()).then((data: { builds: { i
       root.querySelector('#build-notice')!.textContent = result.message ?? result.error ?? 'Could not open build';
       if (response.ok) setTimeout(() => { location.href = '/'; }, 1200);
     });
-    const compare = document.createElement('button'); compare.className = 'secondary'; compare.textContent = 'Compare with original · Phase 5'; compare.disabled = true;
+    const compare = document.createElement('a'); compare.className = 'button secondary'; compare.textContent = 'Compare with original'; compare.href = `/compare.html?id=${encodeURIComponent(build.id)}`; compare.target = '_blank'; compare.rel = 'noopener';
     actions.append(notes, play, compare); card.append(actions); list.append(card);
   }
 }).catch(error => { root.querySelector('#build-notice')!.textContent = String(error); });

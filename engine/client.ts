@@ -8,7 +8,9 @@ const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `<main><header><div><p class="eyebrow">LIVE PATCH / GAME</p><h1 id="game-title"></h1></div><div id="status">Connecting…</div></header><div class="layout"><section><div id="game"></div><button id="enable-sound" class="secondary">Click to enable sound ♪</button><p class="hint" id="game-hint"></p></section><aside><h2>Active patches</h2><ul id="mutations"></ul><p id="notice" role="status"></p><p class="aside-note">Every shipped viewer idea becomes a patch in this run.</p><a href="/?view=practice">Practice with chat →</a><br><a href="/?view=go-live">Open stream controls →</a></aside></div></main>`;
 
 async function start() {
-  const info = await fetch('/api/game').then(r => r.json()) as GameManifest & { entry: string };
+  const params = new URLSearchParams(location.search);
+  const comparison = params.get('compare');
+  const info = await fetch(comparison ? `/api/compare/game?id=${encodeURIComponent(comparison)}` : '/api/game').then(r => r.json()) as GameManifest & { entry: string };
   const settings = await fetch('/api/settings').then(r => r.json()).catch(() => ({}));
   document.querySelector('#game-title')!.textContent = info.name.toUpperCase();
   document.querySelector('#game-hint')!.textContent = info.hint;
@@ -27,14 +29,14 @@ async function start() {
   document.querySelector('#enable-sound')!.addEventListener('click', () => { game.enableSound?.(); document.querySelector('#enable-sound')!.textContent = 'Sound enabled ♪'; });
   host = new MutationHost(game, info, document.querySelector('#mutations')!, document.querySelector('#notice')!);
   dispatch = event => host?.emit(event);
-  const selected = new URLSearchParams(location.search).get('mutation');
+  const selected = params.get('mutation');
   let version = 0;
   const sync = async () => {
     const current = ++version;
-    const files = await fetch('/api/mutations').then(r => r.json()) as MutationFile[];
-    if (current === version) host?.sync(selected ? files.filter(file => file.name === selected) : files);
+    const files = await fetch(comparison ? `/api/compare/mutations?id=${encodeURIComponent(comparison)}` : '/api/mutations').then(r => r.json()) as MutationFile[];
+    if (current === version) host?.sync(params.has('original') ? [] : selected ? files.filter(file => file.name === selected) : files);
   };
-  if (info.reload.type === 'websocket') {
+  if (!comparison && info.reload.type === 'websocket') {
     import.meta.hot?.on('live-patch:chat', (message: { text: string; author: string }) => {
       host?.emit({ type: 'chat', text: message.text, author: message.author });
     });

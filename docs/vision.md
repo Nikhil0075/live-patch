@@ -9,7 +9,7 @@ The base game is a top-down arena survivor. The player moves, enemies chase, coi
 1. **Pitch, about 60 seconds.** A viewer sends `!idea <text>` or redeems a Pitch a mechanic reward. Immediate triage rejects explicit unsafe requests and merges exact duplicates. Optional AI triage proposes concise specifications and merge or reject decisions for operator review.
 2. **Vote, about 45 seconds.** The three oldest pending ideas appear with live vote bars. Ideas that miss this ballot remain queued; losing candidates retire when the round ends.
 3. **Approve.** A moderator or broadcaster selects the winner as the safety valve.
-4. **Build, about one to three minutes.** The Codex at work panel shows the approved idea, credited contributors, the mutation file and smoke-test progress while the streamer keeps playing. Channel-point bets on shipped or failed are planned for Phase 5, after reward redemption and refund handling are validated on a live channel.
+4. **Build, about one to three minutes.** The Codex at work panel shows the approved idea, credited contributors, the mutation file and smoke-test progress while the streamer keeps playing. An optional Twitch Channel Points Prediction lets viewers back Ships or Fails; Twitch settles it from the build result or returns points when canceled.
 5. **Ship.** A passing patch changes the game mid-run without reloading. A failed build gets a visible failed result and does not affect the game.
 6. **Repeat.** Patches stack and create interactions nobody planned.
 
@@ -17,7 +17,7 @@ The stream layout puts the game in the center, the Codex work panel at right, ac
 
 ## Signature moments
 
-After eight to ten patches, show the chaotic game beside its original version. This comparison view is planned for Phase 5. A chat vote to roll back a bad idea is also planned for Phase 5, with vote limits and moderator review; the current operator and moderator rollback controls remain available. At stream end, save a playable build with patch notes crediting every contributor. Saved builds are play-only snapshots.
+After eight to ten patches, show the chaotic game beside its original version. Saved builds have an original-versus-evolved comparison view. Viewers can vote once to roll back a shipped patch; three votes in two minutes allow moderator confirmation, and the local operator retains an immediate rollback control. At stream end, save a playable build with patch notes crediting every contributor. Saved builds are play-only snapshots.
 
 Codex has two roles: building this platform in the development thread, and acting as the live game developer during a stream. The submission video should show both roles within three minutes.
 

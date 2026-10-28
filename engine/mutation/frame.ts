@@ -24,8 +24,11 @@ self.onmessage = event => {
         game.state = Object.freeze(data.state);
         for (const name of data.actions) game[name] = (...args) => { if (actions.length < 20) actions.push({ type: name, args }); else skipped++; };
         Object.freeze(game);
-        const hook = data.hooks[data.event.type];
-        if (hook && typeof mutation?.[hook] === 'function') await mutation[hook](game, data.event);
+        if (!Array.isArray(data.events) || data.events.length < 1 || data.events.length > 16) throw Error('Invalid event batch');
+        for (const event of data.events) {
+          const hook = data.hooks[event.type];
+          if (hook && typeof mutation?.[hook] === 'function') await mutation[hook](game, event);
+        }
         port.postMessage({ type: 'reply', id: data.id, actions, skipped });
       }
     } catch (error) { port.postMessage({ type: 'error', id: data.id, error: String(error) }); }

@@ -9,26 +9,37 @@ export function validateMutation(source: string, manifest: GameManifest): string
   const forbidden = new Set([...engineForbidden, ...manifest.forbidden.map(token => token.replace(/\W/g, ''))]);
   const tree = ts.createSourceFile('mutation.js', source, ts.ScriptTarget.ES2022, true, ts.ScriptKind.JS);
   if ((tree as ts.SourceFile & { parseDiagnostics: readonly ts.Diagnostic[] }).parseDiagnostics.length) return 'Invalid JavaScript syntax';
-  const declared = new Set<string>();
-  const binding = (name: ts.BindingName) => {
-    if (ts.isIdentifier(name)) declared.add(name.text);
-    else for (const element of name.elements) if (ts.isBindingElement(element)) binding(element.name);
+  interface Scope { parent?: Scope; names: Set<string> }
+  const root: Scope = { names: new Set() };
+  const scopes = new WeakMap<ts.Node, Scope>();
+  const bind = (name: ts.BindingName, scope: Scope): void => {
+    if (ts.isIdentifier(name)) scope.names.add(name.text);
+    else for (const element of name.elements) if (ts.isBindingElement(element)) bind(element.name, scope);
   };
-  const collect = (node: ts.Node) => {
-    if (ts.isVariableDeclaration(node) || ts.isParameter(node) || ts.isBindingElement(node)) binding(node.name);
-    if ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node) || ts.isClassExpression(node)) && node.name) declared.add(node.name.text);
-    ts.forEachChild(node, collect);
+  const isScope = (node: ts.Node) => ts.isBlock(node) || ts.isFunctionLike(node) || ts.isCatchClause(node) || ts.isClassLike(node);
+  const collect = (node: ts.Node, parent: Scope): void => {
+    if ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) && node.name) parent.names.add(node.name.text);
+    const scope = node === tree ? root : isScope(node) ? { parent, names: new Set<string>() } : parent;
+    scopes.set(node, scope);
+    if (ts.isVariableDeclaration(node) || ts.isParameter(node) || ts.isBindingElement(node)) bind(node.name, scope);
+    if ((ts.isFunctionExpression(node) || ts.isClassExpression(node)) && node.name) scope.names.add(node.name.text);
+    ts.forEachChild(node, child => collect(child, scope));
   };
-  collect(tree);
+  collect(tree, root);
+  const local = (name: string, node: ts.Node): boolean => {
+    for (let scope: Scope | undefined = scopes.get(node); scope; scope = scope.parent) if (scope.names.has(name)) return true;
+    return false;
+  };
   let error: string | null = null;
   const visit = (node: ts.Node) => {
     if (error) return;
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node) && !!node.moduleSpecifier || ts.isImportEqualsDeclaration(node) || node.kind === ts.SyntaxKind.ImportKeyword) { error = 'Forbidden token: import'; return; }
-    if (ts.isIdentifier(node) && forbidden.has(node.text) && !declared.has(node.text)) {
+    if (ts.isIdentifier(node) && forbidden.has(node.text) && !local(node.text, node)) {
       const parent = node.parent;
       const property = (ts.isPropertyAccessExpression(parent) || ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) || ts.isPropertyDeclaration(parent)) && parent.name === node;
       const label = (ts.isLabeledStatement(parent) || ts.isBreakStatement(parent) || ts.isContinueStatement(parent)) && parent.label === node;
-      if (!property && !label) { error = `Forbidden token: ${node.text}`; return; }
+      const declaration = (ts.isVariableDeclaration(parent) || ts.isParameter(parent) || ts.isBindingElement(parent) || ts.isFunctionDeclaration(parent) || ts.isFunctionExpression(parent) || ts.isClassDeclaration(parent) || ts.isClassExpression(parent)) && parent.name === node;
+      if (!property && !label && !declaration) { error = `Forbidden token: ${node.text}`; return; }
     }
     ts.forEachChild(node, visit);
   };

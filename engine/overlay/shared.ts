@@ -18,10 +18,11 @@ export async function dashboardData() {
   const round = await roundResponse.json() as RoundView;
   const runs = (await runsResponse.json() as { runs: RunView[] }).runs;
   const mutations = await mutationsResponse.json() as MutationView[];
-  const ideas = (await ideasResponse.json() as { ideas: RoundView['candidates'] }).ideas;
+  const ideaData = await ideasResponse.json() as { ideas: RoundView['candidates']; rollbackVote?: { votes: number; threshold: number; ready: boolean; expiresAt: number } };
+  const ideas = ideaData.ideas;
   const events = (await eventsResponse.json() as { events: RunnerProgressView[] }).events;
   const settings = await settingsResponse.json() as SettingsView;
-  return { round, runs, mutations, ideas, events, settings };
+  return { round, runs, mutations, ideas, rollbackVote: ideaData.rollbackVote, events, settings };
 }
 
 export function appendText(parent: HTMLElement, tag: keyof HTMLElementTagNameMap, value: string, className?: string) {

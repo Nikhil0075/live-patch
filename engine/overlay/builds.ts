@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { build } from 'esbuild';
 import type { GameManifest } from '../manifest/schema';
 import type { IdeaStore } from '../pipeline/ideas';
 import type { RunStore } from '../runner/store';
@@ -9,7 +10,7 @@ const safeText = (text: string) => text.replace(/[\r\n]+/g, ' ').slice(0, 220)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/[\\`*_{}\[\]()#+.!|:]/g, char => `\\${char}`);
 
-export function saveBuild(root: string, gameDirectory: string, manifest: GameManifest, ideas: IdeaStore, runs: RunStore) {
+export async function saveBuild(root: string, gameDirectory: string, manifest: GameManifest, ideas: IdeaStore, runs: RunStore) {
   const id = `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`;
   const directory = path.join(root, 'builds', id);
   const game = path.join(directory, 'game');
@@ -38,6 +39,7 @@ export function saveBuild(root: string, gameDirectory: string, manifest: GameMan
     }
     const notes = [`# ${safeText(manifest.name)} — patch notes`, '', `Saved ${new Date().toISOString()}.`, '', ...credits.flatMap((credit, index) => [`## ${index + 1}. ${safeText(credit.idea)}`, '', `By ${credit.authors.map(author => `@${safeText(author)}`).join(', ') || 'unknown viewer'}`, '', `Module: \`${credit.file}\``, ''])];
     if (!credits.length) notes.push('No viewer patches had shipped yet.', '');
+    await build({ entryPoints: [path.resolve(gameDirectory, manifest.entry)], outfile: path.join(directory, 'game-entry.js'), bundle: true, format: 'esm', platform: 'browser', target: 'es2022', loader: { '.png': 'dataurl', '.jpg': 'dataurl', '.webp': 'dataurl' }, logLevel: 'silent' });
     fs.writeFileSync(path.join(directory, 'patch-notes.md'), notes.join('\n'));
     fs.writeFileSync(path.join(directory, 'build.json'), JSON.stringify({ id, game: manifest.name, createdAt: new Date().toISOString(), patches: credits }, null, 2));
     fs.writeFileSync(path.join(directory, 'README.md'), `# Saved Live Patch build\n\nThis snapshot is play-only. From the repository root, run \`npm run dev -- --game builds/${id}/game\` to play it. Return to the original game folder to build more patches.\n`);

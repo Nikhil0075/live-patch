@@ -12,7 +12,7 @@ export function authorizationError(code: string | null, redirectUri: string): st
   return `Twitch authorization failed (${code || 'unknown error'})`;
 }
 interface Token { accessToken: string; refreshToken: string; userId: string; login: string; scopes: string[]; expiresAt: number; validatedAt: number }
-const scopes: Record<Role, string[]> = { broadcaster: ['channel:read:redemptions'], bot: ['user:read:chat', 'user:write:chat'] };
+const scopes: Record<Role, string[]> = { broadcaster: ['channel:manage:redemptions', 'channel:manage:predictions'], bot: ['user:read:chat', 'user:write:chat'] };
 const endpoint = 'https://id.twitch.tv/oauth2';
 
 export class TwitchAuth {
@@ -24,6 +24,7 @@ export class TwitchAuth {
   configured() { return Boolean(this.config.clientId && this.config.clientSecret && this.config.redirectUri); }
   connected(role: Role) { return Boolean(this.tokens[role]); }
   identity(role: Role) { const token = this.tokens[role]; return token ? { id: token.userId, login: token.login } : null; }
+  hasScope(role: Role, scope: string) { return this.tokens[role]?.scopes.includes(scope) ?? false; }
   async validateStored() {
     for (const role of ['broadcaster', 'bot'] as const) if (this.tokens[role]) {
       this.tokens[role]!.validatedAt = 0;
@@ -82,8 +83,9 @@ export class TwitchAuth {
     this.save();
     return token.accessToken;
   }
-  async helix(role: Role, route: string, body?: unknown): Promise<Response> {
-    const send = async (access: string) => this.request(`https://api.twitch.tv/helix/${route}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${access}`, 'Client-Id': this.config.clientId, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(10000) });
+  async helix(role: Role, route: string, body?: unknown): Promise<Response> { return this.helixRequest(role, route, body === undefined ? 'GET' : 'POST', body); }
+  async helixRequest(role: Role, route: string, method: 'GET' | 'POST' | 'PATCH', body?: unknown): Promise<Response> {
+    const send = async (access: string) => this.request(`https://api.twitch.tv/helix/${route}`, { method, headers: { Authorization: `Bearer ${access}`, 'Client-Id': this.config.clientId, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(10000) });
     let response = await send(await this.token(role));
     if (response.status === 401) response = await send(await this.refresh(role));
     return response;

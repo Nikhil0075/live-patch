@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import type { GameAction, GameAdapter, GameEvent } from '../../../engine/game-api';
 import type { GameManifest } from '../../../engine/manifest/schema';
-import { defaultSettings, type StudioSettings } from '../../../engine/studio/settings';
+import { defaultSettings, type StudioSettings } from '../../../engine/studio/settings-defaults';
 import { ArenaAudio, soundEvents, type SoundEvent } from './audio';
 import { createArenaTextures } from './art';
 import { maxParticles, ParticleBudget } from './particle-budget';
@@ -28,6 +28,10 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
   const entities: Entity[] = [];
   const parameters: Record<Parameter, number> = { ...defaults };
   const writes = new Map<string, Map<Parameter, { value: number; order: number }>>();
+  type Editable = 'x' | 'y' | 'vx' | 'vy' | 'radius' | 'tag';
+  const entityEdits = new Map<string, Map<number, Partial<Pick<Entity, Editable>>>>();
+  const removedEntities = new Map<string, Entity[]>();
+  const scoreCredits = new Map<string, number>();
   let writeOrder = 0;
   const effects: { x: number; y: number; radius: number; color: number; life: number; owner?: string }[] = [];
   const particles: { x: number; y: number; vx: number; vy: number; life: number; color: number; owner?: string }[] = [];
@@ -39,8 +43,19 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
   let scene: Arena | undefined;
 
   const active = (kind: Kind) => entities.filter(entity => entity.alive && entity.kind === kind);
+  function credit(origin: string | undefined, amount: number) { if (origin) scoreCredits.set(origin, (scoreCredits.get(origin) ?? 0) + amount); }
+  function parameterOwner(key: Parameter): string | undefined {
+    let latest: { origin: string; order: number } | undefined;
+    for (const [origin, values] of writes) { const value = values.get(key); if (value && (!latest || value.order > latest.order)) latest = { origin, order: value.order }; }
+    return latest?.origin;
+  }
+  function remember(entity: Entity, origin: string, keys: Editable[]) {
+    let byEntity = entityEdits.get(origin); if (!byEntity) { byEntity = new Map(); entityEdits.set(origin, byEntity); }
+    let prior = byEntity.get(entity.id); if (!prior) { prior = {}; byEntity.set(entity.id, prior); }
+    for (const key of keys) if (!(key in prior)) Object.assign(prior, { [key]: entity[key] });
+  }
   const snapshot = () => ({
-    player: { ...player }, score, elapsed, runElapsed, frame, maxFrameGap, flashesLastSecond: flashTimes.filter(time => performance.now() - time < 1000).length,
+    player: { ...player }, score, elapsed, runElapsed, frame, renderer: phaser.renderer?.type === Phaser.WEBGL ? 'webgl' : 'canvas', maxFrameGap, flashesLastSecond: flashTimes.filter(time => performance.now() - time < 1000).length,
     frameRate: recentFrames.length > 1 ? (recentFrames.length - 1) * 1000 / (recentFrames.at(-1)! - recentFrames[0]) : 60,
     enemies: active('enemy').length, coins: active('coin').length, floatingTexts: floating.length, particles: particles.length,
     entities: entities.filter(entity => entity.alive).slice(0, 100).map(({ id, kind, x, y, radius, vx, vy, tag }) => ({ id, kind, x, y, radius, vx, vy, tag }))
@@ -53,7 +68,14 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     entities.push(entity);
     emit({ type: 'spawn', id: entity.id, kind, x: entity.x, y: entity.y, origin: owner });
   }
-  function removeEntity(id: number) { const entity = entities.find(item => item.id === id && item.alive); if (entity) entity.alive = false; }
+  function removeEntity(id: number, origin?: string) {
+    const entity = entities.find(item => item.id === id && item.alive);
+    if (!entity) return;
+    if (origin && entity.owner !== origin) {
+      const removed = removedEntities.get(origin) ?? []; removed.push({ ...entity, ...entityEdits.get(origin)?.get(entity.id), sprite: undefined }); if (removed.length > 96) removed.shift(); removedEntities.set(origin, removed);
+    }
+    entity.alive = false;
+  }
   function hitEntity(entity: Entity, origin?: string) {
     if (!entity.alive) return;
     entity.alive = false;
@@ -62,7 +84,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     audio.play('death');
     if (scene) floating.push({ label: scene.add.text(entity.x, entity.y - 18, '+2', { fontFamily: 'Arial', fontSize: '25px', color: '#ffe395', fontStyle: 'bold', stroke: '#4f2a0c', strokeThickness: 4 }).setDepth(3), life: 1, owner: origin });
     emit({ type: 'hit', target: 'enemy', id: entity.id, kind: entity.kind, x: entity.x, y: entity.y, origin });
-    score += 2; emit({ type: 'score', amount: 2, origin });
+    score += 2; credit(origin, 2); emit({ type: 'score', amount: 2, origin });
   }
   function recomputeParameter(key: Parameter) {
     let latest: { value: number; order: number } | undefined;
@@ -73,6 +95,17 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     const values = writes.get(origin);
     writes.delete(origin);
     if (values) for (const key of values.keys()) recomputeParameter(key);
+    for (const [id, prior] of entityEdits.get(origin) ?? []) {
+      const entity = entities.find(item => item.id === id && item.alive);
+      if (entity) Object.assign(entity, prior);
+    }
+    entityEdits.delete(origin);
+    for (const removed of removedEntities.get(origin) ?? []) if (!entities.some(item => item.id === removed.id && item.alive)) {
+      const restored = { ...removed, alive: true, sprite: scene?.add.image(removed.x, removed.y, `arena-${removed.kind}`).setDepth(1).setDisplaySize(removed.radius * 3.6, removed.radius * 3.6) };
+      entities.push(restored);
+    }
+    removedEntities.delete(origin);
+    score = Math.max(0, score - (scoreCredits.get(origin) ?? 0)); scoreCredits.delete(origin);
     for (const entity of entities) if (entity.owner === origin) entity.alive = false;
     for (let i = effects.length - 1; i >= 0; i--) if (effects[i].owner === origin) effects.splice(i, 1);
     for (let i = messages.length - 1; i >= 0; i--) if (messages[i].owner === origin) messages.splice(i, 1);
@@ -92,11 +125,11 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     const [a, b, c, d] = action.args;
     switch (action.type) {
       case 'spawn': if (validKind(a) && finite(b) && finite(c) && (d === undefined || finite(d))) spawn(a, b, c, d as number | undefined, origin); break;
-      case 'removeEntity': if (finite(a)) removeEntity(a); break;
-      case 'moveEntity': if (finite(a) && finite(b) && finite(c)) { const entity = entities.find(item => item.id === a && item.alive); if (entity) { entity.x = clamp(b, 12, width - 12); entity.y = clamp(c, 12, height - 12); } } break;
-      case 'setVelocity': if (finite(a) && finite(b) && finite(c)) { const entity = entities.find(item => item.id === a && item.alive); if (entity) { entity.vx = clamp(b, -250, 250); entity.vy = clamp(c, -250, 250); } } break;
-      case 'setRadius': if (finite(a) && finite(b)) { const entity = entities.find(item => item.id === a && item.alive); if (entity) entity.radius = clamp(b, 4, 45); } break;
-      case 'setTag': if (finite(a) && typeof b === 'string') { const entity = entities.find(item => item.id === a && item.alive); if (entity) entity.tag = b.slice(0, 24); } break;
+      case 'removeEntity': if (finite(a)) removeEntity(a, origin); break;
+      case 'moveEntity': if (finite(a) && finite(b) && finite(c)) { const entity = entities.find(item => item.id === a && item.alive); if (entity) { remember(entity, origin, ['x', 'y']); entity.x = clamp(b, 12, width - 12); entity.y = clamp(c, 12, height - 12); } } break;
+      case 'setVelocity': if (finite(a) && finite(b) && finite(c)) { const entity = entities.find(item => item.id === a && item.alive); if (entity) { remember(entity, origin, ['vx', 'vy']); entity.vx = clamp(b, -250, 250); entity.vy = clamp(c, -250, 250); } } break;
+      case 'setRadius': if (finite(a) && finite(b)) { const entity = entities.find(item => item.id === a && item.alive); if (entity) { remember(entity, origin, ['radius']); entity.radius = clamp(b, 4, 45); } } break;
+      case 'setTag': if (finite(a) && typeof b === 'string') { const entity = entities.find(item => item.id === a && item.alive); if (entity) { remember(entity, origin, ['tag']); entity.tag = b.slice(0, 24); } } break;
       case 'setParameter': if (typeof a === 'string' && Object.hasOwn(parameters, a) && finite(b)) {
         const key = a as Parameter; let own = writes.get(origin); if (!own) { own = new Map(); writes.set(origin, own); }
         own.set(key, { value: clamp(b, ...limits[key]), order: ++writeOrder }); recomputeParameter(key);
@@ -137,10 +170,6 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       this.add.image(width / 2, height / 2, 'arena-floor').setDepth(-2);
       this.pen = this.add.graphics();
       this.avatar = this.add.image(player.x, player.y, 'arena-player').setDepth(2).setDisplaySize(78, 78);
-      if (this.game.renderer.type === Phaser.WEBGL && !navigator.webdriver) {
-        this.avatar.postFX?.addGlow(0x62ffce, 2, .1);
-        this.avatar.postFX?.addBloom(0x58ffcc, .35, .35, .5, .25, 1);
-      }
       this.hud = this.add.text(20, 16, '', { fontFamily: 'Arial', fontSize: '19px', color: '#edffff', fontStyle: 'bold' }).setDepth(2);
       this.banner = this.add.text(width / 2, 65, '', { fontFamily: 'Arial', fontSize: '22px', color: '#ffe187', align: 'center' }).setOrigin(.5).setDepth(2);
       this.keys = this.input.keyboard!.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE') as Record<string, Phaser.Input.Keyboard.Key>;
@@ -186,7 +215,10 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
           playerContacts.add(entity.id);
           if (!this.playerTouching.has(entity.id)) emit({ type: 'collide', id: entity.id, kind: entity.kind, x: entity.x, y: entity.y });
           if (entity.kind === 'coin') {
-            entity.alive = false; score += parameters.coinValue; emit({ type: 'score', amount: parameters.coinValue });
+            entity.alive = false; score += parameters.coinValue;
+            if (entity.owner) credit(entity.owner, parameters.coinValue);
+            else credit(parameterOwner('coinValue'), parameters.coinValue - defaults.coinValue);
+            emit({ type: 'score', amount: parameters.coinValue });
             burst('coin', entity.x, entity.y); audio.play('coin');
             floating.push({ label: this.add.text(entity.x, entity.y - 20, `+${parameters.coinValue}`, { fontFamily: 'Arial', fontSize: '26px', color: '#ffe395', fontStyle: 'bold', stroke: '#4b2d0a', strokeThickness: 4 }).setDepth(3), life: 1 });
           }
@@ -220,12 +252,12 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       for (let i = effects.length - 1; i >= 0; i--) if (effects[i].life <= 0) effects.splice(i, 1);
       for (let i = messages.length - 1; i >= 0; i--) if (messages[i].life <= 0) messages.splice(i, 1);
       for (let i = floating.length - 1; i >= 0; i--) if (floating[i].life <= 0) { floating[i].label.destroy(); floating.splice(i, 1); }
-      for (let i = entities.length - 1; i >= 0; i--) if (!entities[i].alive) { entities[i].sprite?.destroy(); entities.splice(i, 1); }
+      for (let i = entities.length - 1; i >= 0; i--) if (!entities[i].alive) { const id = entities[i].id; entities[i].sprite?.destroy(); entities.splice(i, 1); for (const edits of entityEdits.values()) edits.delete(id); }
       this.draw(); emit({ type: 'tick', delta: dt });
     }
     private newRun() {
       player.lives = 3; player.x = width / 2; player.y = height / 2;
-      score = 0; runElapsed = 0; spawnClock = 0; invincible = 1.5;
+      score = 0; scoreCredits.clear(); entityEdits.clear(); removedEntities.clear(); runElapsed = 0; spawnClock = 0; invincible = 1.5;
       for (const entity of entities) entity.sprite?.destroy(); entities.length = 0; this.touching.clear(); this.playerTouching.clear();
       particles.length = 0;
       for (let i = 0; i < 4; i++) spawn('coin', 130 + i * 200, 160 + (i % 2) * 280);

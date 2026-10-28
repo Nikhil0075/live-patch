@@ -75,6 +75,15 @@ describe('Phase 2 idea pipeline', () => {
     expect(store.list().map(idea => idea.source)).toEqual(['chat', 'reward']);
     expect(replies).toContain('@viewer idea received: Enemies split');
   }));
+  it('calls refund handling once when a Twitch reward pitch is rejected', async () => tempStore(async store => {
+    const onRejectedReward = vi.fn().mockResolvedValue('Twitch confirmed points were returned.');
+    const pipeline = new ChatPipeline(store, { rewardId: 'reward-1', reply: async () => {}, onRejectedReward });
+    const event: Extract<InboundEvent, { kind: 'reward' }> = { kind: 'reward', origin: 'twitch', id: 'message-1', redemptionId: 'redemption-1', viewer, rewardId: 'reward-1', text: 'x'.repeat(201) };
+    expect((await pipeline.ingest(event)).message).toContain('points were returned');
+    await pipeline.ingest(event);
+    expect(onRejectedReward).toHaveBeenCalledTimes(1);
+    expect(onRejectedReward).toHaveBeenCalledWith(event, expect.stringContaining('Ideas must be'));
+  }));
 
   it('restricts moderation, tracks one vote per viewer, and records rollback requests', async () => tempStore(async (store, file) => {
     const pipeline = new ChatPipeline(store, { rewardId: 'reward-1', reply: async () => {} });
@@ -131,10 +140,10 @@ describe('Phase 2 idea pipeline', () => {
       const file = path.join(directory, 'tokens.json');
       let exchange = 0;
       const request = vi.fn(async (url: string, options?: RequestInit) => {
-        if (url.endsWith('/validate')) return new Response(JSON.stringify({ client_id: 'client', user_id: '100', login: 'streamer', scopes: ['channel:read:redemptions'] }), { status: 200 });
+        if (url.endsWith('/validate')) return new Response(JSON.stringify({ client_id: 'client', user_id: '100', login: 'streamer', scopes: ['channel:manage:redemptions', 'channel:manage:predictions'] }), { status: 200 });
         exchange++;
         expect(String(options?.body)).toContain(exchange === 1 ? 'authorization_code' : 'refresh_token');
-        return new Response(JSON.stringify({ access_token: `access-${exchange}`, refresh_token: `refresh-${exchange}`, expires_in: exchange === 1 ? 0 : 3600, scope: ['channel:read:redemptions'] }), { status: 200 });
+        return new Response(JSON.stringify({ access_token: `access-${exchange}`, refresh_token: `refresh-${exchange}`, expires_in: exchange === 1 ? 0 : 3600, scope: ['channel:manage:redemptions', 'channel:manage:predictions'] }), { status: 200 });
       }) as unknown as typeof fetch;
       const auth = new TwitchAuth({ clientId: 'client', clientSecret: 'secret', redirectUri: defaultTwitchRedirectUri, rewardId: 'r' }, file, request);
       const url = new URL(auth.authorizeUrl('broadcaster'));
@@ -150,7 +159,7 @@ describe('Phase 2 idea pipeline', () => {
     const directory = fs.mkdtempSync(path.join(process.cwd(), '.test-auth-'));
     try {
       const file = path.join(directory, 'tokens.json');
-      fs.writeFileSync(file, JSON.stringify({ broadcaster: { accessToken: 'expired', refreshToken: 'refresh', userId: '100', login: 'streamer', scopes: ['channel:read:redemptions'], expiresAt: 0, validatedAt: 0 } }));
+      fs.writeFileSync(file, JSON.stringify({ broadcaster: { accessToken: 'expired', refreshToken: 'refresh', userId: '100', login: 'streamer', scopes: ['channel:manage:redemptions', 'channel:manage:predictions'], expiresAt: 0, validatedAt: 0 } }));
       for (const status of [401, 503]) {
         const request = vi.fn(async () => new Response('', { status })) as unknown as typeof fetch;
         const auth = new TwitchAuth({ clientId: 'client', clientSecret: 'secret', redirectUri: defaultTwitchRedirectUri, rewardId: 'r' }, file, request);

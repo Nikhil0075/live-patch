@@ -5,6 +5,7 @@ import { execFile, spawn } from 'node:child_process';
 import { chromium } from '@playwright/test';
 import { codexBinary, runnerEnvironment, verifySandbox } from '../runner/sandbox';
 import type { TwitchConfig } from '../twitch/auth';
+import type { RewardState } from '../twitch/rewards';
 
 export type CheckState = 'Ready' | 'Needs action' | 'Not available here';
 export interface SetupCheck { id: string; label: string; state: CheckState; reason: string; fix?: string }
@@ -36,7 +37,7 @@ export async function sandboxSelfTest(root: string): Promise<SetupCheck> {
   finally { fs.rmSync(directory, { recursive: true, force: true }); }
 }
 
-export async function setupChecks(root: string, config: TwitchConfig, identities: { broadcaster: boolean; bot: boolean }, sandbox?: SetupCheck): Promise<SetupCheck[]> {
+export async function setupChecks(root: string, config: TwitchConfig, identities: { broadcaster: boolean; bot: boolean }, sandbox?: SetupCheck, reward?: RewardState): Promise<SetupCheck[]> {
   const nodeMajor = Number(process.versions.node.split('.')[0]);
   const git = await command('git', ['--version']);
   let codex = ''; try { codex = codexBinary(); } catch { /* unavailable */ }
@@ -54,7 +55,7 @@ export async function setupChecks(root: string, config: TwitchConfig, identities
     check('project', 'Project location', !synced && writable ? 'Ready' : 'Needs action', synced ? 'This project is in a synced folder; sandbox writes may be blocked.' : writable ? 'Writable local folder' : 'This account cannot write to the project folder.'),
     check('twitch-app', 'Twitch app', config.clientId && config.clientSecret ? 'Ready' : 'Needs action', config.clientId && config.clientSecret ? 'Credentials are saved; secret is hidden.' : 'Add Twitch app credentials below. Twitch is optional for practice.'),
     check('accounts', 'Broadcaster and bot', identities.broadcaster && identities.bot ? 'Ready' : 'Needs action', identities.broadcaster && identities.bot ? 'Both accounts connected' : 'Connect separate broadcaster and bot accounts.'),
-    check('reward', 'Pitch reward', config.rewardId ? 'Ready' : 'Needs action', config.rewardId ? 'Reward ID set' : 'Optional: add the custom reward ID.'),
+    check('reward', 'Pitch reward', reward?.state === 'enabled' ? 'Ready' : 'Needs action', reward?.reason ?? (config.rewardId ? 'Checking the reward on Twitch.' : 'Optional: add the custom reward ID.')),
     check('overlay', 'OBS overlay', 'Ready', 'The local overlay URL is available at /overlay.html.')
   ];
   if (process.platform !== 'win32') checks.push(check('defender', 'Controlled Folder Access', 'Not available here', 'Windows Security is available only on Windows.'));

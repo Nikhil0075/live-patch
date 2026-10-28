@@ -47,6 +47,9 @@ describe('platform contract', () => {
     expect(validateMutation('export const meta = {}; const s = `ok ${0}`; fetch("/escape")', manifest)).toMatch(/Forbidden token: fetch/);
     expect(validateMutation('export const meta = { description: `top self frames ${0}` }; let frames = 0; frames++;', manifest)).toBeNull();
     expect(validateMutation('export const meta = {}; const obj = { top: 1, self: 2 }; obj.top;', manifest)).toBeNull();
+    expect(validateMutation('export const meta = {}; function local(){ const fetch = () => 1; return fetch(); } fetch("/escape");', manifest)).toMatch(/Forbidden token: fetch/);
+    expect(validateMutation('export const meta = {}; { const self = 1; } self.postMessage({});', manifest)).toMatch(/Forbidden token: self/);
+    expect(validateMutation('export const meta = {}; function local(top){ return top + 1; }', manifest)).toBeNull();
   });
   it('rejects example paths that escape the game folder', () => {
     const source = path.resolve(root, gamePath);

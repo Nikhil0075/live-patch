@@ -153,6 +153,16 @@ test('a frame ignores a load message that did not come from its parent', async (
   await expect(page.locator('#mutations')).toContainText('Quick Feet · active');
 });
 
+test('a burst of matching events reaches one module in order', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#status')).toContainText('LIVE');
+  await page.evaluate(() => (window as any).__livePatch.host.sync([{ name: 'batch.js', source: `export const meta={id:'batch',title:'Batch',author:'test',description:'order'}; let next=0; export function onChat(game,event){ if(Number(event.text)!==next) throw Error('event order'); next++; if(next===30) game.spawn('coin',100,100); }`, error: null }]));
+  await expect(page.locator('#mutations')).toContainText('Batch · active');
+  await page.evaluate(() => { for (let i = 0; i < 30; i++) (window as any).__livePatch.host.emit({ type: 'chat', text: String(i), author: 'test' }); });
+  await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().coins)).toBeGreaterThanOrEqual(5);
+  await expect(page.locator('#mutations')).toContainText('Batch · active');
+});
+
 test('an action storm is throttled before it fills the arena', async ({ page }) => {
   const file = path.join(mutationDir, 'zz-storm-test.js');
   try {
@@ -253,6 +263,30 @@ test('removing a mutation reverses its parameter change', async ({ page }) => {
   } finally { fs.rmSync(file, { force: true }); }
 });
 
+test('rollback restores another entity and removes patch-earned score', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#status')).toContainText('LIVE');
+  const result = await page.evaluate(async () => {
+    const game = (window as any).__livePatch.game;
+    game.apply({ type: 'spawn', args: ['coin', 100, 100] }, 'system');
+    const coin = game.snapshot().entities.find((entity: any) => entity.kind === 'coin' && entity.x === 100 && entity.y === 100);
+    game.apply({ type: 'setTag', args: [coin.id, 'changed'] }, 'patch-test');
+    game.apply({ type: 'setRadius', args: [coin.id, 25] }, 'patch-test');
+    game.apply({ type: 'removeEntity', args: [coin.id] }, 'patch-test');
+    await new Promise(resolve => setTimeout(resolve, 100));
+    game.removeMutation('patch-test');
+    const restored = game.snapshot().entities.find((entity: any) => entity.id === coin.id);
+    const { x, y } = game.snapshot().player;
+    game.apply({ type: 'spawn', args: ['coin', x, y] }, 'patch-score');
+    await new Promise(resolve => setTimeout(resolve, 150));
+    const earned = game.snapshot().score;
+    game.removeMutation('patch-score');
+    return { restored, earned, after: game.snapshot().score };
+  });
+  expect(result.restored).toMatchObject({ tag: '', radius: 12 });
+  expect(result.earned).toBeGreaterThan(result.after);
+});
+
 test('one crowded Space attack keeps unrelated patches active', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#mutations li')).toHaveCount(3);
@@ -267,6 +301,22 @@ test('one crowded Space attack keeps unrelated patches active', async ({ page })
   await expect(page.locator('#mutations li')).toHaveCount(3);
   for (const patch of ['Quick Feet', 'Gold Rush', 'Danger Zone']) await expect(page.locator('#mutations')).toContainText(`${patch} · active`);
   await expect(page.locator('#notice')).toBeEmpty();
+});
+
+test('WebGL crowd keeps patches active', async ({ page }) => {
+  test.skip(process.env.LIVE_PATCH_WEBGL !== '1', 'Opt-in WebGL renderer check');
+  await page.goto('/');
+  await expect(page.locator('#mutations li')).toHaveCount(3);
+  expect(await page.evaluate(() => (window as any).__livePatch.game.snapshot().renderer)).toBe('webgl');
+  await page.evaluate(() => {
+    const game = (window as any).__livePatch.game;
+    const { x, y } = game.snapshot().player;
+    for (let i = 0; i < 28; i++) game.apply({ type: 'spawn', args: ['enemy', x + 48 + i % 3, y + i % 3] }, 'crowd');
+  });
+  await page.keyboard.down('Space'); await page.waitForTimeout(100); await page.keyboard.up('Space');
+  await page.waitForTimeout(700);
+  for (const patch of ['Quick Feet', 'Gold Rush', 'Danger Zone']) await expect(page.locator('#mutations')).toContainText(`${patch} · active`);
+  expect(await page.evaluate(() => (window as any).__livePatch.game.snapshot().particles)).toBeLessThanOrEqual(64);
 });
 
 test('out-of-range text and parameter arguments are bounded', async ({ page }) => {
@@ -446,6 +496,40 @@ test('studio navigation, setup and build library keep viewer data plain text', a
     await expect(firstRun).toHaveURL(/view=setup/);
     await expect(firstRun.getByRole('heading', { name: 'Guided setup' })).toBeVisible();
   } finally { await firstRun.close(); }
+});
+
+test('saved build compares original and evolved games without changing the live run', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.goto('/');
+  await expect(page.locator('#mutations')).toContainText('Quick Feet');
+  const before = await page.evaluate(() => (window as any).__livePatch.game.snapshot().frame);
+  const saved = await page.evaluate(async () => fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save' }) }).then(response => response.json())) as { id: string };
+  expect(saved).toHaveProperty('id');
+  expect(saved.id).toMatch(/^[\w-]+$/);
+  const compare = await page.context().newPage();
+  try {
+    await compare.goto(`/compare.html?id=${encodeURIComponent(saved.id)}`);
+    await expect(compare.frameLocator('#original').locator('#status')).toContainText('LIVE', { timeout: 40_000 });
+    await expect(compare.frameLocator('#original').locator('#mutations')).toContainText('No mutations yet');
+    await expect(compare.frameLocator('#evolved').locator('#mutations')).toContainText('Quick Feet', { timeout: 40_000 });
+    expect(await page.evaluate(() => (window as any).__livePatch.game.snapshot().frame)).toBeGreaterThan(before);
+    await expect(page.locator('#mutations')).toContainText('Quick Feet');
+  } finally { await compare.close(); }
+});
+
+test('Practice generates three distinct pitches and one-click votes', async ({ page }) => {
+  await page.goto('/?view=practice');
+  for (let i = 0; i < 3; i++) {
+    await page.getByRole('button', { name: 'Generate sample pitch' }).click();
+    await page.locator('#send button:not([type])').click();
+    await expect(page.locator('#result')).toContainText('Idea received');
+  }
+  const round = await page.evaluate(async () => fetch('/api/round').then(response => response.json())) as { phase: string };
+  if (round.phase === 'pitch') await page.evaluate(() => fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'advance' }) }));
+  for (let i = 1; i <= 3; i++) {
+    await page.getByRole('button', { name: `Vote ${i} as new viewer` }).click();
+    await expect(page.locator('#result')).toContainText('Vote recorded');
+  }
 });
 
 test('setup shows checks while loading and keeps step labels readable', async ({ page }) => {

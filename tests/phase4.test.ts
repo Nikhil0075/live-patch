@@ -165,7 +165,7 @@ describe('Phase 4 rounds and builds', () => {
     } finally { round.stop(); }
   }));
 
-  it('saves a playable game snapshot and patch notes without local data or unshipped patches', async () => fixture((root, ideas, runs) => {
+  it('saves a playable game snapshot and patch notes without local data or unshipped patches', async () => fixture(async (root, ideas, runs) => {
     const game = path.join(root, 'games', 'toy');
     fs.mkdirSync(path.join(game, 'src'), { recursive: true });
     fs.mkdirSync(path.join(game, 'mutations'), { recursive: true });
@@ -178,7 +178,7 @@ describe('Phase 4 rounds and builds', () => {
     ideas.setSpec(idea.id, 'Coins give 3 points ![](https://example.org/image.png)');
     const copy = ideas.add('b', 'Bob', 'Coins give 3 points!', 'chat'); ideas.merge(copy.id, idea.id);
     runs.upsert({ id: 'run-a', ideaId: idea.id, gameDirectory: game, status: 'shipped', mutationName: 'patch-aaaaaaaaaaaa.js', startedAt: new Date().toISOString() });
-    const result = saveBuild(root, game, { name: 'Toy', mutationDir: 'mutations' } as GameManifest, ideas, runs);
+    const result = await saveBuild(root, game, { name: 'Toy', entry: 'src/main.js', mutationDir: 'mutations' } as GameManifest, ideas, runs);
     const notes = fs.readFileSync(path.join(result.directory, 'patch-notes.md'), 'utf8');
     expect(notes).toContain('Coins give 3 points');
     expect(notes).toContain('Bob');
@@ -188,5 +188,6 @@ describe('Phase 4 rounds and builds', () => {
     expect(fs.existsSync(path.join(result.directory, 'game', '.env'))).toBe(false);
     expect(fs.existsSync(path.join(result.directory, 'game', 'mutations', 'patch-aaaaaaaaaaaa.js'))).toBe(true);
     expect(fs.existsSync(path.join(result.directory, 'game', 'mutations', 'patch-bbbbbbbbbbbb.js'))).toBe(false);
+    expect(fs.existsSync(path.join(result.directory, 'game-entry.js'))).toBe(true);
   }));
 });
