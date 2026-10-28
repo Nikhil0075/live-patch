@@ -9,9 +9,10 @@ import type { TwitchConfig } from '../twitch/auth';
 export type CheckState = 'Ready' | 'Needs action' | 'Not available here';
 export interface SetupCheck { id: string; label: string; state: CheckState; reason: string; fix?: string }
 const check = (id: string, label: string, state: CheckState, reason: string, fix?: string): SetupCheck => ({ id, label, state, reason, fix });
-const command = (binary: string, args: string[], timeout = 4000): Promise<string> => new Promise(resolve => {
-  execFile(binary, args, { encoding: 'utf8', timeout, windowsHide: true }, (error, stdout) => resolve(error ? '' : stdout.trim()));
+export const command = (binary: string, args: string[], timeout = 4000): Promise<string> => new Promise(resolve => {
+  execFile(binary, args, { encoding: 'utf8', timeout, windowsHide: true }, (error, stdout, stderr) => resolve(error ? '' : `${stdout}\n${stderr}`.trim()));
 });
+export const codexSignedIn = (output: string): boolean => /^(?:logged in\b|authenticated\b)/im.test(output);
 
 export function classifySandboxError(raw: string): SetupCheck {
   const text = raw.toLowerCase();
@@ -39,7 +40,7 @@ export async function setupChecks(root: string, config: TwitchConfig, identities
   const nodeMajor = Number(process.versions.node.split('.')[0]);
   const git = await command('git', ['--version']);
   let codex = ''; try { codex = codexBinary(); } catch { /* unavailable */ }
-  const signedIn = codex ? /logged in|authenticated/i.test(await command(codex, ['login', 'status'], 6000)) : false;
+  const signedIn = codex ? codexSignedIn(await command(codex, ['login', 'status'], 6000)) : false;
   const browser = fs.existsSync(chromium.executablePath());
   const synced = /onedrive|dropbox|sharepoint/i.test(root);
   let writable = true; try { fs.accessSync(root, fs.constants.W_OK); } catch { writable = false; }
@@ -73,21 +74,29 @@ export async function setupChecks(root: string, config: TwitchConfig, identities
   return checks;
 }
 
-export const sandboxSetupArgs = ['sandbox', 'setup', '--elevated', '--current-user'] as const;
-export function sandboxSetupPowerShell(binary: string): string {
-  const escaped = binary.replaceAll("'", "''");
-  return `$p=Start-Process -FilePath '${escaped}' -ArgumentList '${sandboxSetupArgs.join(' ')}' -Verb RunAs -Wait -PassThru; exit $p.ExitCode`;
+export function sandboxSetupArgs(user: string, codexHome: string): string[] {
+  return ['sandbox', 'setup', '--elevated', '--user', user, '--codex-home', codexHome];
+}
+export function sandboxSetupPowerShell(binary: string, user: string, codexHome: string): string {
+  const single = (value: string) => value.replaceAll("'", "''");
+  const quoted = (value: string) => `"${value.replaceAll('"', '\\"')}"`;
+  const args = sandboxSetupArgs(user, codexHome).map((value, index) => index === 4 || index === 6 ? quoted(value) : value).join(' ');
+  return `$p=Start-Process -FilePath '${single(binary)}' -ArgumentList '${single(args)}' -Verb RunAs -Wait -PassThru; exit $p.ExitCode`;
 }
 
 export async function runSandboxSetup(): Promise<{ success: boolean; error?: string }> {
   if (process.platform !== 'win32') return { success: false, error: 'Windows setup is not available here' };
   return new Promise(resolve => {
     let binary: string; try { binary = codexBinary(); } catch { resolve({ success: false, error: 'Codex CLI is missing' }); return; }
-    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', sandboxSetupPowerShell(binary)], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-    let detail = '';
-    const collect = (chunk: Buffer) => { detail = (detail + chunk.toString()).slice(-1000); };
-    child.stdout.on('data', collect); child.stderr.on('data', collect);
-    child.on('error', error => resolve({ success: false, error: String(error) }));
-    child.on('close', code => resolve(code === 0 ? { success: true } : { success: false, error: detail || `Setup exited ${code}` }));
+    void command('whoami', [], 4000).then(user => {
+      if (!user) { resolve({ success: false, error: 'Could not identify the Windows account running Live Patch' }); return; }
+      const codexHome = path.resolve(process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex'));
+      const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', sandboxSetupPowerShell(binary, user, codexHome)], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      let detail = '';
+      const collect = (chunk: Buffer) => { detail = (detail + chunk.toString()).slice(-1000); };
+      child.stdout.on('data', collect); child.stderr.on('data', collect);
+      child.on('error', error => resolve({ success: false, error: String(error) }));
+      child.on('close', code => resolve(code === 0 ? { success: true } : { success: false, error: detail || `Setup exited ${code}` }));
+    }).catch(error => resolve({ success: false, error: String(error) }));
   });
 }

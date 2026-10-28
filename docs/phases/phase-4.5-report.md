@@ -24,7 +24,7 @@
 - [x] Mutation sound/effect actions are declared and throttled — unit and browser spam checks.
 - [x] Pitch queue, confirmation and plain-text rendering — browser coverage.
 - [x] Asset provenance — `games/arena-survivor/assets/CREDITS.md`; all art and audio are original code-drawn or synthesized assets.
-- [x] Full suite, TypeScript build and dependency audit — `npm test`: 49 unit passed (4 opt-in skipped), 31 browser passed; `npm run build` passed; `npm audit --audit-level=high`: 0 vulnerabilities after the round-one fix pass.
+- [x] Full suite, TypeScript build and dependency audit — `npm test`: 50 unit passed (4 opt-in skipped), 32 browser passed; `npm run build` passed; `npm audit --audit-level=high`: 0 vulnerabilities after the round-two fix pass.
 
 ## Deferred
 - Channel-point bets, original-versus-evolved comparison, chat rollback voting and reward refunds remain in Phase 5.
@@ -45,7 +45,7 @@
 
 The visual reference remains `plans/phase-4.5/comparison/` outside this repository. The old game frame and new code-drawn frame are retained for direct comparison in [before-game](phase-4.5-visual/before-game.png) and [after-game](phase-4.5-visual/after-game.png). See also [after-overlay](phase-4.5-visual/after-overlay.png), [after-Go-Live](phase-4.5-visual/after-go-live.png), [after-Setup](phase-4.5-visual/after-setup.png) and [after-Library](phase-4.5-visual/after-library.png). Compare these with `comparison/4-overlay.png`, `comparison/3-go-live.png`, `comparison/2-setup.png` and `comparison/1-library.png` in the operator's plan. The new game frame has shaded faces, glowing edges and coins, a lit floor and larger entities. The stream overlay uses the concept's brand/chips/work/ballot hierarchy with readable fixed 1080p type; Go Live and Setup use the concept's dashboard and guided-step hierarchy. The overlay screenshot's white area represents transparency. No concept artwork was copied into the product.
 
-- P45-R1-01: **Fixed in code** — setup now invokes exactly `codex sandbox setup --elevated --current-user` through Windows Run as administrator, classifies CLI usage errors separately and exposes the sandbox self-test. The unit test verifies the arguments. The operator still needs to accept the real UAC prompt and confirm the probe on this PC.
+- P45-R1-01: **Fixed in code** — setup uses the CLI's required target-user arguments through Windows Run as administrator, classifies CLI usage errors separately and exposes the sandbox self-test. Round 2 changed the target from `--current-user` to explicit `--user` and `--codex-home` for standard Windows accounts. The operator still needs to accept the real UAC prompt and confirm the probe on this PC.
 - P45-R1-02: **Fixed** — Vite no longer loads or watches `.env`; the app reads the file and reloads Twitch connections in process when credentials change. A manually edited `.env` still requires a restart.
 - P45-R1-03: **Fixed** — setup process checks are cached for 30 seconds, cross-site GETs are refused, and explicit refresh is a same-origin POST.
 - P45-R1-04: **Fixed** — active selection lives under `LIVE_PATCH_DATA_DIR`; saved-build play sets a temporary process selection and Home/Go Live show a return action. The data-directory unit test covers selection storage.
@@ -55,6 +55,19 @@ The visual reference remains `plans/phase-4.5/comparison/` outside this reposito
 - P45-R1-08: **Fixed** — overlay pitch queue and Go Live both show oldest pending ideas first.
 - P45-R1-09: **Fixed** — fixed 1920×1080 overlay scale, 28px ballot pitch text, 20px secondary text, large timer, code-drawn candidate marks, `!vote N`, percentages, leader bar and large shipped/failure states. The browser vote test measures computed type size.
 - P45-R1-10: **Fixed** — original gradient textures, highlighted jelly slimes, glowing player and floor, coin shine, movement trail and larger particles replaced flat circles. Phaser postprocessing runs on an interactive WebGL renderer; the software-driven automated browser uses the texture glow to keep the smoke frame budget. `CREDITS.md` records the methods and cover provenance.
-- P45-R1-11: **Fixed** — Go Live now has a status strip, three columns, live game preview, vote bars/percentages, persistent Codex timeline, credited patches, saved builds and recent chat. The rail fills the entire page.
+- P45-R1-11: **Fixed** — Go Live now has a status strip, three columns, optional game preview, vote bars/percentages, persistent Codex timeline, credited patches, saved builds and recent chat. The rail fills the entire page.
 - P45-R1-12: **Fixed** — six-step wizard with Back, Continue and Skip, check rows with actions, sandbox self-test, first-run callout and a “What this changes” panel. The operator's timed first-use check remains open.
 - P45-R1-13: **Fixed** — Library now has a real game cover, search, selection details for hooks/actions/audio/effects, status, docs action and an Add your game card in the grid.
+
+## Round 2 fix pass
+
+Visual checks: [signed-in Setup step](phase-4.5-visual/after-setup-r2.png) shows Ready with Continue enabled and legible step states; [Go Live](phase-4.5-visual/after-go-live-r2.png) shows the separate preview off by default and one page heading.
+
+- P45-R2-01: **Fixed** — the Codex sign-in probe now reads both stdout and stderr and only accepts a positive login-status line. A unit test emits "Logged in using ChatGPT" solely on stderr and rejects "Not logged in". Home and Setup share this check.
+- P45-R2-02: **Fixed** — sandbox setup captures `whoami` and `CODEX_HOME` before elevation and passes them explicitly as `--user` and `--codex-home`. A unit test covers a username and home path with spaces. The real UAC and probe check remains operator-only.
+- P45-R2-03: **Fixed** — the server warms setup checks on startup; Setup renders a loading row for each check, marks the section busy and disables Continue until required checks load. The browser test delays the API to confirm this state.
+- P45-R2-04: **Fixed** — step buttons now have explicit current, completed and upcoming colors that override the global button style; completed steps show a tick and retain readable labels. The browser test checks the completed step's color and label.
+- P45-R2-05: **Fixed** — Go Live labels the preview as a separate game run. It is off by default, starts only on operator request, stops on request or when the page is hidden, and no longer implies that its score mirrors the streamer game.
+- P45-R2-06: **Fixed** — removed the duplicate Stream control heading beneath Go Live.
+
+The operator-only checks remain: real elevated sandbox setup and self-test, Twitch reconnect with the actual accounts, and a timed first-run setup plus practice round. Phase 2's live reward redemption also remains open.

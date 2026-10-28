@@ -7,7 +7,7 @@ import { loadGame, defaultGame } from '../engine/manifest/load';
 import { discoverGames, validateImport, makeActive, smokeGame } from '../engine/manifest/library';
 import { EffectLimits } from '../engine/mutation/effect-limits';
 import { SettingsStore } from '../engine/studio/settings';
-import { classifySandboxError, sandboxSetupArgs, sandboxSetupPowerShell } from '../engine/studio/setup';
+import { classifySandboxError, codexSignedIn, command, sandboxSetupArgs, sandboxSetupPowerShell } from '../engine/studio/setup';
 import { publicCredentials, saveCredentials } from '../engine/studio/credentials';
 import { ChatPipeline } from '../engine/pipeline/commands';
 import { IdeaStore } from '../engine/pipeline/ideas';
@@ -19,6 +19,12 @@ const temp = async (work: (directory: string) => Promise<void> | void) => {
 };
 
 describe('Phase 4.5 studio', () => {
+  it('recognizes a signed-in Codex CLI when status is written only to stderr', async () => {
+    const output = await command(process.execPath, ['-e', 'console.error("Logged in using ChatGPT")']);
+    expect(output).toContain('Logged in using ChatGPT');
+    expect(codexSignedIn(output)).toBe(true);
+    expect(codexSignedIn('Not logged in')).toBe(false);
+  });
   it('uses a newly saved reward ID without restarting the idea pipeline', () => temp(directory => {
     const store = new IdeaStore(path.join(directory, 'ideas.json'));
     const pipeline = new ChatPipeline(store, { rewardId: 'old-reward', reply: async () => {} });
@@ -69,8 +75,8 @@ describe('Phase 4.5 studio', () => {
     expect(classifySandboxError('Firewall policy blocked setup').reason).toMatch(/Security software/);
     expect(classifySandboxError('different user CODEX_HOME').fix).toMatch(/account/);
     expect(classifySandboxError('Error: Usage: setup [OPTIONS] <--user <USER>|--current-user> --codex-home')).toMatchObject({ reason: 'The installed Codex CLI rejected the sandbox setup command.' });
-    expect(sandboxSetupArgs).toEqual(['sandbox', 'setup', '--elevated', '--current-user']);
-    expect(sandboxSetupPowerShell('C:\\Program Files\\Codex\\codex.exe')).toContain("-ArgumentList 'sandbox setup --elevated --current-user' -Verb RunAs -Wait");
+    expect(sandboxSetupArgs('DESKTOP\\viewer', 'C:\\Users\\Viewer Name\\.codex')).toEqual(['sandbox', 'setup', '--elevated', '--user', 'DESKTOP\\viewer', '--codex-home', 'C:\\Users\\Viewer Name\\.codex']);
+    expect(sandboxSetupPowerShell('C:\\Program Files\\Codex\\codex.exe', 'DESKTOP\\viewer', 'C:\\Users\\Viewer Name\\.codex')).toContain('-ArgumentList \'sandbox setup --elevated --user "DESKTOP\\viewer" --codex-home "C:\\Users\\Viewer Name\\.codex"\' -Verb RunAs -Wait');
     const sources = fs.readFileSync(path.join(root, 'engine', 'studio', 'setup.ts'), 'utf8');
     expect(sources).not.toMatch(/Set-MpPreference|Add-MpPreference|Remove-MpPreference/);
   });

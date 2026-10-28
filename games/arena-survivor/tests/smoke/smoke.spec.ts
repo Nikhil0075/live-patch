@@ -364,7 +364,7 @@ test('simulator submits ideas and chat through the live game path as plain text'
 
 test('operator controls timed voting and the OBS overlay renders viewer text safely', async ({ page }) => {
   await page.goto('/control.html');
-  await expect(page.getByRole('heading', { name: 'Stream control' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Go Live' })).toBeVisible();
   const denied = await page.request.post('/api/control', { headers: { Origin: 'https://outside.example', 'Content-Type': 'application/json' }, data: { action: 'advance' } });
   expect(denied.status()).toBe(403);
   const phase = async () => page.evaluate(async () => (await fetch('/api/round').then(response => response.json())).phase as string);
@@ -433,12 +433,29 @@ test('studio navigation, setup and build library keep viewer data plain text', a
   await expect(page.locator('.live-columns > section')).toHaveCount(3);
   await expect(page.locator('#runs')).toContainText('Sandbox verified');
   await expect(page.locator('#chat-strip')).toBeVisible();
+  await expect(page.locator('.game-preview iframe')).toBeHidden();
+  await page.getByRole('button', { name: 'Start preview' }).click();
+  await expect(page.locator('.game-preview iframe')).toHaveAttribute('src', '/preview.html');
+  await page.getByRole('button', { name: 'Stop preview' }).click();
+  await expect(page.locator('.game-preview iframe')).toBeHidden();
   const firstRun = await page.context().newPage();
   try {
     await firstRun.goto('/?first-run=1');
     await expect(firstRun).toHaveURL(/view=setup/);
     await expect(firstRun.getByRole('heading', { name: 'Guided setup' })).toBeVisible();
   } finally { await firstRun.close(); }
+});
+
+test('setup shows checks while loading and keeps step labels readable', async ({ page }) => {
+  await page.route('**/api/setup', async route => { await new Promise(resolve => setTimeout(resolve, 1200)); await route.continue(); });
+  await page.goto('/?view=setup');
+  await expect(page.locator('.setup-check-row').first()).toContainText('Checking…');
+  await expect(page.locator('#setup-continue')).toBeDisabled();
+  await expect(page.locator('#setup-checks')).toHaveAttribute('aria-busy', 'false', { timeout: 20_000 });
+  await page.getByRole('button', { name: '2 Codex sign-in' }).click();
+  const done = page.locator('.setup-step.done').first();
+  await expect(done).toContainText('Requirements');
+  await expect(done).toHaveCSS('color', 'rgb(180, 255, 224)');
 });
 
 test('mutation sound and visual requests are throttled while the game keeps running', async ({ page }) => {

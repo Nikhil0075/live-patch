@@ -37,11 +37,24 @@ const checkActions: Record<string, { label: string; action: () => void }> = {
   reward: { label: 'Set reward ID', action: () => { current = 3; render(); (root.querySelector('input[name="rewardId"]') as HTMLInputElement).focus(); } },
   overlay: { label: 'Copy overlay URL', action: () => { void navigator.clipboard.writeText(`${location.origin}/overlay.html`); root.querySelector('#overlay-notice')!.textContent = 'Overlay URL copied.'; } }
 };
+const loadingLabels: Record<string, string> = { node: 'Node.js 20+', git: 'Git', dependencies: 'Dependencies', browser: 'Playwright browser', project: 'Project location', codex: 'Codex CLI and sign-in', sandbox: 'Codex elevated sandbox', defender: 'Controlled Folder Access', 'twitch-app': 'Twitch app', accounts: 'Broadcaster and bot', reward: 'Pitch reward', overlay: 'OBS overlay' };
+checksBox.setAttribute('aria-busy', 'true');
+for (const [step, ids] of stepChecks.entries()) {
+  const group = document.createElement('section'); group.className = 'setup-check-group';
+  appendText(group, 'h2', steps[step]);
+  for (const id of ids) {
+    const row = document.createElement('article'); row.className = 'setup-check-row'; row.dataset.check = id;
+    const description = document.createElement('div'); appendText(description, 'strong', loadingLabels[id]); appendText(description, 'p', 'Checking this PC…');
+    row.append(description); appendText(row, 'span', 'Checking…', 'state-unavailable'); group.append(row);
+  }
+  checksBox.append(group);
+}
 
 function render() {
   sessionStorage.setItem('live-patch:setup-step', String(current));
   for (const [index, button] of Array.from(stepNav.querySelectorAll<HTMLButtonElement>('button')).entries()) {
-    button.className = `setup-step ${index === current ? 'current' : index < current ? 'done' : ''}`;
+    button.className = `setup-step ${index === current ? 'current' : index < current ? 'done' : 'upcoming'}`;
+    button.textContent = `${index < current ? '✓ ' : ''}${index + 1} ${steps[index]}`;
     button.setAttribute('aria-current', index === current ? 'step' : 'false');
   }
   for (const [index, panel] of Array.from(checksBox.querySelectorAll<HTMLElement>('.setup-check-group')).entries()) panel.hidden = index !== current;
@@ -58,6 +71,7 @@ async function refresh(force = false) {
   const data = await fetch('/api/setup', force ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'refresh' }) } : undefined).then(response => response.json()) as SetupData;
   if (!Array.isArray(data.checks)) throw Error('Setup checks unavailable');
   latest = data; diagnostics = data.diagnostics;
+  checksBox.setAttribute('aria-busy', 'false');
   checksBox.replaceChildren();
   for (const [step, ids] of stepChecks.entries()) {
     const group = document.createElement('section'); group.className = 'setup-check-group';
@@ -119,4 +133,5 @@ root.querySelector('#remove-twitch')!.addEventListener('click', async () => {
   const result = await response.json() as { message?: string; error?: string };
   root.querySelector('#twitch-notice')!.textContent = result.message ?? result.error ?? 'Could not remove credentials'; await refresh(true);
 });
+render();
 void refresh().catch(error => { root.querySelector('#sandbox-notice')!.textContent = `Setup checks unavailable: ${String(error)}`; });

@@ -70,6 +70,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
   };
   const tokenFile = path.join(dataDir, 'tokens.json');
   let auth = new TwitchAuth(config, tokenFile);
+  void checkedSetup().catch(error => { setupCache = undefined; console.error('Setup precheck failed:', error); });
   const store = new IdeaStore(path.join(dataDir, 'ideas.json'));
   const runs = new RunStore(path.join(dataDir, 'runs.json'));
   const progress: RunnerEvent[] = [];

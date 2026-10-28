@@ -3,14 +3,26 @@ import { appendText, dashboardData, roundClock } from './shared';
 
 const root = document.querySelector<HTMLDivElement>('#control')!;
 root.innerHTML = `<main class="go-live-dashboard">
-  <div class="section-head"><div><p class="app-kicker">RUN THE SHOW</p><h2>Stream control</h2></div></div>
   <div class="live-status"><strong id="round">Loading round…</strong><span id="twitch-pill">Twitch checking…</span><span id="codex-pill">Codex checking…</span><span id="overlay-pill">Overlay ready</span><span id="sound-pill">Sound checking…</span></div>
   <div class="live-columns">
     <section class="live-card pitch-column"><div class="live-card-heading"><h3>Pitch queue</h3><span id="pitch-count"></span></div><p class="muted">Oldest pending pitches enter the ballot first.</p><div id="pitch-queue"></div><div id="triage-preview"></div><div class="actions"><button data-action="triage" title="Shortcut T">Preview AI triage · T</button></div></section>
-    <section class="live-card centre-column"><div class="live-card-heading"><h3>Live game preview</h3><span class="live-badge">LIVE</span></div><div class="game-preview"><iframe src="/preview.html" title="Live game preview" loading="lazy" tabindex="-1"></iframe></div><div class="live-card-heading"><h3>Current ballot</h3><span id="ballot-total"></span></div><div id="candidates"></div><div class="actions"><button data-action="pause" title="Shortcut P">Pause · P</button><button data-action="resume" title="Shortcut R">Resume · R</button><button data-action="advance" title="Shortcut N">Next stage · N</button><button data-action="force-next" class="danger">Cancel build and next round</button></div><p id="timing-hint" class="hint"></p></section>
+    <section class="live-card centre-column"><div class="live-card-heading"><h3>Game preview · separate run</h3><button id="preview-toggle" class="secondary">Start preview</button></div><div class="game-preview"><p id="preview-placeholder">Preview is off. Start it to inspect the current patches in a separate game run.</p><iframe title="Separate game preview" tabindex="-1" hidden></iframe></div><div class="live-card-heading"><h3>Current ballot</h3><span id="ballot-total"></span></div><div id="candidates"></div><div class="actions"><button data-action="pause" title="Shortcut P">Pause · P</button><button data-action="resume" title="Shortcut R">Resume · R</button><button data-action="advance" title="Shortcut N">Next stage · N</button><button data-action="force-next" class="danger">Cancel build and next round</button></div><p id="timing-hint" class="hint"></p></section>
     <section class="live-card run-column"><div class="live-card-heading"><h3>Codex at work</h3></div><div id="runs"></div><div class="live-card-heading"><h3>Active patches</h3><span id="patch-count"></span></div><div id="patches"></div><div class="actions"><button data-action="rollback" class="danger">Roll back latest</button><button data-action="save">Save build and patch notes</button></div><div class="live-card-heading"><h3>Saved builds</h3></div><div id="builds"></div></section>
   </div><section class="live-card recent-chat"><h3>Recent chat</h3><div id="chat-strip"></div></section><p id="notice" role="status"></p>
 </main>`;
+const preview = root.querySelector<HTMLIFrameElement>('.game-preview iframe')!;
+const previewPlaceholder = root.querySelector<HTMLElement>('#preview-placeholder')!;
+const previewToggle = root.querySelector<HTMLButtonElement>('#preview-toggle')!;
+function stopPreview() {
+  preview.src = 'about:blank'; preview.hidden = true; previewPlaceholder.hidden = false;
+  previewToggle.textContent = 'Start preview';
+}
+previewToggle.addEventListener('click', () => {
+  if (!preview.hidden) { stopPreview(); return; }
+  preview.src = '/preview.html'; preview.hidden = false; previewPlaceholder.hidden = true;
+  previewToggle.textContent = 'Stop preview';
+});
+document.addEventListener('visibilitychange', () => { if (document.hidden && !preview.hidden) stopPreview(); });
 
 async function action(name: string, ideaId?: string) {
   const confirmations: Record<string, string> = { rollback: 'Roll back the latest shipped patch?', 'force-next': 'Cancel the current build and start a new round?', 'triage-discard': 'Discard these AI triage suggestions?' };
