@@ -24,7 +24,7 @@
 - [x] Mutation sound/effect actions are declared and throttled — unit and browser spam checks.
 - [x] Pitch queue, confirmation and plain-text rendering — browser coverage.
 - [x] Asset provenance — `games/arena-survivor/assets/CREDITS.md`; all art and audio are original code-drawn or synthesized assets.
-- [x] Full suite, TypeScript build and dependency audit — `npm test`: 48 unit passed (4 opt-in skipped), 31 browser passed; `npm run build` passed; `npm audit --audit-level=high`: 0 vulnerabilities.
+- [x] Full suite, TypeScript build and dependency audit — `npm test`: 49 unit passed (4 opt-in skipped), 31 browser passed; `npm run build` passed; `npm audit --audit-level=high`: 0 vulnerabilities after the round-one fix pass.
 
 ## Deferred
 - Channel-point bets, original-versus-evolved comparison, chat rollback voting and reward refunds remain in Phase 5.
@@ -40,3 +40,21 @@
 
 ## Review responses
 - P4-R2-01: **Fixed** — pitch-window numeric candidate lookup now follows the same oldest-first rule as the next ballot; a regression test covers `!approve 1`.
+
+## Round 1 fix pass
+
+The visual reference remains `plans/phase-4.5/comparison/` outside this repository. The old game frame and new code-drawn frame are retained for direct comparison in [before-game](phase-4.5-visual/before-game.png) and [after-game](phase-4.5-visual/after-game.png). See also [after-overlay](phase-4.5-visual/after-overlay.png), [after-Go-Live](phase-4.5-visual/after-go-live.png), [after-Setup](phase-4.5-visual/after-setup.png) and [after-Library](phase-4.5-visual/after-library.png). Compare these with `comparison/4-overlay.png`, `comparison/3-go-live.png`, `comparison/2-setup.png` and `comparison/1-library.png` in the operator's plan. The new game frame has shaded faces, glowing edges and coins, a lit floor and larger entities. The stream overlay uses the concept's brand/chips/work/ballot hierarchy with readable fixed 1080p type; Go Live and Setup use the concept's dashboard and guided-step hierarchy. The overlay screenshot's white area represents transparency. No concept artwork was copied into the product.
+
+- P45-R1-01: **Fixed in code** — setup now invokes exactly `codex sandbox setup --elevated --current-user` through Windows Run as administrator, classifies CLI usage errors separately and exposes the sandbox self-test. The unit test verifies the arguments. The operator still needs to accept the real UAC prompt and confirm the probe on this PC.
+- P45-R1-02: **Fixed** — Vite no longer loads or watches `.env`; the app reads the file and reloads Twitch connections in process when credentials change. A manually edited `.env` still requires a restart.
+- P45-R1-03: **Fixed** — setup process checks are cached for 30 seconds, cross-site GETs are refused, and explicit refresh is a same-origin POST.
+- P45-R1-04: **Fixed** — active selection lives under `LIVE_PATCH_DATA_DIR`; saved-build play sets a temporary process selection and Home/Go Live show a return action. The data-directory unit test covers selection storage.
+- P45-R1-05: **Fixed** — Library import now inspects the manifest first and shows the exact smoke command, example and local-code warning before the operator confirms execution.
+- P45-R1-06: **Fixed** — Go Live has one header, useful empty states, patch titles and contributor credit, and timing from Settings.
+- P45-R1-07: **Fixed** — README leads with Setup and Practice and gives the corrected manual sandbox command as a fallback.
+- P45-R1-08: **Fixed** — overlay pitch queue and Go Live both show oldest pending ideas first.
+- P45-R1-09: **Fixed** — fixed 1920×1080 overlay scale, 28px ballot pitch text, 20px secondary text, large timer, code-drawn candidate marks, `!vote N`, percentages, leader bar and large shipped/failure states. The browser vote test measures computed type size.
+- P45-R1-10: **Fixed** — original gradient textures, highlighted jelly slimes, glowing player and floor, coin shine, movement trail and larger particles replaced flat circles. Phaser postprocessing runs on an interactive WebGL renderer; the software-driven automated browser uses the texture glow to keep the smoke frame budget. `CREDITS.md` records the methods and cover provenance.
+- P45-R1-11: **Fixed** — Go Live now has a status strip, three columns, live game preview, vote bars/percentages, persistent Codex timeline, credited patches, saved builds and recent chat. The rail fills the entire page.
+- P45-R1-12: **Fixed** — six-step wizard with Back, Continue and Skip, check rows with actions, sandbox self-test, first-run callout and a “What this changes” panel. The operator's timed first-use check remains open.
+- P45-R1-13: **Fixed** — Library now has a real game cover, search, selection details for hooks/actions/audio/effects, status, docs action and an Add your game card in the grid.

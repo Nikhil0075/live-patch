@@ -384,10 +384,15 @@ test('operator controls timed voting and the OBS overlay renders viewer text saf
   await expect(page.locator('#round')).toContainText('VOTE');
   const overlay = await page.context().newPage();
   try {
+    await overlay.setViewportSize({ width: 1920, height: 1080 });
     await overlay.goto('/overlay.html');
     await expect(overlay.locator('#candidates')).toContainText(pitch);
     await expect(overlay.locator('#candidates img')).toHaveCount(0);
-    await expect(overlay.locator('#candidates b')).toHaveCount(0);
+    await expect(overlay.locator('#candidates b').filter({ hasText: 'Viewer' })).toHaveCount(0);
+    await expect(overlay.locator('#candidates')).toContainText('!vote 1');
+    await expect(overlay.locator('#candidates')).toContainText('%');
+    const pitchSize = await overlay.locator('#candidates .candidate strong').first().evaluate(element => parseFloat(getComputedStyle(element).fontSize));
+    expect(pitchSize).toBeGreaterThanOrEqual(28);
   } finally { await overlay.close(); }
   const runsBefore = await page.evaluate(async () => (await fetch('/api/runs').then(response => response.json())).runs.length as number);
   await page.locator('#candidates article').filter({ hasText: pitch }).getByRole('button', { name: 'Reject' }).click();
@@ -403,9 +408,20 @@ test('studio navigation, setup and build library keep viewer data plain text', a
   for (const name of ['Home', 'Library', 'Go Live', 'Builds', 'Setup', 'Settings']) await expect(page.locator('#app-nav a').filter({ hasText: name })).toBeVisible();
   await page.locator('#app-nav a').filter({ hasText: 'Library' }).click();
   await expect(page.locator('#game-cards')).toContainText('Arena Survivor');
-  await expect(page.locator('#game-cards')).toContainText('CONCEPT — NOT PLAYABLE');
+  await expect(page.getByRole('button', { name: 'Add your game' })).toBeVisible();
+  await expect(page.locator('#game-detail')).toContainText('Hooks');
+  await expect(page.locator('.library-card img')).toHaveCount(1);
+  expect(await page.locator('.library-card').first().evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgb(19, 30, 48)');
+  expect(await page.locator('.library-card img').evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
+  await page.locator('#game-search').fill('no matching world');
+  await expect(page.locator('#game-cards')).toContainText('No games match your search');
   await page.locator('#app-nav a').filter({ hasText: 'Setup' }).click();
   await expect(page.locator('#setup-checks')).toContainText('Codex CLI and sign-in', { timeout: 20_000 });
+  await expect(page.locator('.setup-step')).toHaveCount(6);
+  await page.getByRole('button', { name: '3 Sandbox' }).click();
+  await expect(page.getByRole('button', { name: 'Run sandbox self-test' })).toBeVisible();
+  await page.getByRole('button', { name: '← Back' }).click();
+  await expect(page.getByRole('button', { name: '2 Codex sign-in' })).toHaveAttribute('aria-current', 'step');
   await expect(page.locator('input[name="clientSecret"]')).toHaveValue('');
   const denied = await page.request.post('/api/twitch/credentials', { headers: { Origin: 'https://outside.example', 'Content-Type': 'application/json' }, data: { clientSecret: 'fake-secret' } });
   expect(denied.status()).toBe(403);
@@ -413,6 +429,16 @@ test('studio navigation, setup and build library keep viewer data plain text', a
   expect(nonJson.status()).toBe(403);
   await page.locator('#app-nav a').filter({ hasText: 'Builds' }).click();
   await expect(page.getByRole('heading', { name: 'Saved builds' })).toBeVisible();
+  await page.locator('#app-nav a').filter({ hasText: 'Go Live' }).click();
+  await expect(page.locator('.live-columns > section')).toHaveCount(3);
+  await expect(page.locator('#runs')).toContainText('Sandbox verified');
+  await expect(page.locator('#chat-strip')).toBeVisible();
+  const firstRun = await page.context().newPage();
+  try {
+    await firstRun.goto('/?first-run=1');
+    await expect(firstRun).toHaveURL(/view=setup/);
+    await expect(firstRun.getByRole('heading', { name: 'Guided setup' })).toBeVisible();
+  } finally { await firstRun.close(); }
 });
 
 test('mutation sound and visual requests are throttled while the game keeps running', async ({ page }) => {

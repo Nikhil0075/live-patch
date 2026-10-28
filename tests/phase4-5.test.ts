@@ -7,7 +7,7 @@ import { loadGame, defaultGame } from '../engine/manifest/load';
 import { discoverGames, validateImport, makeActive, smokeGame } from '../engine/manifest/library';
 import { EffectLimits } from '../engine/mutation/effect-limits';
 import { SettingsStore } from '../engine/studio/settings';
-import { classifySandboxError } from '../engine/studio/setup';
+import { classifySandboxError, sandboxSetupArgs, sandboxSetupPowerShell } from '../engine/studio/setup';
 import { publicCredentials, saveCredentials } from '../engine/studio/credentials';
 import { ChatPipeline } from '../engine/pipeline/commands';
 import { IdeaStore } from '../engine/pipeline/ideas';
@@ -68,6 +68,9 @@ describe('Phase 4.5 studio', () => {
     expect(classifySandboxError('Access is denied in OneDrive folder').fix).toMatch(/OneDrive/);
     expect(classifySandboxError('Firewall policy blocked setup').reason).toMatch(/Security software/);
     expect(classifySandboxError('different user CODEX_HOME').fix).toMatch(/account/);
+    expect(classifySandboxError('Error: Usage: setup [OPTIONS] <--user <USER>|--current-user> --codex-home')).toMatchObject({ reason: 'The installed Codex CLI rejected the sandbox setup command.' });
+    expect(sandboxSetupArgs).toEqual(['sandbox', 'setup', '--elevated', '--current-user']);
+    expect(sandboxSetupPowerShell('C:\\Program Files\\Codex\\codex.exe')).toContain("-ArgumentList 'sandbox setup --elevated --current-user' -Verb RunAs -Wait");
     const sources = fs.readFileSync(path.join(root, 'engine', 'studio', 'setup.ts'), 'utf8');
     expect(sources).not.toMatch(/Set-MpPreference|Add-MpPreference|Remove-MpPreference/);
   });
@@ -98,5 +101,18 @@ describe('Phase 4.5 studio', () => {
     catch (error) { if (!(error instanceof Error) || !/EPERM|EACCES/.test(error.message)) throw error; }
     expect(discoverGames(directory, path.join(directory, 'data')).some(item => item.name === 'Unsafe World')).toBe(true);
     expect(fs.existsSync(path.join(directory, 'data', 'imported-games.json'))).toBe(false);
+  }));
+  it('stores the active game in the configured data directory', () => temp(directory => {
+    const previous = process.env.LIVE_PATCH_DATA_DIR;
+    try {
+      process.env.LIVE_PATCH_DATA_DIR = directory;
+      const game = path.join(root, 'games', 'arena-survivor');
+      makeActive(root, game);
+      expect(JSON.parse(fs.readFileSync(path.join(directory, 'active-game.json'), 'utf8'))).toEqual({ directory: game });
+      expect(defaultGame(root)).toBe(game);
+    } finally {
+      if (previous === undefined) delete process.env.LIVE_PATCH_DATA_DIR;
+      else process.env.LIVE_PATCH_DATA_DIR = previous;
+    }
   }));
 });

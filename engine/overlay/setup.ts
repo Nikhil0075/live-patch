@@ -3,48 +3,107 @@ import { appendText } from './shared';
 
 interface Check { id: string; label: string; state: 'Ready' | 'Needs action' | 'Not available here'; reason: string; fix?: string }
 interface SetupData { checks: Check[]; credentials: { clientId: string; redirectUri: string; rewardId: string; secretSet: boolean }; diagnostics: string }
+const steps = ['Requirements', 'Codex sign-in', 'Sandbox', 'Twitch', 'Choose game', 'OBS and practice'];
+const stepChecks: string[][] = [
+  ['node', 'git', 'dependencies', 'browser', 'project'], ['codex'], ['sandbox', 'defender'],
+  ['twitch-app', 'accounts', 'reward'], [], ['overlay']
+];
 const root = document.querySelector<HTMLElement>('#setup')!;
-root.innerHTML = '<div class="section-head"><div><p class="app-kicker">SIX STEPS TO YOUR FIRST STREAM</p><h2>Guided setup</h2><p class="muted">Practice works without Twitch. Codex writes patches only in its own isolated worktree.</p></div></div><nav class="setup-steps" aria-label="Setup steps"></nav><div id="setup-checks" class="settings-grid"></div><section class="studio-card"><h2>Codex sandbox</h2><p>The elevated Windows sandbox checks that Codex can write inside its worktree and cannot write to this project. Administrator approval is required for setup, not for each stream build.</p><div class="library-card-actions"><button id="sandbox-test" class="secondary">Run sandbox self-test</button><button id="sandbox-setup">Run Codex sandbox setup</button><a class="button secondary" href="ms-settings:windowsdefender" id="windows-security">Open Windows Security</a><button id="copy-diagnostics" class="secondary">Copy diagnostics</button></div><p id="sandbox-notice" role="status"></p><p class="muted">If Controlled Folder Access blocks setup, check Protection history. Allow only the specific executable named in the block, or move this project out of the protected folder. Live Patch never changes Windows Security settings.</p></section><section class="studio-card"><h2>Twitch app · optional for practice</h2><form id="twitch-credentials" class="credential-grid"><label>Client ID<input name="clientId" autocomplete="off"></label><label>Client secret <small id="secret-state"></small><input name="clientSecret" type="password" autocomplete="new-password" placeholder="Leave blank to keep saved secret"><button type="button" id="replace-secret" class="secondary">Replace secret</button></label><label>Exact HTTPS redirect URI<input name="redirectUri" autocomplete="off"></label><label>Pitch reward ID<input name="rewardId" autocomplete="off"></label><div class="library-card-actions"><button>Save and reconnect</button><button type="button" class="danger" id="remove-twitch">Remove Twitch credentials</button></div></form><div class="library-card-actions"><a class="button secondary" href="/api/twitch/auth/broadcaster/start">Connect broadcaster</a><a class="button secondary" href="/api/twitch/auth/bot/start">Connect bot</a></div><p id="twitch-notice" role="status"></p></section><section class="studio-card"><h2>Choose a game and test OBS</h2><p>Pick an active game, then run a practice round. OBS uses the unchanged overlay URL and a separate capture of the game window.</p><div class="library-card-actions"><a class="button secondary" href="/?view=library">Choose game</a><a class="button secondary" href="/?view=practice">Practice round</a><button id="copy-overlay">Copy overlay URL</button><a class="button secondary" href="/overlay.html" target="_blank">Open overlay</a></div><p id="overlay-notice" role="status"></p></section>';
-for (const step of ['Requirements', 'Codex sign-in', 'Sandbox', 'Twitch', 'Choose game', 'OBS and practice']) appendText(root.querySelector('.setup-steps')!, 'span', step);
+root.innerHTML = `<div class="section-head"><div><p class="app-kicker">SIX STEPS TO YOUR FIRST STREAM</p><h2>Guided setup</h2><p class="muted">Practice works without Twitch. Complete each step, or skip ahead to practice.</p></div></div>
+<nav class="setup-steps" aria-label="Setup steps"></nav>
+<div class="setup-layout"><div class="setup-main"><div id="setup-checks"></div>
+<section id="step-twitch" class="studio-card" hidden><h2>Twitch app · optional for practice</h2><form id="twitch-credentials" class="credential-grid"><label>Client ID<input name="clientId" autocomplete="off"></label><label>Client secret <small id="secret-state"></small><input name="clientSecret" type="password" autocomplete="new-password" placeholder="Leave blank to keep saved secret"><button type="button" id="replace-secret" class="secondary">Replace secret</button></label><label>Exact HTTPS redirect URI<input name="redirectUri" autocomplete="off"></label><label>Pitch reward ID<input name="rewardId" autocomplete="off"></label><div class="library-card-actions"><button>Save and reconnect</button><button type="button" class="danger" id="remove-twitch">Remove Twitch credentials</button></div></form><div class="library-card-actions"><a class="button secondary" href="/api/twitch/auth/broadcaster/start">Connect broadcaster</a><a class="button secondary" href="/api/twitch/auth/bot/start">Connect bot</a></div><p id="twitch-notice" role="status"></p></section>
+<section id="step-game" class="studio-card" hidden><h2>Choose your starting world</h2><p>Make a game active from Library. Its manifest supplies the game, mutation API and smoke test.</p><a class="button primary" href="/?view=library">Open game library</a></section>
+<section id="step-obs" class="studio-card" hidden><h2>Test OBS and run a practice round</h2><p>Keep the overlay URL as a silent OBS Browser Source above your game capture. Practice sends sample pitches through the same pipeline without Twitch.</p><div class="library-card-actions"><button id="copy-overlay">Copy overlay URL</button><a class="button secondary" href="/overlay.html" target="_blank" rel="noopener">Open overlay</a><a class="button primary" href="/?view=practice">Practice round</a></div><p id="overlay-notice" role="status"></p></section>
+<div class="wizard-actions"><button id="setup-back" class="secondary">← Back</button><button id="setup-skip" class="secondary">Skip — practice with the simulator</button><button id="setup-continue">Continue →</button></div><p id="sandbox-notice" role="status"></p></div>
+<aside class="studio-card setup-explainer"><h2>What this changes</h2><p>✓ Checks Node, Git, Chromium and Codex on this PC.</p><p>✓ Codex setup asks Windows for administrator approval and creates its isolated sandbox.</p><p>✓ The self-test confirms Codex can write inside its worktree while the project stays protected.</p><p>✓ Twitch is optional for practice; saved credentials stay local and the secret is never shown again.</p><p><strong>Windows Security stays on.</strong> Live Patch never disables Defender or adds exclusions.</p><button id="copy-diagnostics" class="secondary">Copy diagnostics</button></aside></div>`;
+
+let current = Number(sessionStorage.getItem('live-patch:setup-step') ?? 0);
+if (!Number.isInteger(current) || current < 0 || current >= steps.length) current = 0;
+const skipped = new Set<number>(JSON.parse(sessionStorage.getItem('live-patch:setup-skipped') ?? '[]') as number[]);
 let diagnostics = '';
-const checkBox = root.querySelector<HTMLElement>('#setup-checks')!;
-async function refresh() {
-  const data = await fetch('/api/setup').then(response => response.json()) as SetupData;
-  diagnostics = data.diagnostics;
-  checkBox.replaceChildren();
-  for (const item of data.checks) {
-    const box = document.createElement('article'); box.className = 'studio-card setup-check';
-    appendText(box, 'strong', item.label);
-    appendText(box, 'span', item.state, item.state === 'Ready' ? 'state-ready' : item.state === 'Needs action' ? 'state-action' : 'state-unavailable');
-    appendText(box, 'p', item.reason);
-    if (item.fix) appendText(box, 'small', item.fix);
-    checkBox.append(box);
+let latest: SetupData | undefined;
+const checksBox = root.querySelector<HTMLElement>('#setup-checks')!;
+const stepNav = root.querySelector<HTMLElement>('.setup-steps')!;
+for (const [index, label] of steps.entries()) {
+  const button = document.createElement('button'); button.className = 'setup-step'; button.type = 'button'; button.dataset.step = String(index); button.textContent = `${index + 1} ${label}`;
+  button.addEventListener('click', () => { current = index; render(); }); stepNav.append(button);
+}
+const checkActions: Record<string, { label: string; action: () => void }> = {
+  sandbox: { label: 'Run setup', action: () => { void setupAction('sandbox-setup'); } },
+  defender: { label: 'Open Windows Security', action: () => { location.href = 'ms-settings:windowsdefender'; } },
+  accounts: { label: 'Connect accounts', action: () => { current = 3; render(); root.querySelector('#step-twitch')?.scrollIntoView({ behavior: 'smooth' }); } },
+  'twitch-app': { label: 'Add credentials', action: () => { current = 3; render(); root.querySelector('#step-twitch')?.scrollIntoView({ behavior: 'smooth' }); } },
+  reward: { label: 'Set reward ID', action: () => { current = 3; render(); (root.querySelector('input[name="rewardId"]') as HTMLInputElement).focus(); } },
+  overlay: { label: 'Copy overlay URL', action: () => { void navigator.clipboard.writeText(`${location.origin}/overlay.html`); root.querySelector('#overlay-notice')!.textContent = 'Overlay URL copied.'; } }
+};
+
+function render() {
+  sessionStorage.setItem('live-patch:setup-step', String(current));
+  for (const [index, button] of Array.from(stepNav.querySelectorAll<HTMLButtonElement>('button')).entries()) {
+    button.className = `setup-step ${index === current ? 'current' : index < current ? 'done' : ''}`;
+    button.setAttribute('aria-current', index === current ? 'step' : 'false');
+  }
+  for (const [index, panel] of Array.from(checksBox.querySelectorAll<HTMLElement>('.setup-check-group')).entries()) panel.hidden = index !== current;
+  for (const [index, id] of [[3, 'step-twitch'], [4, 'step-game'], [5, 'step-obs']] as const) (root.querySelector<HTMLElement>(`#${id}`)!).hidden = index !== current;
+  const items = latest?.checks.filter(item => stepChecks[current].includes(item.id)) ?? [];
+  const required = current === 2 ? items.filter(item => item.id === 'sandbox') : items;
+  const ready = current >= 3 || skipped.has(current) || (required.length > 0 && required.every(item => item.state === 'Ready'));
+  (root.querySelector<HTMLButtonElement>('#setup-continue')!).disabled = !ready;
+  (root.querySelector<HTMLButtonElement>('#setup-back')!).disabled = current === 0;
+  root.querySelector('#setup-continue')!.textContent = current === 5 ? 'Finish setup →' : 'Continue →';
+}
+
+async function refresh(force = false) {
+  const data = await fetch('/api/setup', force ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'refresh' }) } : undefined).then(response => response.json()) as SetupData;
+  if (!Array.isArray(data.checks)) throw Error('Setup checks unavailable');
+  latest = data; diagnostics = data.diagnostics;
+  checksBox.replaceChildren();
+  for (const [step, ids] of stepChecks.entries()) {
+    const group = document.createElement('section'); group.className = 'setup-check-group';
+    appendText(group, 'h2', steps[step]);
+    for (const id of ids) {
+      const item = data.checks.find(check => check.id === id); if (!item) continue;
+      const row = document.createElement('article'); row.className = 'setup-check-row'; row.dataset.check = item.id;
+      const description = document.createElement('div'); appendText(description, 'strong', item.label); appendText(description, 'p', item.reason); if (item.fix) appendText(description, 'small', item.fix);
+      const status = appendText(row, 'span', item.state, item.state === 'Ready' ? 'state-ready' : item.state === 'Needs action' ? 'state-action' : 'state-unavailable');
+      row.prepend(description);
+      const button = document.createElement('button'); button.className = 'secondary'; button.textContent = checkActions[id]?.label ?? 'Check again';
+      button.addEventListener('click', () => { const action = checkActions[id]; if (action) action.action(); else void refresh(true); }); row.append(button);
+      if (status.textContent === 'Ready') row.classList.add('ready');
+      group.append(row);
+    }
+    if (step === 2) {
+      const selfTest = document.createElement('button'); selfTest.id = 'sandbox-test'; selfTest.className = 'secondary'; selfTest.textContent = 'Run sandbox self-test';
+      selfTest.addEventListener('click', () => { void setupAction('self-test'); }); group.append(selfTest);
+    }
+    checksBox.append(group);
   }
   const form = root.querySelector<HTMLFormElement>('#twitch-credentials')!;
   (form.elements.namedItem('clientId') as HTMLInputElement).value = data.credentials.clientId;
   (form.elements.namedItem('redirectUri') as HTMLInputElement).value = data.credentials.redirectUri;
   (form.elements.namedItem('rewardId') as HTMLInputElement).value = data.credentials.rewardId;
   const secret = form.elements.namedItem('clientSecret') as HTMLInputElement;
-  secret.value = '';
-  secret.disabled = data.credentials.secretSet;
+  secret.value = ''; secret.disabled = data.credentials.secretSet;
   (root.querySelector<HTMLButtonElement>('#replace-secret')!).hidden = !data.credentials.secretSet;
   root.querySelector('#secret-state')!.textContent = data.credentials.secretSet ? 'set · enter a new value to replace' : 'not set';
+  render();
 }
+
 async function setupAction(action: string) {
   const notice = root.querySelector('#sandbox-notice')!; notice.textContent = 'Checking…';
   const response = await fetch('/api/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) });
   const result = await response.json() as { check?: Check; error?: string; diagnostics?: string };
   notice.textContent = result.check ? `${result.check.state}: ${result.check.reason}` : result.error ?? 'Setup check failed';
-  diagnostics = result.diagnostics ?? '';
-  await refresh();
+  diagnostics = result.diagnostics ?? ''; await refresh(true);
 }
-root.querySelector('#sandbox-test')!.addEventListener('click', () => { void setupAction('self-test'); });
-root.querySelector('#replace-secret')!.addEventListener('click', () => {
-  const secret = root.querySelector<HTMLInputElement>('input[name="clientSecret"]')!;
-  secret.disabled = false; secret.focus();
-  (root.querySelector<HTMLButtonElement>('#replace-secret')!).hidden = true;
+root.querySelector('#setup-back')!.addEventListener('click', () => { current = Math.max(0, current - 1); render(); });
+root.querySelector('#setup-continue')!.addEventListener('click', () => {
+  if (current < steps.length - 1) { current++; render(); }
+  else { localStorage.setItem('live-patch:setup-complete', '1'); location.href = '/?view=practice'; }
 });
-root.querySelector('#sandbox-setup')!.addEventListener('click', () => { void setupAction('sandbox-setup'); });
+root.querySelector('#setup-skip')!.addEventListener('click', () => { skipped.add(current); sessionStorage.setItem('live-patch:setup-skipped', JSON.stringify([...skipped])); localStorage.setItem('live-patch:setup-skipped', '1'); location.href = '/?view=practice'; });
+root.querySelector('#replace-secret')!.addEventListener('click', () => { const secret = root.querySelector<HTMLInputElement>('input[name="clientSecret"]')!; secret.disabled = false; secret.focus(); (root.querySelector<HTMLButtonElement>('#replace-secret')!).hidden = true; });
 root.querySelector('#copy-diagnostics')!.addEventListener('click', () => { void navigator.clipboard.writeText(diagnostics || 'No setup diagnostics recorded.'); });
 root.querySelector('#copy-overlay')!.addEventListener('click', () => { void navigator.clipboard.writeText(`${location.origin}/overlay.html`); root.querySelector('#overlay-notice')!.textContent = 'Overlay URL copied. Add it as an OBS Browser Source.'; });
 root.querySelector<HTMLFormElement>('#twitch-credentials')!.addEventListener('submit', async event => {
@@ -52,12 +111,12 @@ root.querySelector<HTMLFormElement>('#twitch-credentials')!.addEventListener('su
   const body = { clientId: String(data.get('clientId')), redirectUri: String(data.get('redirectUri')), rewardId: String(data.get('rewardId')), ...(data.get('clientSecret') ? { clientSecret: String(data.get('clientSecret')) } : {}) };
   const response = await fetch('/api/twitch/credentials', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const result = await response.json() as { message?: string; error?: string };
-  root.querySelector('#twitch-notice')!.textContent = result.message ?? result.error ?? 'Could not save settings'; await refresh();
+  root.querySelector('#twitch-notice')!.textContent = result.message ?? result.error ?? 'Could not save settings'; await refresh(true);
 });
 root.querySelector('#remove-twitch')!.addEventListener('click', async () => {
   if (!confirm('Remove Twitch app credentials and disconnect both accounts?')) return;
   const response = await fetch('/api/twitch/credentials', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ remove: true }) });
   const result = await response.json() as { message?: string; error?: string };
-  root.querySelector('#twitch-notice')!.textContent = result.message ?? result.error ?? 'Could not remove credentials'; await refresh();
+  root.querySelector('#twitch-notice')!.textContent = result.message ?? result.error ?? 'Could not remove credentials'; await refresh(true);
 });
 void refresh().catch(error => { root.querySelector('#sandbox-notice')!.textContent = `Setup checks unavailable: ${String(error)}`; });

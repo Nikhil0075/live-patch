@@ -29,7 +29,7 @@ export function loadGame(root: string, argument: string): { directory: string; m
 }
 
 export function defaultGame(root: string): string {
-  const activeFile = path.join(root, '.live-patch', 'active-game.json');
+  const activeFile = path.join(path.resolve(process.env.LIVE_PATCH_DATA_DIR ?? path.join(root, '.live-patch')), 'active-game.json');
   if (fs.existsSync(activeFile)) {
     const active = JSON.parse(fs.readFileSync(activeFile, 'utf8')) as { directory?: string };
     if (active.directory && fs.existsSync(path.join(active.directory, 'live-patch.json'))) return active.directory;

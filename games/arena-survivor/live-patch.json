@@ -2,6 +2,7 @@
   "name": "Arena Survivor",
   "hint": "Move with WASD or arrows · Space attacks · Collect coins · Avoid enemies",
   "description": "A bright arena that changes every time chat ships a new rule.",
+  "cover": "assets/cover.png",
   "tags": ["Survival", "Chat-driven"],
   "version": "1.0.0",
   "author": "Live Patch",

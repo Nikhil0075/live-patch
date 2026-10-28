@@ -15,6 +15,7 @@ const command = (binary: string, args: string[], timeout = 4000): Promise<string
 
 export function classifySandboxError(raw: string): SetupCheck {
   const text = raw.toLowerCase();
+  if (/usage:\s*setup|unrecognized (?:option|argument)|unexpected argument|--current-user.*required/.test(text)) return check('sandbox', 'Codex elevated sandbox', 'Needs action', 'The installed Codex CLI rejected the sandbox setup command.', 'Update Codex or run the command shown in Setup. Copy diagnostics if it still fails.');
   if (/1385|log on locally|logon type/.test(text)) return check('sandbox', 'Codex elevated sandbox', 'Needs action', 'The sandbox account lacks the Log on locally right (error 1385).', 'Ask IT to grant the “Allow log on locally” user right through Local Security Policy or Group Policy.');
   if (/access is denied|permission denied|eacces|eperm|onedrive|protected folder/.test(text)) return check('sandbox', 'Codex elevated sandbox', 'Needs action', 'The sandbox cannot write in its temporary worktree or project location.', 'Move the project out of OneDrive/protected folders, check the exact blocked executable in Windows Security, and retry setup.');
   if (/administrator|elevation|uac|cancelled|canceled|refused/.test(text)) return check('sandbox', 'Codex elevated sandbox', 'Needs action', 'Administrator approval was refused or is unavailable.', 'Run setup with an administrator, or ask IT to provision the elevated sandbox for this Windows account and CODEX_HOME.');
@@ -72,11 +73,17 @@ export async function setupChecks(root: string, config: TwitchConfig, identities
   return checks;
 }
 
+export const sandboxSetupArgs = ['sandbox', 'setup', '--elevated', '--current-user'] as const;
+export function sandboxSetupPowerShell(binary: string): string {
+  const escaped = binary.replaceAll("'", "''");
+  return `$p=Start-Process -FilePath '${escaped}' -ArgumentList '${sandboxSetupArgs.join(' ')}' -Verb RunAs -Wait -PassThru; exit $p.ExitCode`;
+}
+
 export async function runSandboxSetup(): Promise<{ success: boolean; error?: string }> {
   if (process.platform !== 'win32') return { success: false, error: 'Windows setup is not available here' };
   return new Promise(resolve => {
     let binary: string; try { binary = codexBinary(); } catch { resolve({ success: false, error: 'Codex CLI is missing' }); return; }
-    const child = spawn(binary, ['sandbox', 'setup', '--elevated'], { windowsHide: false, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', sandboxSetupPowerShell(binary)], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let detail = '';
     const collect = (chunk: Buffer) => { detail = (detail + chunk.toString()).slice(-1000); };
     child.stdout.on('data', collect); child.stderr.on('data', collect);

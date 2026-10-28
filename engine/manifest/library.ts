@@ -3,7 +3,7 @@ import path from 'node:path';
 import { loadGame } from './load';
 import { smoke } from '../runner/runner';
 
-export interface LibraryGame { directory: string; name: string; description: string; cover?: string; tags: string[]; version?: string; author?: string; valid: boolean; error?: string; examples: number; smoke?: { status: 'passed' | 'failed'; at: string; detail?: string }; shipped: number }
+export interface LibraryGame { directory: string; name: string; description: string; cover?: string; tags: string[]; version?: string; author?: string; valid: boolean; error?: string; examples: number; hooks?: string[]; actions?: string[]; audio?: string[]; effects?: string[]; smoke?: { status: 'passed' | 'failed'; at: string; detail?: string }; shipped: number }
 const safePath = (root: string, directory: string) => path.relative(root, directory).replaceAll('\\', '/');
 const readJson = <T>(file: string, fallback: T): T => fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) as T : fallback;
 function atomic(file: string, value: unknown) { fs.mkdirSync(path.dirname(file), { recursive: true }); const temp = `${file}.${process.pid}.tmp`; fs.writeFileSync(temp, JSON.stringify(value, null, 2), { mode: 0o600 }); fs.renameSync(temp, file); }
@@ -18,7 +18,7 @@ export function discoverGames(root: string, dataDir: string): LibraryGame[] {
     try {
       const { manifest } = loadGame(root, directory);
       const examples = manifest.examples.reduce((count, folder) => count + fs.readdirSync(path.join(directory, folder)).filter(name => name.endsWith('.js')).length, 0);
-      return { directory, name: manifest.name, description: manifest.description ?? manifest.hint, cover: manifest.cover ? `/@fs/${path.join(directory, manifest.cover).replaceAll('\\', '/')}` : undefined, tags: manifest.tags ?? [], version: manifest.version, author: manifest.author, valid: true, examples, smoke: smoke[directory], shipped: runs.filter(run => run.gameDirectory === directory && run.status === 'shipped').length };
+      return { directory, name: manifest.name, description: manifest.description ?? manifest.hint, cover: manifest.cover ? `/api/library/cover?directory=${encodeURIComponent(directory)}` : undefined, tags: manifest.tags ?? [], version: manifest.version, author: manifest.author, valid: true, examples, hooks: Object.values(manifest.hooks), actions: Object.keys(manifest.actions), audio: manifest.audio, effects: manifest.effects, smoke: smoke[directory], shipped: runs.filter(run => run.gameDirectory === directory && run.status === 'shipped').length };
     } catch (error) { return { directory, name: path.basename(directory), description: '', tags: [], valid: false, error: String(error), examples: 0, smoke: smoke[directory], shipped: 0 }; }
   });
 }
@@ -65,5 +65,5 @@ export function addImport(dataDir: string, directory: string) {
 
 export function makeActive(root: string, directory: string) {
   loadGame(root, directory);
-  atomic(path.join(root, '.live-patch', 'active-game.json'), { directory: path.resolve(directory) });
+  atomic(path.join(path.resolve(process.env.LIVE_PATCH_DATA_DIR ?? path.join(root, '.live-patch')), 'active-game.json'), { directory: path.resolve(directory) });
 }

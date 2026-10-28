@@ -1,10 +1,12 @@
 import './app.css';
+declare const __LIVE_PATCH_TEST_SERVER__: boolean;
 
 type View = 'home' | 'library' | 'go-live' | 'builds' | 'setup' | 'settings' | 'practice';
 const labels: Record<View, string> = { home: 'Home', library: 'Library', 'go-live': 'Go Live', builds: 'Builds', setup: 'Setup', settings: 'Settings', practice: 'Practice' };
 const icons: Record<View, string> = { home: '⌂', library: '▦', 'go-live': '◉', builds: '▤', setup: '◇', settings: '⚙', practice: '▷' };
 const desired = new URLSearchParams(location.search).get('view');
 const view: View = desired && Object.hasOwn(labels, desired) ? desired as View : 'home';
+if (view === 'home' && !localStorage.getItem('live-patch:setup-complete') && !localStorage.getItem('live-patch:setup-skipped') && (!__LIVE_PATCH_TEST_SERVER__ || new URLSearchParams(location.search).has('first-run'))) location.replace('/?view=setup');
 const shell = document.querySelector<HTMLDivElement>('#shell')!;
 shell.innerHTML = '<aside class="app-rail"><div class="app-mark"><span class="mark-icon">✳</span><span>LIVE<br>PATCH</span></div><nav id="app-nav" aria-label="Main navigation"></nav><div class="rail-foot"><span class="live-dot"></span><span>LOCAL STUDIO</span></div></aside><div class="app-content"><header class="app-top"><div><p class="app-kicker">THE STREAMER STUDIO</p><h1 id="app-heading"></h1></div><div class="top-actions"><span id="app-connection">Checking connections…</span><a class="button secondary" href="/overlay.html" target="_blank" rel="noopener">Open OBS overlay ↗</a></div></header><div id="app-page"></div><div id="toast-layer" role="status" aria-live="polite"></div></div>';
 const nav = document.querySelector<HTMLElement>('#app-nav')!;
@@ -26,12 +28,24 @@ export function toast(message: string) {
 
 async function summary() {
   try {
-    const [game, twitch, runs, builds] = await Promise.all([
+    const [game, twitch, runs, builds, library] = await Promise.all([
       fetch('/api/game').then(r => r.json()) as Promise<{ name: string }>,
       fetch('/api/twitch/status').then(r => r.json()) as Promise<{ configured: boolean; broadcaster: { login: string } | null; bot: { login: string } | null; eventsub: string }>,
       fetch('/api/runs').then(r => r.json()) as Promise<{ runs: { status: string }[] }>,
-      fetch('/api/builds').then(r => r.json()) as Promise<{ builds: { id: string }[] }>
+      fetch('/api/builds').then(r => r.json()) as Promise<{ builds: { id: string }[] }>,
+      fetch('/api/library').then(r => r.json()) as Promise<{ playOnly: boolean; returnGame?: string }>
     ]);
+    if (library.playOnly && library.returnGame && !document.querySelector('#play-only-banner')) {
+      const banner = document.createElement('div'); banner.id = 'play-only-banner'; banner.className = 'first-run-callout';
+      const label = document.createElement('span'); label.textContent = 'Playing a saved build · This snapshot is play-only. Return to the original game to keep building.';
+      const button = document.createElement('button'); button.textContent = 'Return to original game';
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        await fetch('/api/library', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'active', directory: library.returnGame }) });
+        location.href = '/';
+      });
+      banner.append(label, button); page.prepend(banner);
+    }
     document.querySelector('#app-connection')!.textContent = twitch.broadcaster && twitch.bot ? `● Twitch ${twitch.eventsub}` : '○ Practice ready';
     const set = (id: string, value: string) => { const element = document.querySelector(id); if (element) element.textContent = value; };
     set('#home-game', game.name);
@@ -57,6 +71,12 @@ async function summary() {
 switch (view) {
   case 'home':
     page.innerHTML = '<section class="hero"><div><p class="app-kicker">CHAT DESIGNS. CODEX BUILDS. YOU PLAY.</p><h2>Your next stream starts here.</h2><p>Practice the full loop, then take your evolving game live. Keep the game running as ideas turn into playable patches.</p><div class="hero-actions"><a id="home-primary" class="button primary" href="/?view=practice">Start a practice round →</a><a class="button secondary" href="/?view=go-live">Go to stream controls</a></div></div><div class="hero-graphic"><span>✳</span><small>THE GAME CHANGES WHILE YOU PLAY</small></div></section><section class="status-grid"><article><small>ACTIVE GAME</small><strong id="home-game">Loading…</strong><a href="/?view=library">Browse games →</a></article><article><small>TWITCH</small><strong id="home-twitch">Loading…</strong><a href="/?view=setup">Connection guide →</a></article><article><small>CODEX</small><strong id="home-codex">Loading…</strong><a href="/?view=setup">Check setup →</a></article><article><small>OVERLAY</small><strong id="home-overlay">Checking…</strong><a href="/overlay.html" target="_blank" rel="noopener">Open overlay →</a></article><article><small>LAST BUILD</small><strong id="home-build">Loading…</strong><a href="/?view=builds">Open library →</a></article></section><div class="section-head"><div><p class="app-kicker">PLAY VIEW</p><h2>Live arena</h2></div><span id="home-setup" class="status-pill"></span></div><div id="app"></div>';
+    if (!localStorage.getItem('live-patch:setup-complete') && !localStorage.getItem('live-patch:setup-skipped')) {
+      const callout = document.createElement('div'); callout.className = 'first-run-callout'; callout.setAttribute('role', 'dialog'); callout.setAttribute('aria-label', 'First-time setup');
+      callout.innerHTML = '<div><strong>First-time setup · Step 1 of 6</strong><p>Check this PC, connect Codex and try a practice round.</p></div><div class="actions"><a class="button primary" href="/?view=setup">Continue setup →</a><button class="secondary" id="skip-first-run">Skip to practice</button></div>';
+      page.prepend(callout);
+      callout.querySelector('#skip-first-run')!.addEventListener('click', () => { localStorage.setItem('live-patch:setup-skipped', '1'); location.href = '/?view=practice'; });
+    }
     void import('./client'); void summary(); break;
   case 'go-live': page.innerHTML = '<div id="control"></div>'; void import('./overlay/control'); void summary(); break;
   case 'practice': page.innerHTML = '<div id="simulator"></div>'; void import('./twitch/simulator'); void summary(); break;

@@ -2,13 +2,21 @@ import './control.css';
 import { appendText, dashboardData, roundClock } from './shared';
 
 const root = document.querySelector<HTMLDivElement>('#control')!;
-root.innerHTML = '<main><header><div><p class="eyebrow">LIVE PATCH / OPERATOR</p><h1>Stream control</h1></div><nav><a href="/">Game</a><a href="/overlay.html">Overlay</a><a href="/simulator.html">Simulator</a></nav></header><div class="grid"><section><h2>Round</h2><p id="round"></p><div class="actions"><button data-action="pause" title="Shortcut P">Pause · P</button><button data-action="resume" title="Shortcut R">Resume · R</button><button data-action="advance" title="Shortcut N">Next stage · N</button><button data-action="triage" title="Shortcut T">Preview AI triage · T</button><button data-action="force-next" class="danger">Cancel build and next round</button></div><p class="hint">Pitch: 60 seconds · Vote: 45 seconds · Approval waits for a moderator. Ballot slots use the oldest pending pitches first.</p><div id="triage-preview"></div><div id="candidates"></div></section><section><h2>Codex runs</h2><div id="runs"></div><h2>Active patches</h2><div id="patches"></div><div class="actions"><button data-action="rollback" class="danger">Roll back latest</button><button data-action="save">Save build and patch notes</button></div><h2>Saved builds</h2><div id="builds"></div></section></div><p id="notice" role="status"></p></main>';
+root.innerHTML = `<main class="go-live-dashboard">
+  <div class="section-head"><div><p class="app-kicker">RUN THE SHOW</p><h2>Stream control</h2></div></div>
+  <div class="live-status"><strong id="round">Loading round…</strong><span id="twitch-pill">Twitch checking…</span><span id="codex-pill">Codex checking…</span><span id="overlay-pill">Overlay ready</span><span id="sound-pill">Sound checking…</span></div>
+  <div class="live-columns">
+    <section class="live-card pitch-column"><div class="live-card-heading"><h3>Pitch queue</h3><span id="pitch-count"></span></div><p class="muted">Oldest pending pitches enter the ballot first.</p><div id="pitch-queue"></div><div id="triage-preview"></div><div class="actions"><button data-action="triage" title="Shortcut T">Preview AI triage · T</button></div></section>
+    <section class="live-card centre-column"><div class="live-card-heading"><h3>Live game preview</h3><span class="live-badge">LIVE</span></div><div class="game-preview"><iframe src="/preview.html" title="Live game preview" loading="lazy" tabindex="-1"></iframe></div><div class="live-card-heading"><h3>Current ballot</h3><span id="ballot-total"></span></div><div id="candidates"></div><div class="actions"><button data-action="pause" title="Shortcut P">Pause · P</button><button data-action="resume" title="Shortcut R">Resume · R</button><button data-action="advance" title="Shortcut N">Next stage · N</button><button data-action="force-next" class="danger">Cancel build and next round</button></div><p id="timing-hint" class="hint"></p></section>
+    <section class="live-card run-column"><div class="live-card-heading"><h3>Codex at work</h3></div><div id="runs"></div><div class="live-card-heading"><h3>Active patches</h3><span id="patch-count"></span></div><div id="patches"></div><div class="actions"><button data-action="rollback" class="danger">Roll back latest</button><button data-action="save">Save build and patch notes</button></div><div class="live-card-heading"><h3>Saved builds</h3></div><div id="builds"></div></section>
+  </div><section class="live-card recent-chat"><h3>Recent chat</h3><div id="chat-strip"></div></section><p id="notice" role="status"></p>
+</main>`;
 
 async function action(name: string, ideaId?: string) {
   const confirmations: Record<string, string> = { rollback: 'Roll back the latest shipped patch?', 'force-next': 'Cancel the current build and start a new round?', 'triage-discard': 'Discard these AI triage suggestions?' };
   if (confirmations[name] && !confirm(confirmations[name])) return;
   const notify = (message: string) => {
-    document.querySelector('#notice')!.textContent = message;
+    root.querySelector('#notice')!.textContent = message;
     const layer = document.querySelector('#toast-layer');
     if (!layer) return;
     const item = document.createElement('div'); item.className = 'toast'; item.textContent = message; layer.append(item);
@@ -34,9 +42,30 @@ window.addEventListener('keydown', event => {
 
 async function refresh() {
   try {
-    const { round, runs, mutations, ideas } = await dashboardData();
-    document.querySelector('#round')!.textContent = `Round ${round.number} · ${round.phase.toUpperCase()} · ${roundClock(round.remainingMs)}`;
-    const preview = document.querySelector<HTMLElement>('#triage-preview')!; preview.replaceChildren();
+    const [data, twitch, chat, saved] = await Promise.all([
+      dashboardData(),
+      fetch('/api/twitch/status').then(response => response.json()) as Promise<{ broadcaster: { login: string } | null; bot: { login: string } | null; eventsub: string }>,
+      fetch('/api/chat/recent').then(response => response.json()) as Promise<{ messages: { at: string; author: string; text: string }[] }>,
+      fetch('/api/builds').then(response => response.json()) as Promise<{ builds: { id: string; patches: unknown[] }[] }>
+    ]);
+    const { round, runs, mutations, ideas, events, settings } = data;
+    root.querySelector('#round')!.textContent = `ROUND ${round.number} · ${round.phase.toUpperCase()} · ${roundClock(round.remainingMs)}`;
+    root.querySelector('#twitch-pill')!.textContent = twitch.broadcaster && twitch.bot ? `● Twitch ${twitch.eventsub}` : '○ Practice mode';
+    root.querySelector('#codex-pill')!.textContent = runs.at(-1)?.status === 'building' ? '◉ Codex building' : '○ Codex standing by';
+    root.querySelector('#sound-pill')!.textContent = settings.muted ? '○ Sound muted' : '● Sound on in play view';
+    root.querySelector('#timing-hint')!.textContent = `Pitch ${settings.pitchSeconds}s · Vote ${settings.voteSeconds}s · Approval waits for a moderator.`;
+
+    const pending = ideas.filter(idea => ['submitted', 'shortlisted'].includes(idea.status));
+    root.querySelector('#pitch-count')!.textContent = String(pending.length);
+    const queue = root.querySelector<HTMLElement>('#pitch-queue')!; queue.replaceChildren();
+    if (!pending.length) appendText(queue, 'p', 'No pitches yet. Ask chat to send !idea <mechanic>.', 'empty-state');
+    for (const [index, idea] of pending.slice(0, 12).entries()) {
+      const item = document.createElement('article'); item.className = 'queue-item';
+      appendText(item, 'strong', `${index + 1}. ${idea.spec ?? idea.text}`);
+      appendText(item, 'small', `${idea.contributors?.map(name => `@${name}`).join(', ') ?? `@${idea.authorName}`} · ${idea.status}`);
+      queue.append(item);
+    }
+    const preview = root.querySelector<HTMLElement>('#triage-preview')!; preview.replaceChildren();
     if (round.triagePreview?.length) {
       appendText(preview, 'h3', 'AI triage preview');
       for (const proposal of round.triagePreview) {
@@ -44,37 +73,52 @@ async function refresh() {
         const target = ideas.find(idea => idea.id === proposal.duplicateId);
         appendText(preview, 'p', `${original?.text ?? proposal.id} → ${proposal.decision === 'accept' ? proposal.spec : proposal.decision === 'merge' ? `merge into ${target?.text ?? proposal.duplicateId}` : 'reject'}`);
       }
-      const actions = document.createElement('div'); actions.className = 'actions';
-      for (const [name, label] of [['triage-apply', 'Apply suggestions'], ['triage-discard', 'Discard suggestions']]) {
-        const button = document.createElement('button'); button.dataset.action = name; button.textContent = label; actions.append(button);
-      }
-      preview.append(actions);
-    }
-    const candidates = document.querySelector<HTMLElement>('#candidates')!; candidates.replaceChildren();
-    for (const [index, idea] of round.candidates.entries()) {
-      const card = document.createElement('article');
-      appendText(card, 'strong', `${index + 1}. ${idea.spec ?? idea.text}`);
-      appendText(card, 'small', `${idea.votes.length} vote(s) · ${idea.contributors?.map(name => `@${name}`).join(', ') ?? `@${idea.authorName}`}`);
       const buttons = document.createElement('div'); buttons.className = 'actions';
-      for (const name of ['approve', 'reject']) {
-        const button = document.createElement('button'); button.textContent = name === 'approve' ? 'Approve and build' : 'Reject'; button.dataset.action = name; button.dataset.ideaId = idea.id; buttons.append(button);
-      }
+      for (const [name, label] of [['triage-apply', 'Apply suggestions'], ['triage-discard', 'Discard suggestions']]) { const button = document.createElement('button'); button.dataset.action = name; button.textContent = label; buttons.append(button); }
+      preview.append(buttons);
+    }
+
+    const candidates = root.querySelector<HTMLElement>('#candidates')!; candidates.replaceChildren();
+    const total = round.candidates.reduce((sum, idea) => sum + idea.votes.length, 0);
+    root.querySelector('#ballot-total')!.textContent = `${total} vote${total === 1 ? '' : 's'}`;
+    for (const [index, idea] of round.candidates.entries()) {
+      const card = document.createElement('article'); card.className = 'ballot-item';
+      const percent = total ? Math.round(idea.votes.length / total * 100) : 0;
+      appendText(card, 'strong', `${index + 1}. ${idea.spec ?? idea.text}`);
+      appendText(card, 'small', `${percent}% · ${idea.votes.length} vote${idea.votes.length === 1 ? '' : 's'} · ${idea.contributors?.map(name => `@${name}`).join(', ') ?? `@${idea.authorName}`}`);
+      const track = document.createElement('div'); track.className = 'dashboard-vote-track'; const bar = document.createElement('div'); bar.className = 'dashboard-vote-bar'; bar.style.width = `${percent}%`; track.append(bar); card.append(track);
+      appendText(card, 'small', `!vote ${index + 1}`);
+      const buttons = document.createElement('div'); buttons.className = 'actions';
+      for (const name of ['approve', 'reject']) { const button = document.createElement('button'); button.textContent = name === 'approve' ? 'Approve and build' : 'Reject'; button.dataset.action = name; button.dataset.ideaId = idea.id; buttons.append(button); }
       card.append(buttons); candidates.append(card);
     }
-    if (round.phase === 'pitch') {
-      const pending = ideas.filter(idea => ['submitted', 'shortlisted'].includes(idea.status));
-      appendText(candidates, 'p', `${pending.length} pitches queued. The oldest three enter the next ballot.`);
-      for (const [index, idea] of pending.entries()) appendText(candidates, 'p', `${index + 1}. ${idea.spec ?? idea.text} · ${idea.contributors?.map(name => `@${name}`).join(', ') ?? `@${idea.authorName}`}`);
-    } else if (!round.candidates.length) appendText(candidates, 'p', 'No voting candidates yet.');
-    const runList = document.querySelector<HTMLElement>('#runs')!; runList.replaceChildren();
-    for (const run of runs.slice(-10).reverse()) appendText(runList, 'p', `${run.status.toUpperCase()} · ${run.mutationName ?? run.error ?? 'Codex working'}${run.durationMs ? ` · ${Math.round(run.durationMs / 1000)}s` : ''}`);
-    const patches = document.querySelector<HTMLElement>('#patches')!; patches.replaceChildren();
-    for (const item of mutations.filter(mutation => !mutation.error)) appendText(patches, 'p', item.name);
-    const buildsResponse = await fetch('/api/builds');
-    const builds = (await buildsResponse.json() as { builds: { id: string; patches: unknown[] }[] }).builds;
-    const buildList = document.querySelector<HTMLElement>('#builds')!; buildList.replaceChildren();
-    for (const build of builds.slice(0, 5)) appendText(buildList, 'p', `${build.id} · ${build.patches.length} patch(es)`);
-  } catch (error) { document.querySelector('#notice')!.textContent = `Control panel reconnecting: ${String(error)}`; }
+    if (!round.candidates.length) appendText(candidates, 'p', round.phase === 'pitch' ? 'Ballot opens after the pitch window. The oldest three pending ideas will appear here.' : 'No voting candidates yet. Start the next round.', 'empty-state');
+
+    const runList = root.querySelector<HTMLElement>('#runs')!; runList.replaceChildren();
+    const latest = runs.at(-1);
+    appendText(runList, 'p', latest ? `${latest.status.toUpperCase()} · ${latest.mutationName ?? latest.error ?? 'Codex working'}` : 'No Codex run yet. Approve an idea to begin.', latest ? 'run-summary' : 'empty-state');
+    const seen = new Set(events.filter(event => event.runId === latest?.id).map(event => event.type));
+    if (latest && ['shipped', 'failed', 'rolled_back'].includes(latest.status)) seen.add(latest.status);
+    for (const [id, label] of [['sandbox_verified', 'Sandbox verified'], ['file', 'Writing patch'], ['testing', 'Smoke test'], [latest?.status === 'failed' ? 'failed' : latest?.status === 'rolled_back' ? 'rolled_back' : 'shipped', latest?.status === 'failed' ? 'Failed' : latest?.status === 'rolled_back' ? 'Rolled back' : 'Shipped']]) {
+      appendText(runList, 'p', `${seen.has(id) ? '✓' : '○'} ${label}`, `timeline-step ${seen.has(id) ? 'complete' : ''}`);
+    }
+    const patches = root.querySelector<HTMLElement>('#patches')!; patches.replaceChildren();
+    const active = mutations.filter(item => !item.error); root.querySelector('#patch-count')!.textContent = String(active.length);
+    if (!active.length) appendText(patches, 'p', 'No active patches. Ship a viewer idea to evolve the game.', 'empty-state');
+    for (const item of active) {
+      const title = /title\s*:\s*['"`]([^'"`]{1,80})/.exec(item.source)?.[1] ?? item.name;
+      const run = runs.find(entry => entry.status === 'shipped' && entry.mutationName === item.name);
+      const idea = ideas.find(entry => entry.id === run?.ideaId);
+      const card = document.createElement('article'); card.className = 'patch-item';
+      appendText(card, 'strong', title); appendText(card, 'small', idea ? (idea.contributors?.map(name => `@${name}`).join(', ') ?? `@${idea.authorName}`) : 'Built-in'); patches.append(card);
+    }
+    const builds = root.querySelector<HTMLElement>('#builds')!; builds.replaceChildren();
+    if (!saved.builds.length) appendText(builds, 'p', 'No saved builds. Use Save build and patch notes after a patch ships.', 'empty-state');
+    for (const build of saved.builds.slice(0, 3)) appendText(builds, 'p', `${build.id} · ${build.patches.length} patch(es)`);
+    const strip = root.querySelector<HTMLElement>('#chat-strip')!; strip.replaceChildren();
+    if (!chat.messages.length) appendText(strip, 'p', 'Recent viewer chat appears here once a message arrives.', 'empty-state');
+    for (const message of chat.messages) { const line = document.createElement('p'); appendText(line, 'strong', `${message.author}: `); appendText(line, 'span', message.text); strip.append(line); }
+  } catch (error) { root.querySelector('#notice')!.textContent = `Control panel reconnecting: ${String(error)}`; }
 }
 
 void refresh();

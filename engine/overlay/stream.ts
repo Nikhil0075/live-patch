@@ -3,6 +3,9 @@ import { appendText, dashboardData, roundClock } from './shared';
 
 const root = document.querySelector<HTMLDivElement>('#overlay')!;
 root.innerHTML = '<div class="stream-shell"><header><div class="brand">LIVE PATCH <span>CHAT BUILDS THE GAME</span></div><div id="patches" class="patches"></div></header><aside><div class="panel-label">CODEX AT WORK</div><div id="work"></div></aside><footer><div class="round-heading"><div><span class="panel-label">CHAT DECIDES</span><strong id="phase"></strong></div><strong id="clock"></strong></div><div id="candidates" class="candidates"></div></footer></div>';
+const shell = root.querySelector<HTMLElement>('.stream-shell')!;
+function scaleOverlay() { shell.style.transform = `scale(${Math.min(innerWidth / 1920, innerHeight / 1080)})`; }
+scaleOverlay(); window.addEventListener('resize', scaleOverlay);
 
 async function refresh() {
   try {
@@ -28,35 +31,41 @@ async function refresh() {
       appendText(work, 'p', idea?.spec ?? idea?.text ?? latest.mutationName ?? 'Patch run');
       if (idea) appendText(work, 'small', idea.contributors?.map(name => `@${name}`).join(', ') ?? `@${idea.authorName}`);
       const steps = events.filter(event => event.runId === latest.id);
+      const endStage = latest.status === 'failed' ? { id: 'failed', label: 'Build failed' } : latest.status === 'rolled_back' ? { id: 'rolled_back', label: 'Rolled back' } : { id: 'shipped', label: 'Patch shipped' };
       const stages = [
         { id: 'sandbox_verified', label: 'Sandbox checked' }, { id: 'file', label: 'Writing mutation' },
-        { id: 'testing', label: 'Smoke test' }, { id: latest.status === 'failed' ? 'failed' : 'shipped', label: latest.status === 'failed' ? 'Build failed' : 'Patch shipped' }
+        { id: 'testing', label: 'Smoke test' }, endStage
       ];
       const seen = new Set(steps.map(step => step.type));
-      if (latest.status === 'shipped' || latest.status === 'failed') seen.add(latest.status);
+      if (['shipped', 'failed', 'rolled_back'].includes(latest.status)) seen.add(latest.status);
       for (const stage of stages) {
         const step = steps.find(item => item.type === stage.id);
         appendText(work, 'small', `${seen.has(stage.id) ? '✓' : '○'} ${stage.label}${stage.id === 'file' && step?.message ? ` · ${step.message}` : ''}`, `work-step ${seen.has(stage.id) ? 'complete' : ''}`);
       }
       if (latest.status === 'shipped') appendText(work, 'strong', '✦ PATCH SHIPPED ✦', 'shipped-moment');
+      if (latest.status === 'failed') appendText(work, 'strong', 'BUILD FAILED', 'failed-moment');
+      if (latest.status === 'rolled_back') appendText(work, 'strong', 'PATCH ROLLED BACK', 'rolled-moment');
       if (!steps.length && latest.mutationName) appendText(work, 'small', `File: ${latest.mutationName}`);
       if (latest.error) appendText(work, 'small', latest.error);
       else if (latest.durationMs) appendText(work, 'small', `${Math.round(latest.durationMs / 1000)}s`);
     } else appendText(work, 'p', 'Waiting for a chat idea');
     const candidates = document.querySelector<HTMLElement>('#candidates')!; candidates.replaceChildren();
     const maxVotes = Math.max(1, ...round.candidates.map(item => item.votes.length));
+    const totalVotes = round.candidates.reduce((total, item) => total + item.votes.length, 0);
     for (const [index, candidate] of round.candidates.entries()) {
-      const card = document.createElement('div'); card.className = 'candidate';
+      const card = document.createElement('div'); card.className = `candidate${totalVotes && candidate.votes.length === maxVotes ? ' leader' : ''}`;
+      appendText(card, 'span', ['✦', '◈', '✿'][index] ?? '✦', 'candidate-mark');
       appendText(card, 'strong', `${index + 1} · ${candidate.spec ?? candidate.text}`);
-      appendText(card, 'small', `${candidate.votes.length} vote${candidate.votes.length === 1 ? '' : 's'} · ${candidate.contributors?.map(name => `@${name}`).join(', ') ?? `@${candidate.authorName}`}`);
+      const percent = totalVotes ? Math.round(candidate.votes.length / totalVotes * 100) : 0;
+      appendText(card, 'small', `${candidate.votes.length} vote${candidate.votes.length === 1 ? '' : 's'} · ${percent}% · ${candidate.contributors?.map(name => `@${name}`).join(', ') ?? `@${candidate.authorName}`}`);
       const track = document.createElement('div'); track.className = 'vote-track';
-      const bar = document.createElement('div'); bar.className = 'vote-bar'; bar.style.width = `${Math.round(candidate.votes.length / maxVotes * 100)}%`;
-      track.append(bar); card.append(track); candidates.append(card);
+      const bar = document.createElement('div'); bar.className = 'vote-bar'; bar.style.width = `${percent}%`;
+      track.append(bar); card.append(track); appendText(card, 'b', `!vote ${index + 1}`, 'vote-hint'); candidates.append(card);
     }
     if (round.phase === 'pitch') {
       const pending = ideas.filter(item => ['submitted', 'shortlisted'].includes(item.status));
       appendText(candidates, 'p', `${pending.length} pitch${pending.length === 1 ? '' : 'es'} in the queue · !idea <mechanic>`);
-      for (const idea of pending.slice(-3).reverse()) {
+      for (const idea of pending.slice(0, 3)) {
         const card = document.createElement('div'); card.className = 'candidate';
         appendText(card, 'strong', idea.spec ?? idea.text);
         appendText(card, 'small', `${idea.contributors?.map(name => `@${name}`).join(', ') ?? `@${idea.authorName}`}${idea.contributors && idea.contributors.length > 1 ? ' · merged pitch' : ''}`);

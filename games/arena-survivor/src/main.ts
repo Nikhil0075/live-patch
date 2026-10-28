@@ -3,11 +3,12 @@ import type { GameAction, GameAdapter, GameEvent } from '../../../engine/game-ap
 import type { GameManifest } from '../../../engine/manifest/schema';
 import { defaultSettings, type StudioSettings } from '../../../engine/studio/settings';
 import { ArenaAudio, soundEvents, type SoundEvent } from './audio';
+import { createArenaTextures } from './art';
 
 const width = 960, height = 640;
 type Kind = 'enemy' | 'coin' | 'bomb' | 'fire';
 type Parameter = 'enemySpeed' | 'coinValue' | 'playerSpeed' | 'spawnInterval' | 'gravityX' | 'gravityY';
-interface Entity { id: number; kind: Kind; x: number; y: number; radius: number; vx: number; vy: number; tag: string; owner?: string; ttl: number; alive: boolean }
+interface Entity { id: number; kind: Kind; x: number; y: number; radius: number; vx: number; vy: number; tag: string; owner?: string; ttl: number; alive: boolean; sprite?: Phaser.GameObjects.Image }
 const defaults: Record<Parameter, number> = { enemySpeed: 68, coinValue: 10, playerSpeed: 230, spawnInterval: 1.35, gravityX: 0, gravityY: 0 };
 const limits: Record<Parameter, [number, number]> = { enemySpeed: [0, 350], coinValue: [1, 100], playerSpeed: [30, 500], spawnInterval: [.2, 5], gravityX: [-100, 100], gravityY: [-100, 100] };
 const caps: Record<Kind, number> = { enemy: 28, coin: 36, bomb: 12, fire: 20 };
@@ -45,7 +46,8 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
 
   function spawn(kind: Kind, x: number, y: number, radius?: number, owner?: string) {
     if (active(kind).length >= caps[kind] || entities.filter(entity => entity.alive).length >= 96) return;
-    const entity: Entity = { id: nextId++, kind, x: clamp(x, 12, width - 12), y: clamp(y, 12, height - 12), radius: clamp(radius ?? (kind === 'enemy' ? 15 : kind === 'coin' ? 9 : 12), 4, 45), vx: 0, vy: 0, tag: '', owner, ttl: kind === 'enemy' ? 35 : kind === 'coin' ? 40 : kind === 'fire' ? 3 : 12, alive: true };
+    const entity: Entity = { id: nextId++, kind, x: clamp(x, 12, width - 12), y: clamp(y, 12, height - 12), radius: clamp(radius ?? (kind === 'enemy' ? 19 : kind === 'coin' ? 12 : 15), 4, 45), vx: 0, vy: 0, tag: '', owner, ttl: kind === 'enemy' ? 35 : kind === 'coin' ? 40 : kind === 'fire' ? 3 : 12, alive: true };
+    if (scene) entity.sprite = scene.add.image(entity.x, entity.y, `arena-${kind}`).setDepth(1).setDisplaySize(entity.radius * 3.6, entity.radius * 3.6);
     entities.push(entity);
     emit({ type: 'spawn', id: entity.id, kind, x: entity.x, y: entity.y, origin: owner });
   }
@@ -56,7 +58,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     hitStop = Math.max(hitStop, .055);
     burst('slime', entity.x, entity.y, origin);
     audio.play('death');
-    if (scene) floating.push({ label: scene.add.text(entity.x, entity.y - 12, '+2', { fontFamily: 'Arial', fontSize: '18px', color: '#ffe395', fontStyle: 'bold' }).setDepth(3), life: 1, owner: origin });
+    if (scene) floating.push({ label: scene.add.text(entity.x, entity.y - 18, '+2', { fontFamily: 'Arial', fontSize: '25px', color: '#ffe395', fontStyle: 'bold', stroke: '#4f2a0c', strokeThickness: 4 }).setDepth(3), life: 1, owner: origin });
     emit({ type: 'hit', target: 'enemy', id: entity.id, kind: entity.kind, x: entity.x, y: entity.y, origin });
     score += 2; emit({ type: 'score', amount: 2, origin });
   }
@@ -96,6 +98,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       case 'setParameter': if (typeof a === 'string' && Object.hasOwn(parameters, a) && finite(b)) {
         const key = a as Parameter; let own = writes.get(origin); if (!own) { own = new Map(); writes.set(origin, own); }
         own.set(key, { value: clamp(b, ...limits[key]), order: ++writeOrder }); recomputeParameter(key);
+        if ((key === 'gravityX' || key === 'gravityY') && effects.length < 30) effects.push({ x: player.x, y: player.y, radius: 100, color: 0x80f9d6, life: 1.2, owner: origin });
       } break;
       case 'drawShape': if (finite(a) && finite(b) && finite(c) && typeof d === 'string' && /^#[0-9a-fA-F]{6}$/.test(d)) effects.push({ x: a, y: b, radius: clamp(c, 1, 100), color: parseInt(d.slice(1), 16), life: .5, owner: origin }); break;
       case 'drawText': if (typeof a === 'string' && finite(b) && finite(c) && scene) floating.push({ label: scene.add.text(clamp(b, 0, width), clamp(c, 0, height), a.slice(0, 80), { fontFamily: 'Arial', fontSize: '16px', color: '#ffffff', backgroundColor: '#183044' }).setDepth(3), life: 2, owner: origin }); break;
@@ -120,6 +123,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
   class Arena extends Phaser.Scene {
     private pen!: Phaser.GameObjects.Graphics;
     private hud!: Phaser.GameObjects.Text;
+    private avatar!: Phaser.GameObjects.Image;
     private banner!: Phaser.GameObjects.Text;
     private keys!: Record<string, Phaser.Input.Keyboard.Key>;
     private touching = new Set<string>();
@@ -127,7 +131,14 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     constructor() { super('arena'); }
     create() {
       scene = this;
+      createArenaTextures(this);
+      this.add.image(width / 2, height / 2, 'arena-floor').setDepth(-2);
       this.pen = this.add.graphics();
+      this.avatar = this.add.image(player.x, player.y, 'arena-player').setDepth(2).setDisplaySize(78, 78);
+      if (this.game.renderer.type === Phaser.WEBGL && !navigator.webdriver) {
+        this.avatar.postFX?.addGlow(0x62ffce, 2, .1);
+        this.avatar.postFX?.addBloom(0x58ffcc, .35, .35, .5, .25, 1);
+      }
       this.hud = this.add.text(20, 16, '', { fontFamily: 'Arial', fontSize: '19px', color: '#edffff', fontStyle: 'bold' }).setDepth(2);
       this.banner = this.add.text(width / 2, 65, '', { fontFamily: 'Arial', fontSize: '22px', color: '#ffe187', align: 'center' }).setOrigin(.5).setDepth(2);
       this.keys = this.input.keyboard!.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE') as Record<string, Phaser.Input.Keyboard.Key>;
@@ -146,8 +157,9 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       const up = this.keys.W.isDown || this.keys.UP.isDown, down = this.keys.S.isDown || this.keys.DOWN.isDown;
       let dx = Number(right) - Number(left), dy = Number(down) - Number(up);
       const length = Math.hypot(dx, dy) || 1; dx /= length; dy /= length;
-      player.x = clamp(player.x + (dx * parameters.playerSpeed + parameters.gravityX) * dt, 16, width - 16);
-      player.y = clamp(player.y + (dy * parameters.playerSpeed + parameters.gravityY) * dt, 16, height - 16);
+      player.x = clamp(player.x + (dx * parameters.playerSpeed + parameters.gravityX) * dt, 22, width - 22);
+      player.y = clamp(player.y + (dy * parameters.playerSpeed + parameters.gravityY) * dt, 22, height - 22);
+      if ((dx || dy) && frame % 3 === 0 && particles.length < 160) particles.push({ x: player.x - dx * 18, y: player.y - dy * 18, vx: -dx * 45, vy: -dy * 45, life: .32, color: 0x69ffd2 });
       if (this.keys.SPACE.isDown && attackClock === 0) {
         attackClock = .45; effects.push({ x: player.x, y: player.y, radius: 72, color: 0x5df0bc, life: .25 });
         audio.play('hit');
@@ -168,13 +180,13 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
           entity.x += Math.cos(angle) * parameters.enemySpeed * dt; entity.y += Math.sin(angle) * parameters.enemySpeed * dt;
         } else { entity.x += entity.vx * dt; entity.y += entity.vy * dt; }
         entity.x = clamp(entity.x, 12, width - 12); entity.y = clamp(entity.y, 12, height - 12);
-        if (Math.hypot(entity.x - player.x, entity.y - player.y) < entity.radius + 13) {
+        if (Math.hypot(entity.x - player.x, entity.y - player.y) < entity.radius + 19) {
           playerContacts.add(entity.id);
           if (!this.playerTouching.has(entity.id)) emit({ type: 'collide', id: entity.id, kind: entity.kind, x: entity.x, y: entity.y });
           if (entity.kind === 'coin') {
             entity.alive = false; score += parameters.coinValue; emit({ type: 'score', amount: parameters.coinValue });
             burst('coin', entity.x, entity.y); audio.play('coin');
-            floating.push({ label: this.add.text(entity.x, entity.y - 15, `+${parameters.coinValue}`, { fontFamily: 'Arial', fontSize: '18px', color: '#ffe395', fontStyle: 'bold' }).setDepth(3), life: 1 });
+            floating.push({ label: this.add.text(entity.x, entity.y - 20, `+${parameters.coinValue}`, { fontFamily: 'Arial', fontSize: '26px', color: '#ffe395', fontStyle: 'bold', stroke: '#4b2d0a', strokeThickness: 4 }).setDepth(3), life: 1 });
           }
           else if (entity.kind !== 'fire' && !invincible) {
             invincible = 1.1; player.lives--;
@@ -206,41 +218,30 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       for (let i = effects.length - 1; i >= 0; i--) if (effects[i].life <= 0) effects.splice(i, 1);
       for (let i = messages.length - 1; i >= 0; i--) if (messages[i].life <= 0) messages.splice(i, 1);
       for (let i = floating.length - 1; i >= 0; i--) if (floating[i].life <= 0) { floating[i].label.destroy(); floating.splice(i, 1); }
-      for (let i = entities.length - 1; i >= 0; i--) if (!entities[i].alive) entities.splice(i, 1);
+      for (let i = entities.length - 1; i >= 0; i--) if (!entities[i].alive) { entities[i].sprite?.destroy(); entities.splice(i, 1); }
       this.draw(); emit({ type: 'tick', delta: dt });
     }
     private newRun() {
       player.lives = 3; player.x = width / 2; player.y = height / 2;
       score = 0; runElapsed = 0; spawnClock = 0; invincible = 1.5;
-      entities.length = 0; this.touching.clear(); this.playerTouching.clear();
+      for (const entity of entities) entity.sprite?.destroy(); entities.length = 0; this.touching.clear(); this.playerTouching.clear();
       particles.length = 0;
       for (let i = 0; i < 4; i++) spawn('coin', 130 + i * 200, 160 + (i % 2) * 280);
       messages.push({ text: 'NEW RUN', life: 2 });
     }
     private draw() {
-      const g = this.pen; g.clear(); g.fillStyle(0x102337); g.fillRect(0, 0, width, height);
-      g.lineStyle(1, 0x1f4054, .5);
-      for (let x = 0; x < width; x += 40) g.lineBetween(x, 0, x, height);
-      for (let y = 0; y < height; y += 40) g.lineBetween(0, y, width, y);
+      const g = this.pen; g.clear();
+      g.fillStyle(0x6cffcc, .055 * settings.effectsIntensity); g.fillCircle(player.x, player.y, 86);
+      g.lineStyle(2, 0x78f7d0, .18 * settings.effectsIntensity); g.strokeCircle(player.x, player.y, 58);
       for (const entity of entities) if (entity.alive) {
-        if (entity.kind === 'enemy') {
-          const wobble = Math.sin(elapsed * 6 + entity.id) * 2;
-          g.fillStyle(0x6a2948, .4); g.fillEllipse(entity.x, entity.y + entity.radius * .7, entity.radius * 2.2, entity.radius * .55);
-          g.fillStyle(0xff7c9b); g.fillEllipse(entity.x, entity.y, entity.radius * 2.15, entity.radius * 1.8 + wobble);
-          g.fillStyle(0xffb4c7, .55); g.fillEllipse(entity.x - 5, entity.y - 6, 10, 5);
-          g.fillStyle(0x3b1c36); g.fillCircle(entity.x - 5, entity.y - 1, 2.5); g.fillCircle(entity.x + 5, entity.y - 1, 2.5);
-        } else if (entity.kind === 'coin') {
-          const spin = Math.abs(Math.cos(elapsed * 4 + entity.id));
-          g.fillStyle(0xffe486); g.fillEllipse(entity.x, entity.y, 5 + spin * entity.radius * 2, entity.radius * 2);
-          g.lineStyle(2, 0xb98429); g.strokeEllipse(entity.x, entity.y, 5 + spin * entity.radius * 2, entity.radius * 2);
-        } else { g.fillStyle(entity.kind === 'fire' ? 0xff9b51 : 0xb475ff); g.fillCircle(entity.x, entity.y, entity.radius); }
+        entity.sprite?.setPosition(entity.x, entity.y);
+        entity.sprite?.setDisplaySize(entity.radius * 3.6, entity.radius * 3.6);
+        if (entity.kind === 'enemy') entity.sprite?.setScale((entity.radius * 3.6 / 112) * (1 + Math.sin(elapsed * 6 + entity.id) * .035));
+        if (entity.kind === 'coin') { entity.sprite?.setScale((entity.radius * 3.6 / 112) * (.38 + .62 * Math.abs(Math.cos(elapsed * 4 + entity.id))), entity.radius * 3.6 / 112); g.fillStyle(0xffe17d, .3); g.fillCircle(entity.x, entity.y, entity.radius * 2.4); }
       }
-      for (const effect of effects) { g.lineStyle(3, effect.color, effect.life * 2); g.strokeCircle(effect.x, effect.y, effect.radius); }
-      for (const particle of particles) { g.fillStyle(particle.color, Math.min(1, particle.life * 2)); g.fillCircle(particle.x, particle.y, 2.5); }
-      g.fillStyle(invincible > 0 && frame % 8 < 4 ? 0x8ce9d7 : 0x5df0bc); g.fillCircle(player.x, player.y, 16);
-      g.lineStyle(3, 0xffffff); g.strokeCircle(player.x, player.y, 14);
-      g.fillStyle(0x174d49); g.fillCircle(player.x - 5, player.y - 2, 2); g.fillCircle(player.x + 5, player.y - 2, 2);
-      g.lineStyle(2, 0x174d49); g.beginPath(); g.arc(player.x, player.y + 3, 5, .2, Math.PI - .2); g.strokePath();
+      for (const effect of effects) { g.lineStyle(5, effect.color, Math.min(.9, effect.life)); g.strokeCircle(effect.x, effect.y, effect.radius * (1.3 - effect.life * .2)); g.lineStyle(2, 0xffffff, effect.life * .6); g.strokeCircle(effect.x, effect.y, effect.radius * .65); }
+      for (const particle of particles) { const alpha = Math.min(1, particle.life * 2.4); g.lineStyle(2.4, particle.color, alpha); g.lineBetween(particle.x - particle.vx * .035, particle.y - particle.vy * .035, particle.x + particle.vx * .035, particle.y + particle.vy * .035); g.fillStyle(0xffffff, alpha); g.fillCircle(particle.x, particle.y, 2.8); }
+      this.avatar.setPosition(player.x, player.y).setAlpha(invincible > 0 && frame % 8 < 4 ? .65 : 1);
       if (player.lives === 1) { g.lineStyle(32, 0xff3e5f, .25); g.strokeRect(0, 0, width, height); }
       if (flashLife > 0) { g.fillStyle(flashColor, Math.min(.18, flashLife)); g.fillRect(0, 0, width, height); }
       this.hud.setText(`SCORE ${score}      LIVES ${'♥'.repeat(player.lives)}      TIME ${Math.floor(runElapsed)}s`);

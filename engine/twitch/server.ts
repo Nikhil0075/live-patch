@@ -59,6 +59,15 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
   const settings = new SettingsStore(path.join(dataDir, 'settings.json'));
   let lastSandbox: SetupCheck | undefined;
   let diagnostics = '';
+  let setupCache: Promise<SetupCheck[]> | undefined;
+  let setupCacheAt = 0;
+  const checkedSetup = (fresh = false) => {
+    if (fresh || !setupCache || Date.now() - setupCacheAt > 30_000) {
+      setupCacheAt = Date.now();
+      setupCache = setupChecks(root, config, { broadcaster: Boolean(auth.identity('broadcaster')), bot: Boolean(auth.identity('bot')) }, lastSandbox);
+    }
+    return setupCache;
+  };
   const tokenFile = path.join(dataDir, 'tokens.json');
   let auth = new TwitchAuth(config, tokenFile);
   const store = new IdeaStore(path.join(dataDir, 'ideas.json'));
@@ -72,6 +81,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
   });
   rounds = new RoundCoordinator(path.join(dataDir, 'rounds.json'), store, state => server.ws.send({ type: 'custom', event: 'live-patch:round', data: state }), Date.now, settings.snapshot());
   const replies: { at: string; text: string }[] = [];
+  const recentChat: { at: string; author: string; text: string }[] = [];
   const simulator = process.env.LIVE_PATCH_SIMULATOR_ENABLED !== '0';
   let chatIssue = '';
   const pipeline = new ChatPipeline(store, {
@@ -90,7 +100,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
       } catch (error) { chatIssue = `Twitch chat reply failed: ${String(error)}`; }
       if (chatIssue) console.error(chatIssue);
     },
-    onChat: event => { if (forwardToGame(event, auth.identity('bot')?.id)) server.ws.send({ type: 'custom', event: 'live-patch:chat', data: { text: event.text, author: event.viewer.name } }); },
+    onChat: event => { if (forwardToGame(event, auth.identity('bot')?.id)) { const message = { at: new Date().toISOString(), text: event.text, author: event.viewer.name }; recentChat.push(message); if (recentChat.length > 30) recentChat.shift(); server.ws.send({ type: 'custom', event: 'live-patch:chat', data: message }); } },
     onIdea: idea => rounds.triage(idea),
     candidate: number => rounds.candidate(number),
     canVote: () => rounds.canVote(),
@@ -116,6 +126,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? '127.0.0.1'}`);
     const route = url.pathname;
     if (route === '/api/ideas' && req.method === 'GET') { json(res, 200, { ideas: store.list(), candidateIds: [1, 2, 3].map(number => rounds.candidate(number)?.id ?? null), rollbackRequests: store.rollbackRequests(), replies }); return; }
+    if (route === '/api/chat/recent' && req.method === 'GET') { json(res, 200, { messages: recentChat.slice(-8) }); return; }
     if (route === '/api/round' && req.method === 'GET') { json(res, 200, rounds.snapshot()); return; }
     if (route === '/api/settings' && req.method === 'GET') { json(res, 200, settings.snapshot()); return; }
     if (route === '/api/settings' && req.method === 'POST') {
@@ -137,17 +148,20 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
         const next = saveCredentials(root, body, body.remove === true);
         Object.assign(config, next);
         reloadTwitch(body.remove === true || previousId !== config.clientId);
+        setupCache = undefined;
         json(res, 200, { ...publicCredentials(config), message: body.remove ? 'Twitch credentials removed' : 'Twitch settings saved and reloaded' });
       } catch { json(res, 400, { error: 'Could not save Twitch settings; check field formats and try again' }); }
       return;
     }
     if (route === '/api/setup' && req.method === 'GET') {
-      json(res, 200, { checks: await setupChecks(root, config, { broadcaster: Boolean(auth.identity('broadcaster')), bot: Boolean(auth.identity('bot')) }, lastSandbox), credentials: publicCredentials(config), diagnostics }); return;
+      if (req.headers['sec-fetch-site'] === 'cross-site') { json(res, 403, { error: 'Local setup only' }); return; }
+      json(res, 200, { checks: await checkedSetup(), credentials: publicCredentials(config), diagnostics }); return;
     }
     if (route === '/api/setup' && req.method === 'POST') {
       if (!req.headers.origin || !localOrigin(req) || !String(req.headers['content-type'] ?? '').startsWith('application/json')) { json(res, 403, { error: 'Same-origin JSON request required' }); return; }
       try {
         const body = await readJson(req) as { action?: string };
+        if (body.action === 'refresh') { json(res, 200, { checks: await checkedSetup(true), credentials: publicCredentials(config), diagnostics }); return; }
         if (body.action === 'self-test') lastSandbox = await sandboxSelfTest(root);
         else if (body.action === 'sandbox-setup') {
           const result = await runSandboxSetup();
@@ -155,11 +169,17 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
           const detail = result.error ?? 'Setup failed';
           diagnostics = result.success ? '' : (config.clientSecret ? detail.replaceAll(config.clientSecret, '[redacted]') : detail).replace(/(?:Bearer|OAuth)\s+[A-Za-z0-9._~-]+/gi, '[redacted token]').slice(0, 500);
         } else { json(res, 400, { error: 'Unknown setup action' }); return; }
+        setupCache = undefined;
         json(res, 200, { check: lastSandbox, diagnostics });
       } catch { json(res, 500, { error: 'Setup check failed' }); }
       return;
     }
-    if (route === '/api/library' && req.method === 'GET') { json(res, 200, { active: gameDirectory, games: discoverGames(root, dataDir) }); return; }
+    if (route === '/api/library' && req.method === 'GET') {
+      const games = discoverGames(root, dataDir);
+      const selection = path.join(dataDir, 'active-game.json');
+      const previous = fs.existsSync(selection) ? (JSON.parse(fs.readFileSync(selection, 'utf8')) as { directory?: string }).directory : undefined;
+      json(res, 200, { active: gameDirectory, playOnly: gameDirectory.startsWith(path.join(root, 'builds') + path.sep), returnGame: games.find(game => game.directory === previous && game.valid)?.directory ?? games.find(game => game.valid)?.directory, games }); return;
+    }
     if (route === '/api/library/docs' && req.method === 'GET') {
       const item = discoverGames(root, dataDir).find(game => game.directory === url.searchParams.get('directory') && game.valid);
       if (!item) { json(res, 404, { error: 'Game not found' }); return; }
@@ -178,6 +198,10 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
       if (!req.headers.origin || !localOrigin(req) || !String(req.headers['content-type'] ?? '').startsWith('application/json')) { json(res, 403, { error: 'Same-origin JSON request required' }); return; }
       try {
         const body = await readJson(req) as { action?: string; directory?: string; name?: string };
+        if (body.action === 'inspect' && body.directory) {
+          const candidate = validateImport(root, body.directory);
+          json(res, 200, { directory: candidate.directory, name: candidate.manifest.name, testCommand: candidate.manifest.testCommand, example: candidate.example }); return;
+        }
         if (body.action === 'import' && body.directory) {
           const candidate = validateImport(root, body.directory);
           await smokeGame(root, dataDir, candidate.directory, candidate.example);
@@ -223,7 +247,6 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
         if (!body.id || !/^[\w-]+$/.test(body.id)) throw Error('Invalid build ID');
         const selected = path.join(root, 'builds', body.id, 'game');
         loadGame(root, selected);
-        makeActive(root, selected);
         process.env.LIVE_PATCH_GAME = selected;
         json(res, 200, { message: 'Opening play-only build' });
         setTimeout(() => { void server.restart(); }, 150);
