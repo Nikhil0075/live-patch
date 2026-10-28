@@ -29,6 +29,16 @@ function livePatchPlugin(): Plugin {
   return {
     name: 'live-patch',
     configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const redirects: Record<string, string> = { '/control.html': 'go-live', '/simulator.html': 'practice' };
+        const url = new URL(req.url ?? '/', 'http://localhost');
+        const view = redirects[url.pathname];
+        if (!view || (req.method !== 'GET' && req.method !== 'HEAD')) { next(); return; }
+        url.searchParams.set('view', view);
+        res.statusCode = 302;
+        res.setHeader('Location', `/${url.search}`);
+        res.end();
+      });
       configureTwitchServer(server, root, directory, manifest);
       server.watcher.add([mutationDirectory, manifestFile]);
       server.watcher.on('change', file => { if (path.resolve(file) === manifestFile) void server.restart(); });
@@ -52,4 +62,4 @@ function livePatchPlugin(): Plugin {
   };
 }
 
-export default defineConfig({ plugins: [...(process.env.LIVE_PATCH_TEST_SERVER === '1' ? [] : [basicSsl({ domains: ['localhost', '127.0.0.1'] })]), livePatchPlugin()], build: { rollupOptions: { input: { game: path.join(root, 'index.html'), simulator: path.join(root, 'simulator.html'), overlay: path.join(root, 'overlay.html'), control: path.join(root, 'control.html') } } }, server: { port: Number(process.env.LIVE_PATCH_HTTP_PORT ?? new URL(manifest.reload.url).port), strictPort: true, fs: { allow: [root, directory], deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/.live-patch/**', '**/tokens.json', '**/ideas.json', '**/runs.json', '**/rounds.json'] } } });
+export default defineConfig({ plugins: [...(process.env.LIVE_PATCH_TEST_SERVER === '1' ? [] : [basicSsl({ domains: ['localhost', '127.0.0.1'] })]), livePatchPlugin()], build: { rollupOptions: { input: { game: path.join(root, 'index.html'), simulator: path.join(root, 'simulator.html'), overlay: path.join(root, 'overlay.html'), control: path.join(root, 'control.html') } } }, server: { port: Number(process.env.LIVE_PATCH_HTTP_PORT ?? new URL(manifest.reload.url).port), strictPort: true, fs: { allow: [root, directory], deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/.live-patch/**', '**/tokens.json', '**/ideas.json', '**/runs.json', '**/rounds.json', '**/settings.json', '**/smoke-results.json', '**/imported-games.json', '**/active-game.json'] } } });

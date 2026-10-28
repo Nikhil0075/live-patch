@@ -23,6 +23,7 @@ export class ChatPipeline {
   private seen = new Map<string, number>();
   private lastErrorReply = new Map<string, number>();
   constructor(private store: IdeaStore, private options: PipelineOptions) {}
+  setRewardId(rewardId: string): void { this.options.rewardId = rewardId; }
   async ingest(event: InboundEvent): Promise<Outcome> {
     const now = this.options.now?.() ?? Date.now();
     if (this.seen.has(event.id)) return { accepted: false, command: 'duplicate', message: 'Already handled' };

@@ -1,6 +1,7 @@
 import type { GameAction, GameAdapter, GameEvent } from '../game-api';
 import type { GameManifest } from '../manifest/schema';
 import { frameDocument } from './frame';
+import { EffectLimits } from './effect-limits';
 
 export interface MutationFile { name: string; source: string; error: string | null }
 interface Loaded {
@@ -51,8 +52,10 @@ function freshCounters() { return { hooks: new Set<string>(), skippedTickDelta: 
 export class MutationHost {
   private loaded = new Map<string, Loaded>();
   private nextId = 1;
+  private effectLimits: EffectLimits;
 
   constructor(private game: GameAdapter, private manifest: GameManifest, private list: HTMLElement, private notice: HTMLElement) {
+    this.effectLimits = new EffectLimits(manifest);
     window.addEventListener('message', this.onMessage);
   }
 
@@ -145,6 +148,7 @@ export class MutationHost {
           if (entry.invalidActions >= 10) { this.disable(entry, 'Repeated invalid game actions'); return; }
           continue;
         }
+        if (!this.effectLimits.allow(normalized, entry.file.name)) { entry.droppedActions++; continue; }
         entry.budgetCount++;
         try { this.game.apply(normalized, entry.file.name); }
         catch (error) { this.disable(entry, `Game action failed: ${String(error)}`); return; }

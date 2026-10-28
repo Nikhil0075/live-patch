@@ -1,6 +1,12 @@
 {
   "name": "Arena Survivor",
   "hint": "Move with WASD or arrows · Space attacks · Collect coins · Avoid enemies",
+  "description": "A bright arena that changes every time chat ships a new rule.",
+  "tags": ["Survival", "Chat-driven"],
+  "version": "1.0.0",
+  "author": "Live Patch",
+  "audio": ["coin", "hit", "death", "hurt", "round-start", "vote-tick", "patch-shipped", "patch-failed", "rollback"],
+  "effects": ["spark", "coin", "slime", "celebration"],
   "entry": "src/main.ts",
   "mutationDir": "mutations/",
   "apiDocs": "docs/mutation-api.md",
@@ -17,7 +23,11 @@
     "setParameter": [{"type":"string","values":["enemySpeed","coinValue","playerSpeed","spawnInterval","gravityX","gravityY"]},{"type":"number","min":-100,"max":500}],
     "drawShape": [{"type":"number","min":0,"max":960},{"type":"number","min":0,"max":640},{"type":"number","min":1,"max":100},{"type":"string","maxLength":7}],
     "drawText": [{"type":"string","maxLength":80},{"type":"number","min":0,"max":960},{"type":"number","min":0,"max":640}],
-    "showMessage": [{"type":"string","maxLength":100}]
+    "showMessage": [{"type":"string","maxLength":100}],
+    "playSound": [{"type":"string","values":["coin","hit","death","hurt","round-start","vote-tick","patch-shipped","patch-failed","rollback"]}],
+    "burst": [{"type":"string","values":["spark","coin","slime","celebration"]},{"type":"number","min":0,"max":960},{"type":"number","min":0,"max":640}],
+    "shake": [{"type":"number","min":0,"max":0.01}],
+    "flash": [{"type":"string","values":["#ffffff","#8bffcf","#ff8d82"]}]
   },
   "hooks": { "start": "onStart", "tick": "onTick", "spawn": "onSpawn", "hit": "onHit", "collide": "onCollide", "score": "onScore", "entityCollide": "onEntityCollide", "chat": "onChat" },
   "reload": { "type": "websocket", "url": "ws://127.0.0.1:5173", "event": "live-patch:changed" },

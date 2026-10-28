@@ -9,6 +9,7 @@
     "dev": "node scripts/dev.mjs",
     "test": "node scripts/test.mjs",
     "smoke": "node scripts/test.mjs --smoke",
+    "new-game": "node scripts/new-game.mjs",
     "build": "tsc --noEmit && vite build"
   },
   "dependencies": {

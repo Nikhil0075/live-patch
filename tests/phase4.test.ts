@@ -119,6 +119,19 @@ describe('Phase 4 rounds and builds', () => {
     } finally { round.stop(); }
   }));
 
+  it('uses oldest-first numbers for pitch approvals and the later ballot', async () => fixture((root, ideas) => {
+    const round = new RoundCoordinator(path.join(root, 'data', 'rounds.json'), ideas);
+    try {
+      const first = ideas.add('a', 'Alice', 'First mechanic', 'chat'); round.triage(first);
+      const second = ideas.add('b', 'Bob', 'Second mechanic', 'chat'); round.triage(second);
+      expect(round.candidate(1)?.id).toBe(first.id);
+      expect(round.candidate(2)?.id).toBe(second.id);
+      round.advance();
+      expect(round.candidate(1)?.id).toBe(first.id);
+      expect(round.candidate(2)?.id).toBe(second.id);
+    } finally { round.stop(); }
+  }));
+
   it('previews model decisions, rejects backward merges and caps proposed rejections', async () => fixture(async (root, ideas) => {
     const round = new RoundCoordinator(path.join(root, 'data', 'rounds.json'), ideas);
     try {

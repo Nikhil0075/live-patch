@@ -21,10 +21,19 @@ export function loadGame(root: string, argument: string): { directory: string; m
     if (!target.startsWith(directory + path.sep)) throw new Error(`Manifest example escapes game directory: ${example}`);
     if (!fs.existsSync(target)) throw new Error(`Manifest example does not exist: ${target}`);
   }
+  if (result.data.cover) {
+    const cover = path.resolve(directory, result.data.cover);
+    if (!cover.startsWith(directory + path.sep) || !fs.existsSync(cover) || !fs.statSync(cover).isFile() || fs.statSync(cover).size > 1_000_000) throw Error('Manifest cover must be an image inside the game folder, at most 1 MB');
+  }
   return { directory, manifest: result.data };
 }
 
 export function defaultGame(root: string): string {
+  const activeFile = path.join(root, '.live-patch', 'active-game.json');
+  if (fs.existsSync(activeFile)) {
+    const active = JSON.parse(fs.readFileSync(activeFile, 'utf8')) as { directory?: string };
+    if (active.directory && fs.existsSync(path.join(active.directory, 'live-patch.json'))) return active.directory;
+  }
   const packageFile = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as { livePatch?: { defaultGame?: string } };
   if (!packageFile.livePatch?.defaultGame) throw new Error('package.json livePatch.defaultGame is required');
   return packageFile.livePatch.defaultGame;

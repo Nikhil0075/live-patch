@@ -16,6 +16,12 @@ import { RunStore, publicRun, type RunnerEvent } from '../runner/store';
 import { RoundCoordinator } from '../pipeline/rounds';
 import { saveBuild } from '../overlay/builds';
 import { CodexTriage } from '../pipeline/triage';
+import { discoverGames, validateImport, smokeGame, addImport, makeActive } from '../manifest/library';
+import { loadGame } from '../manifest/load';
+import { execFileSync } from 'node:child_process';
+import { SettingsStore, type StudioSettings } from '../studio/settings';
+import { publicCredentials, saveCredentials, type CredentialInput } from '../studio/credentials';
+import { setupChecks, sandboxSelfTest, runSandboxSetup, classifySandboxError, type SetupCheck } from '../studio/setup';
 
 function loadLocalEnv(root: string) {
   const file = path.join(root, '.env');
@@ -50,7 +56,11 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
   loadLocalEnv(root);
   const config: TwitchConfig = { clientId: process.env.TWITCH_CLIENT_ID ?? '', clientSecret: process.env.TWITCH_CLIENT_SECRET ?? '', redirectUri: process.env.TWITCH_REDIRECT_URI ?? defaultTwitchRedirectUri, rewardId: process.env.TWITCH_PITCH_REWARD_ID ?? '' };
   const dataDir = path.resolve(process.env.LIVE_PATCH_DATA_DIR ?? path.join(root, '.live-patch'));
-  const auth = new TwitchAuth(config, path.join(dataDir, 'tokens.json'));
+  const settings = new SettingsStore(path.join(dataDir, 'settings.json'));
+  let lastSandbox: SetupCheck | undefined;
+  let diagnostics = '';
+  const tokenFile = path.join(dataDir, 'tokens.json');
+  let auth = new TwitchAuth(config, tokenFile);
   const store = new IdeaStore(path.join(dataDir, 'ideas.json'));
   const runs = new RunStore(path.join(dataDir, 'runs.json'));
   const progress: RunnerEvent[] = [];
@@ -60,7 +70,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
     server.ws.send({ type: 'custom', event: 'live-patch:runner', data: event });
     if (event.type === 'shipped' || event.type === 'failed') rounds?.runFinished(event.ideaId);
   });
-  rounds = new RoundCoordinator(path.join(dataDir, 'rounds.json'), store, state => server.ws.send({ type: 'custom', event: 'live-patch:round', data: state }));
+  rounds = new RoundCoordinator(path.join(dataDir, 'rounds.json'), store, state => server.ws.send({ type: 'custom', event: 'live-patch:round', data: state }), Date.now, settings.snapshot());
   const replies: { at: string; text: string }[] = [];
   const simulator = process.env.LIVE_PATCH_SIMULATOR_ENABLED !== '0';
   let chatIssue = '';
@@ -89,8 +99,17 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
       if (action === 'rollback') void runner.requestRollback().catch(error => console.error('Runner rollback failed:', error));
     }
   });
-  const eventsub = new EventSubClient(auth, config.rewardId, event => pipeline.ingest(event));
-  const connection = new TwitchConnection(auth, eventsub);
+  let eventsub = new EventSubClient(auth, config.rewardId, event => pipeline.ingest(event));
+  let connection = new TwitchConnection(auth, eventsub);
+  const reloadTwitch = (clearTokens: boolean) => {
+    connection.stop();
+    if (clearTokens && fs.existsSync(tokenFile)) fs.rmSync(tokenFile);
+    pipeline.setRewardId(config.rewardId || 'sim-pitch');
+    auth = new TwitchAuth(config, tokenFile);
+    eventsub = new EventSubClient(auth, config.rewardId, event => pipeline.ingest(event));
+    connection = new TwitchConnection(auth, eventsub);
+    void connection.start();
+  };
   void connection.start();
   server.httpServer?.on('close', () => { connection.stop(); runner.stop(); rounds.stop(); });
   server.middlewares.use(async (req, res, next) => {
@@ -98,10 +117,118 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
     const route = url.pathname;
     if (route === '/api/ideas' && req.method === 'GET') { json(res, 200, { ideas: store.list(), candidateIds: [1, 2, 3].map(number => rounds.candidate(number)?.id ?? null), rollbackRequests: store.rollbackRequests(), replies }); return; }
     if (route === '/api/round' && req.method === 'GET') { json(res, 200, rounds.snapshot()); return; }
+    if (route === '/api/settings' && req.method === 'GET') { json(res, 200, settings.snapshot()); return; }
+    if (route === '/api/settings' && req.method === 'POST') {
+      if (!req.headers.origin || !localOrigin(req) || !String(req.headers['content-type'] ?? '').startsWith('application/json')) { json(res, 403, { error: 'Same-origin JSON request required' }); return; }
+      try {
+        const updated = settings.update(await readJson(req) as Partial<StudioSettings>);
+        rounds.setTimings(updated);
+        server.ws.send({ type: 'custom', event: 'live-patch:settings', data: updated });
+        json(res, 200, updated);
+      } catch { json(res, 400, { error: 'Invalid settings' }); }
+      return;
+    }
+    if (route === '/api/twitch/credentials' && req.method === 'GET') { json(res, 200, publicCredentials(config)); return; }
+    if (route === '/api/twitch/credentials' && req.method === 'POST') {
+      if (!req.headers.origin || !localOrigin(req) || !String(req.headers['content-type'] ?? '').startsWith('application/json')) { json(res, 403, { error: 'Same-origin JSON request required' }); return; }
+      try {
+        const body = await readJson(req) as CredentialInput & { remove?: boolean };
+        const previousId = config.clientId;
+        const next = saveCredentials(root, body, body.remove === true);
+        Object.assign(config, next);
+        reloadTwitch(body.remove === true || previousId !== config.clientId);
+        json(res, 200, { ...publicCredentials(config), message: body.remove ? 'Twitch credentials removed' : 'Twitch settings saved and reloaded' });
+      } catch { json(res, 400, { error: 'Could not save Twitch settings; check field formats and try again' }); }
+      return;
+    }
+    if (route === '/api/setup' && req.method === 'GET') {
+      json(res, 200, { checks: await setupChecks(root, config, { broadcaster: Boolean(auth.identity('broadcaster')), bot: Boolean(auth.identity('bot')) }, lastSandbox), credentials: publicCredentials(config), diagnostics }); return;
+    }
+    if (route === '/api/setup' && req.method === 'POST') {
+      if (!req.headers.origin || !localOrigin(req) || !String(req.headers['content-type'] ?? '').startsWith('application/json')) { json(res, 403, { error: 'Same-origin JSON request required' }); return; }
+      try {
+        const body = await readJson(req) as { action?: string };
+        if (body.action === 'self-test') lastSandbox = await sandboxSelfTest(root);
+        else if (body.action === 'sandbox-setup') {
+          const result = await runSandboxSetup();
+          lastSandbox = result.success ? await sandboxSelfTest(root) : classifySandboxError(result.error ?? 'Setup failed');
+          const detail = result.error ?? 'Setup failed';
+          diagnostics = result.success ? '' : (config.clientSecret ? detail.replaceAll(config.clientSecret, '[redacted]') : detail).replace(/(?:Bearer|OAuth)\s+[A-Za-z0-9._~-]+/gi, '[redacted token]').slice(0, 500);
+        } else { json(res, 400, { error: 'Unknown setup action' }); return; }
+        json(res, 200, { check: lastSandbox, diagnostics });
+      } catch { json(res, 500, { error: 'Setup check failed' }); }
+      return;
+    }
+    if (route === '/api/library' && req.method === 'GET') { json(res, 200, { active: gameDirectory, games: discoverGames(root, dataDir) }); return; }
+    if (route === '/api/library/docs' && req.method === 'GET') {
+      const item = discoverGames(root, dataDir).find(game => game.directory === url.searchParams.get('directory') && game.valid);
+      if (!item) { json(res, 404, { error: 'Game not found' }); return; }
+      const selected = loadGame(root, item.directory);
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8'); res.end(fs.readFileSync(path.join(item.directory, selected.manifest.apiDocs), 'utf8')); return;
+    }
+    if (route === '/api/library/cover' && req.method === 'GET') {
+      const item = discoverGames(root, dataDir).find(game => game.directory === url.searchParams.get('directory') && game.valid);
+      if (!item) { res.statusCode = 404; res.end(); return; }
+      const selected = loadGame(root, item.directory);
+      if (!selected.manifest.cover) { res.statusCode = 404; res.end(); return; }
+      const file = path.join(item.directory, selected.manifest.cover);
+      res.setHeader('Content-Type', file.endsWith('.png') ? 'image/png' : file.endsWith('.webp') ? 'image/webp' : 'image/jpeg'); res.end(fs.readFileSync(file)); return;
+    }
+    if (route === '/api/library' && req.method === 'POST') {
+      if (!req.headers.origin || !localOrigin(req) || !String(req.headers['content-type'] ?? '').startsWith('application/json')) { json(res, 403, { error: 'Same-origin JSON request required' }); return; }
+      try {
+        const body = await readJson(req) as { action?: string; directory?: string; name?: string };
+        if (body.action === 'import' && body.directory) {
+          const candidate = validateImport(root, body.directory);
+          await smokeGame(root, dataDir, candidate.directory, candidate.example);
+          addImport(dataDir, candidate.directory);
+          json(res, 200, { message: `Imported ${candidate.manifest.name}` }); return;
+        }
+        if (body.action === 'template' && body.name) {
+          const created = execFileSync(process.execPath, [path.join(root, 'scripts', 'new-game.mjs'), body.name], { cwd: root, encoding: 'utf8', timeout: 10_000 }).trim();
+          const candidate = validateImport(root, created);
+          await smokeGame(root, dataDir, candidate.directory, candidate.example);
+          json(res, 200, { message: `Created ${candidate.manifest.name}`, directory: candidate.directory }); return;
+        }
+        if (body.action === 'active' && body.directory) {
+          const wanted = path.resolve(body.directory);
+          const candidate = discoverGames(root, dataDir).find(item => item.directory === wanted && item.valid);
+          if (!candidate) throw Error('Choose a valid game from the library');
+          makeActive(root, candidate.directory);
+          process.env.LIVE_PATCH_GAME = candidate.directory;
+          json(res, 200, { message: `Switching to ${candidate.name}` });
+          setTimeout(() => { void server.restart(); }, 150);
+          return;
+        }
+        json(res, 400, { error: 'Invalid library action' });
+      } catch (error) { json(res, 400, { error: String(error) }); }
+      return;
+    }
     if (route === '/api/builds' && req.method === 'GET') {
       const folder = path.join(root, 'builds');
       const builds = fs.existsSync(folder) ? fs.readdirSync(folder).filter(name => /^[\w-]+$/.test(name) && fs.existsSync(path.join(folder, name, 'build.json'))).sort().reverse().slice(0, 20).map(name => JSON.parse(fs.readFileSync(path.join(folder, name, 'build.json'), 'utf8')) as unknown) : [];
       json(res, 200, { builds }); return;
+    }
+    if (route === '/api/builds/notes' && req.method === 'GET') {
+      const id = url.searchParams.get('id') ?? '';
+      if (!/^[\w-]+$/.test(id)) { json(res, 400, { error: 'Invalid build ID' }); return; }
+      const file = path.join(root, 'builds', id, 'patch-notes.md');
+      if (!fs.existsSync(file)) { json(res, 404, { error: 'Build not found' }); return; }
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8'); res.end(fs.readFileSync(file, 'utf8')); return;
+    }
+    if (route === '/api/builds/play' && req.method === 'POST') {
+      if (!req.headers.origin || !localOrigin(req) || !String(req.headers['content-type'] ?? '').startsWith('application/json')) { json(res, 403, { error: 'Same-origin JSON request required' }); return; }
+      try {
+        const body = await readJson(req) as { id?: string };
+        if (!body.id || !/^[\w-]+$/.test(body.id)) throw Error('Invalid build ID');
+        const selected = path.join(root, 'builds', body.id, 'game');
+        loadGame(root, selected);
+        makeActive(root, selected);
+        process.env.LIVE_PATCH_GAME = selected;
+        json(res, 200, { message: 'Opening play-only build' });
+        setTimeout(() => { void server.restart(); }, 150);
+      } catch (error) { json(res, 400, { error: String(error) }); }
+      return;
     }
     if (route === '/api/control' && req.method === 'POST') {
       if (!req.headers.origin || !localOrigin(req) || !String(req.headers['content-type'] ?? '').startsWith('application/json')) { json(res, 403, { error: 'Same-origin JSON request required' }); return; }

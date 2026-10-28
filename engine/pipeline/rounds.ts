@@ -22,16 +22,17 @@ export interface RoundSnapshot extends Omit<RoundState, 'remainingMs'> {
   remainingMs: number | null;
 }
 
-const PITCH_MS = 60_000;
-const VOTE_MS = 45_000;
 const norm = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
 
 export class RoundCoordinator {
   private state: RoundState;
   private timer: ReturnType<typeof setInterval>;
-  constructor(private file: string, private ideas: IdeaStore, private onChange: (state: RoundSnapshot) => void = () => {}, private now: () => number = Date.now) {
+  private pitchMs: number;
+  private voteMs: number;
+  constructor(private file: string, private ideas: IdeaStore, private onChange: (state: RoundSnapshot) => void = () => {}, private now: () => number = Date.now, timings: { pitchSeconds: number; voteSeconds: number } = { pitchSeconds: 60, voteSeconds: 45 }) {
+    this.pitchMs = timings.pitchSeconds * 1000; this.voteMs = timings.voteSeconds * 1000;
     const existing = fs.existsSync(file);
-    this.state = existing ? JSON.parse(fs.readFileSync(file, 'utf8')) as RoundState : { version: 1, number: 1, phase: 'pitch', deadlineAt: now() + PITCH_MS, candidateIds: [] };
+    this.state = existing ? JSON.parse(fs.readFileSync(file, 'utf8')) as RoundState : { version: 1, number: 1, phase: 'pitch', deadlineAt: now() + this.pitchMs, candidateIds: [] };
     if (this.state.version !== 1 || !Array.isArray(this.state.candidateIds)) throw Error('Invalid round store');
     if (this.state.phase === 'building') this.startPitch(false);
     else if (!existing) this.publish();
@@ -40,11 +41,12 @@ export class RoundCoordinator {
     this.timer.unref?.();
   }
   stop() { clearInterval(this.timer); }
+  setTimings(timings: { pitchSeconds: number; voteSeconds: number }) { this.pitchMs = timings.pitchSeconds * 1000; this.voteMs = timings.voteSeconds * 1000; }
   snapshot(): RoundSnapshot {
     return { ...this.state, candidateIds: [...this.state.candidateIds], candidates: this.state.candidateIds.flatMap(id => this.ideas.list().filter(idea => idea.id === id)), remainingMs: this.state.phase === 'paused' ? this.state.remainingMs ?? null : this.state.deadlineAt === null ? null : Math.max(0, this.state.deadlineAt - this.now()) };
   }
   candidate(number: number): Idea | undefined {
-    if (this.state.phase === 'pitch') return this.ideas.candidate(number);
+    if (this.state.phase === 'pitch') return this.ideas.list().filter(idea => ['submitted', 'shortlisted'].includes(idea.status))[number - 1];
     const id = this.state.candidateIds[number - 1];
     return id ? this.ideas.list().find(idea => idea.id === id) : undefined;
   }
@@ -126,11 +128,11 @@ export class RoundCoordinator {
     if (this.state.phase === 'pitch') {
       delete this.state.triagePreview;
       const candidates = this.ideas.list().filter(idea => ['submitted', 'shortlisted'].includes(idea.status)).slice(0, 3);
-      if (!candidates.length) { this.state.deadlineAt = this.now() + PITCH_MS; this.publish(); return; }
+      if (!candidates.length) { this.state.deadlineAt = this.now() + this.pitchMs; this.publish(); return; }
       this.state.candidateIds = candidates.map(idea => idea.id);
       this.ideas.clearVotes(this.state.candidateIds);
       for (const idea of candidates) this.ideas.setStatus(idea.id, 'voting');
-      this.state.phase = 'vote'; this.state.deadlineAt = this.now() + VOTE_MS; this.publish(); return;
+      this.state.phase = 'vote'; this.state.deadlineAt = this.now() + this.voteMs; this.publish(); return;
     }
     if (this.state.phase === 'vote') { this.state.phase = 'approval'; this.state.deadlineAt = null; this.publish(); return; }
     this.startPitch(true);
@@ -143,7 +145,7 @@ export class RoundCoordinator {
       if (this.ideas.list().find(idea => idea.id === id)?.status === 'voting') this.ideas.setStatus(id, 'lost_vote');
     }
     if (increment) this.state.number++;
-    this.state.phase = 'pitch'; this.state.deadlineAt = this.now() + PITCH_MS; this.state.candidateIds = []; delete this.state.selectedId; delete this.state.triagePreview;
+    this.state.phase = 'pitch'; this.state.deadlineAt = this.now() + this.pitchMs; this.state.candidateIds = []; delete this.state.selectedId; delete this.state.triagePreview;
     this.publish();
   }
   private publish() {

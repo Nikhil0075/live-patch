@@ -5,15 +5,26 @@ import { MutationHost, type MutationFile } from './mutation/host';
 
 let host: MutationHost | undefined;
 const app = document.querySelector<HTMLDivElement>('#app')!;
-app.innerHTML = `<main><header><div><p class="eyebrow">LIVE PATCH / ARENA</p><h1 id="game-title"></h1></div><div id="status">Connecting…</div></header><div class="layout"><section><div id="game"></div><p class="hint" id="game-hint"></p></section><aside><h2>Active patches</h2><ul id="mutations"></ul><p id="notice" role="status"></p><p class="aside-note">Add or remove a .js file in the game's mutations folder to change this run live.</p><a href="/simulator.html">Chat simulator ↗</a><br><a href="/control.html">Stream control ↗</a><br><a href="/overlay.html">OBS overlay ↗</a></aside></div></main>`;
+app.innerHTML = `<main><header><div><p class="eyebrow">LIVE PATCH / GAME</p><h1 id="game-title"></h1></div><div id="status">Connecting…</div></header><div class="layout"><section><div id="game"></div><button id="enable-sound" class="secondary">Click to enable sound ♪</button><p class="hint" id="game-hint"></p></section><aside><h2>Active patches</h2><ul id="mutations"></ul><p id="notice" role="status"></p><p class="aside-note">Every shipped viewer idea becomes a patch in this run.</p><a href="/?view=practice">Practice with chat →</a><br><a href="/?view=go-live">Open stream controls →</a></aside></div></main>`;
 
 async function start() {
   const info = await fetch('/api/game').then(r => r.json()) as GameManifest & { entry: string };
+  const settings = await fetch('/api/settings').then(r => r.json()).catch(() => ({}));
   document.querySelector('#game-title')!.textContent = info.name.toUpperCase();
   document.querySelector('#game-hint')!.textContent = info.hint;
-  const module = await import(/* @vite-ignore */ info.entry) as { createGame: (element: HTMLElement, emit: (event: GameEvent) => void) => GameAdapter };
+  const module = await import(/* @vite-ignore */ info.entry) as { createGame: (element: HTMLElement, emit: (event: GameEvent) => void, options?: unknown) => GameAdapter };
   let dispatch = (_event: GameEvent) => {};
-  const game = module.createGame(document.querySelector('#game')!, event => dispatch(event));
+  const game = module.createGame(document.querySelector('#game')!, event => dispatch(event), { manifest: info, settings });
+  let lastVoteBucket = -1;
+  window.setInterval(async () => {
+    try {
+      const round = await fetch('/api/round').then(response => response.json()) as { phase: string; remainingMs: number | null };
+      if (round.phase !== 'vote' || round.remainingMs === null) { lastVoteBucket = -1; return; }
+      const bucket = Math.floor(round.remainingMs / 10_000);
+      if (bucket !== lastVoteBucket) { lastVoteBucket = bucket; game.apply({ type: 'systemEvent', args: ['vote-tick'] }, 'system'); }
+    } catch { /* a server restart may briefly interrupt the clock */ }
+  }, 1000);
+  document.querySelector('#enable-sound')!.addEventListener('click', () => { game.enableSound?.(); document.querySelector('#enable-sound')!.textContent = 'Sound enabled ♪'; });
   host = new MutationHost(game, info, document.querySelector('#mutations')!, document.querySelector('#notice')!);
   dispatch = event => host?.emit(event);
   const selected = new URLSearchParams(location.search).get('mutation');
@@ -26,6 +37,13 @@ async function start() {
   if (info.reload.type === 'websocket') {
     import.meta.hot?.on('live-patch:chat', (message: { text: string; author: string }) => {
       host?.emit({ type: 'chat', text: message.text, author: message.author });
+    });
+    import.meta.hot?.on('live-patch:settings', (value: unknown) => game.configure?.(value));
+    import.meta.hot?.on('live-patch:runner', (event: { type: string }) => {
+      if (['shipped', 'failed', 'rolled_back'].includes(event.type)) game.apply({ type: 'systemEvent', args: [event.type] }, 'system');
+    });
+    import.meta.hot?.on('live-patch:round', (round: { phase: string }) => {
+      if (round.phase === 'pitch') game.apply({ type: 'systemEvent', args: ['round-start'] }, 'system');
     });
     import.meta.hot?.on(info.reload.event, (changed: MutationFile[]) => {
       version++;

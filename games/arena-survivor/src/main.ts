@@ -1,5 +1,8 @@
 import Phaser from 'phaser';
 import type { GameAction, GameAdapter, GameEvent } from '../../../engine/game-api';
+import type { GameManifest } from '../../../engine/manifest/schema';
+import { defaultSettings, type StudioSettings } from '../../../engine/studio/settings';
+import { ArenaAudio, soundEvents, type SoundEvent } from './audio';
 
 const width = 960, height = 640;
 type Kind = 'enemy' | 'coin' | 'bomb' | 'fire';
@@ -12,7 +15,11 @@ const validKind = (value: unknown): value is Kind => typeof value === 'string' &
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const clamp = (value: number, min: number, max: number) => Phaser.Math.Clamp(value, min, max);
 
-export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void): GameAdapter {
+export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void, options?: { manifest?: GameManifest; settings?: StudioSettings }): GameAdapter {
+  let settings = options?.settings ?? defaultSettings;
+  const audio = new ArenaAudio(settings);
+  const allowedAudio = new Set(options?.manifest?.audio ?? []);
+  const allowedEffects = new Set(options?.manifest?.effects ?? []);
   const player = { x: width / 2, y: height / 2, lives: 3 };
   let score = 0, elapsed = 0, runElapsed = 0, frame = 0, nextId = 1, spawnClock = 0, invincible = 0, attackClock = 0, maxFrameGap = 0, lastFrameAt = 0;
   const recentFrames: number[] = [];
@@ -21,13 +28,16 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
   const writes = new Map<string, Map<Parameter, { value: number; order: number }>>();
   let writeOrder = 0;
   const effects: { x: number; y: number; radius: number; color: number; life: number; owner?: string }[] = [];
+  const particles: { x: number; y: number; vx: number; vy: number; life: number; color: number; owner?: string }[] = [];
+  let hitStop = 0, flashLife = 0, flashColor = 0xffffff;
+  let flashTimes: number[] = [];
   const messages: { text: string; life: number; owner?: string }[] = [];
   const floating: { label: Phaser.GameObjects.Text; life: number; owner?: string }[] = [];
   let scene: Arena | undefined;
 
   const active = (kind: Kind) => entities.filter(entity => entity.alive && entity.kind === kind);
   const snapshot = () => ({
-    player: { ...player }, score, elapsed, runElapsed, frame, maxFrameGap,
+    player: { ...player }, score, elapsed, runElapsed, frame, maxFrameGap, flashesLastSecond: flashTimes.filter(time => performance.now() - time < 1000).length,
     frameRate: recentFrames.length > 1 ? (recentFrames.length - 1) * 1000 / (recentFrames.at(-1)! - recentFrames[0]) : 60,
     enemies: active('enemy').length, coins: active('coin').length, floatingTexts: floating.length,
     entities: entities.filter(entity => entity.alive).slice(0, 100).map(({ id, kind, x, y, radius, vx, vy, tag }) => ({ id, kind, x, y, radius, vx, vy, tag }))
@@ -43,6 +53,10 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
   function hitEntity(entity: Entity, origin?: string) {
     if (!entity.alive) return;
     entity.alive = false;
+    hitStop = Math.max(hitStop, .055);
+    burst('slime', entity.x, entity.y, origin);
+    audio.play('death');
+    if (scene) floating.push({ label: scene.add.text(entity.x, entity.y - 12, '+2', { fontFamily: 'Arial', fontSize: '18px', color: '#ffe395', fontStyle: 'bold' }).setDepth(3), life: 1, owner: origin });
     emit({ type: 'hit', target: 'enemy', id: entity.id, kind: entity.kind, x: entity.x, y: entity.y, origin });
     score += 2; emit({ type: 'score', amount: 2, origin });
   }
@@ -59,6 +73,15 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     for (let i = effects.length - 1; i >= 0; i--) if (effects[i].owner === origin) effects.splice(i, 1);
     for (let i = messages.length - 1; i >= 0; i--) if (messages[i].owner === origin) messages.splice(i, 1);
     for (let i = floating.length - 1; i >= 0; i--) if (floating[i].owner === origin) { floating[i].label.destroy(); floating.splice(i, 1); }
+    for (let i = particles.length - 1; i >= 0; i--) if (particles[i].owner === origin) particles.splice(i, 1);
+  }
+  function burst(kind: string, x: number, y: number, owner?: string) {
+    const color = kind === 'coin' ? 0xffd263 : kind === 'slime' ? 0xff7f9d : kind === 'celebration' ? 0x8bffcf : 0xffffff;
+    const count = Math.round(8 * settings.effectsIntensity);
+    for (let i = 0; i < count && particles.length < 160; i++) {
+      const angle = Math.PI * 2 * i / Math.max(1, count), speed = 45 + Math.random() * 100;
+      particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: .35 + Math.random() * .25, color, owner });
+    }
   }
   function apply(action: GameAction, origin: string) {
     if (!action || !Array.isArray(action.args)) return;
@@ -77,6 +100,20 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       case 'drawShape': if (finite(a) && finite(b) && finite(c) && typeof d === 'string' && /^#[0-9a-fA-F]{6}$/.test(d)) effects.push({ x: a, y: b, radius: clamp(c, 1, 100), color: parseInt(d.slice(1), 16), life: .5, owner: origin }); break;
       case 'drawText': if (typeof a === 'string' && finite(b) && finite(c) && scene) floating.push({ label: scene.add.text(clamp(b, 0, width), clamp(c, 0, height), a.slice(0, 80), { fontFamily: 'Arial', fontSize: '16px', color: '#ffffff', backgroundColor: '#183044' }).setDepth(3), life: 2, owner: origin }); break;
       case 'showMessage': if (typeof a === 'string') messages.push({ text: a.slice(0, 100), life: 2, owner: origin }); break;
+      case 'playSound': if (typeof a === 'string' && allowedAudio.has(a) && soundEvents.includes(a as SoundEvent)) audio.play(a as SoundEvent); break;
+      case 'burst': if (typeof a === 'string' && allowedEffects.has(a) && finite(b) && finite(c)) burst(a, clamp(b, 0, width), clamp(c, 0, height), origin); break;
+      case 'shake': if (!settings.reduceFlashing && finite(a) && scene) scene.cameras.main.shake(160, clamp(a, 0, .01) * settings.effectsIntensity); break;
+      case 'flash': if (!settings.reduceFlashing && typeof a === 'string' && /^#[0-9a-fA-F]{6}$/.test(a)) {
+        const now = performance.now(); flashTimes = flashTimes.filter(time => now - time < 1000);
+        if (flashTimes.length < 3) { flashTimes.push(now); flashColor = parseInt(a.slice(1), 16); flashLife = .11 * settings.effectsIntensity; }
+      } break;
+      case 'systemEvent': if (origin === 'system' && typeof a === 'string') {
+        if (a === 'shipped') { messages.push({ text: '✦ PATCH SHIPPED ✦', life: 3 }); burst('celebration', player.x, player.y); audio.play('patch-shipped'); }
+        else if (a === 'failed') audio.play('patch-failed');
+        else if (a === 'rolled_back') audio.play('rollback');
+        else if (a === 'round-start') audio.play('round-start');
+        else if (a === 'vote-tick') audio.play('vote-tick');
+      } break;
     }
   }
 
@@ -104,6 +141,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       while (recentFrames.length && recentFrames[0] < now - 2000) recentFrames.shift();
       const dt = Math.min(deltaMs / 1000, .05);
       frame++; elapsed += dt; runElapsed += dt; spawnClock += dt; invincible = Math.max(0, invincible - dt); attackClock = Math.max(0, attackClock - dt);
+      if (hitStop > 0) { hitStop = Math.max(0, hitStop - dt); this.draw(); emit({ type: 'tick', delta: 0 }); return; }
       const left = this.keys.A.isDown || this.keys.LEFT.isDown, right = this.keys.D.isDown || this.keys.RIGHT.isDown;
       const up = this.keys.W.isDown || this.keys.UP.isDown, down = this.keys.S.isDown || this.keys.DOWN.isDown;
       let dx = Number(right) - Number(left), dy = Number(down) - Number(up);
@@ -112,6 +150,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       player.y = clamp(player.y + (dy * parameters.playerSpeed + parameters.gravityY) * dt, 16, height - 16);
       if (this.keys.SPACE.isDown && attackClock === 0) {
         attackClock = .45; effects.push({ x: player.x, y: player.y, radius: 72, color: 0x5df0bc, life: .25 });
+        audio.play('hit');
         for (const enemy of active('enemy')) if (Math.hypot(enemy.x - player.x, enemy.y - player.y) < enemy.radius + 72) hitEntity(enemy);
       }
       if (spawnClock >= parameters.spawnInterval) {
@@ -132,9 +171,15 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
         if (Math.hypot(entity.x - player.x, entity.y - player.y) < entity.radius + 13) {
           playerContacts.add(entity.id);
           if (!this.playerTouching.has(entity.id)) emit({ type: 'collide', id: entity.id, kind: entity.kind, x: entity.x, y: entity.y });
-          if (entity.kind === 'coin') { entity.alive = false; score += parameters.coinValue; emit({ type: 'score', amount: parameters.coinValue }); }
+          if (entity.kind === 'coin') {
+            entity.alive = false; score += parameters.coinValue; emit({ type: 'score', amount: parameters.coinValue });
+            burst('coin', entity.x, entity.y); audio.play('coin');
+            floating.push({ label: this.add.text(entity.x, entity.y - 15, `+${parameters.coinValue}`, { fontFamily: 'Arial', fontSize: '18px', color: '#ffe395', fontStyle: 'bold' }).setDepth(3), life: 1 });
+          }
           else if (entity.kind !== 'fire' && !invincible) {
             invincible = 1.1; player.lives--;
+            audio.play('hurt'); if (!settings.reduceFlashing) this.cameras.main.shake(160, .006 * settings.effectsIntensity);
+            burst('spark', player.x, player.y);
             emit({ type: 'hit', target: 'player', id: entity.id, kind: entity.kind, x: entity.x, y: entity.y });
             if (entity.kind === 'bomb') entity.alive = false;
             if (player.lives <= 0) this.newRun();
@@ -153,6 +198,9 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       this.touching = contacts;
       for (const fire of active('fire')) for (const enemy of active('enemy')) if (Math.hypot(fire.x - enemy.x, fire.y - enemy.y) < fire.radius + enemy.radius) hitEntity(enemy, fire.owner);
       for (const effect of effects) effect.life -= dt;
+      for (const particle of particles) { particle.life -= dt; particle.x += particle.vx * dt; particle.y += particle.vy * dt; }
+      for (let i = particles.length - 1; i >= 0; i--) if (particles[i].life <= 0) particles.splice(i, 1);
+      flashLife = Math.max(0, flashLife - dt);
       for (const message of messages) message.life -= dt;
       for (const text of floating) { text.life -= dt; text.label.setAlpha(Math.max(0, text.life / 2)); }
       for (let i = effects.length - 1; i >= 0; i--) if (effects[i].life <= 0) effects.splice(i, 1);
@@ -165,6 +213,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       player.lives = 3; player.x = width / 2; player.y = height / 2;
       score = 0; runElapsed = 0; spawnClock = 0; invincible = 1.5;
       entities.length = 0; this.touching.clear(); this.playerTouching.clear();
+      particles.length = 0;
       for (let i = 0; i < 4; i++) spawn('coin', 130 + i * 200, 160 + (i % 2) * 280);
       messages.push({ text: 'NEW RUN', life: 2 });
     }
@@ -174,17 +223,30 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       for (let x = 0; x < width; x += 40) g.lineBetween(x, 0, x, height);
       for (let y = 0; y < height; y += 40) g.lineBetween(0, y, width, y);
       for (const entity of entities) if (entity.alive) {
-        g.fillStyle(entity.kind === 'enemy' ? 0xf36b79 : entity.kind === 'coin' ? 0xffd263 : entity.kind === 'fire' ? 0xff9b51 : 0xb475ff);
-        g.fillCircle(entity.x, entity.y, entity.radius);
-        if (entity.kind === 'enemy') { g.fillStyle(0x541b2c); g.fillCircle(entity.x - 5, entity.y - 2, 2); g.fillCircle(entity.x + 5, entity.y - 2, 2); }
+        if (entity.kind === 'enemy') {
+          const wobble = Math.sin(elapsed * 6 + entity.id) * 2;
+          g.fillStyle(0x6a2948, .4); g.fillEllipse(entity.x, entity.y + entity.radius * .7, entity.radius * 2.2, entity.radius * .55);
+          g.fillStyle(0xff7c9b); g.fillEllipse(entity.x, entity.y, entity.radius * 2.15, entity.radius * 1.8 + wobble);
+          g.fillStyle(0xffb4c7, .55); g.fillEllipse(entity.x - 5, entity.y - 6, 10, 5);
+          g.fillStyle(0x3b1c36); g.fillCircle(entity.x - 5, entity.y - 1, 2.5); g.fillCircle(entity.x + 5, entity.y - 1, 2.5);
+        } else if (entity.kind === 'coin') {
+          const spin = Math.abs(Math.cos(elapsed * 4 + entity.id));
+          g.fillStyle(0xffe486); g.fillEllipse(entity.x, entity.y, 5 + spin * entity.radius * 2, entity.radius * 2);
+          g.lineStyle(2, 0xb98429); g.strokeEllipse(entity.x, entity.y, 5 + spin * entity.radius * 2, entity.radius * 2);
+        } else { g.fillStyle(entity.kind === 'fire' ? 0xff9b51 : 0xb475ff); g.fillCircle(entity.x, entity.y, entity.radius); }
       }
       for (const effect of effects) { g.lineStyle(3, effect.color, effect.life * 2); g.strokeCircle(effect.x, effect.y, effect.radius); }
-      g.fillStyle(invincible > 0 && frame % 8 < 4 ? 0x8ce9d7 : 0x5df0bc); g.fillCircle(player.x, player.y, 14);
+      for (const particle of particles) { g.fillStyle(particle.color, Math.min(1, particle.life * 2)); g.fillCircle(particle.x, particle.y, 2.5); }
+      g.fillStyle(invincible > 0 && frame % 8 < 4 ? 0x8ce9d7 : 0x5df0bc); g.fillCircle(player.x, player.y, 16);
       g.lineStyle(3, 0xffffff); g.strokeCircle(player.x, player.y, 14);
+      g.fillStyle(0x174d49); g.fillCircle(player.x - 5, player.y - 2, 2); g.fillCircle(player.x + 5, player.y - 2, 2);
+      g.lineStyle(2, 0x174d49); g.beginPath(); g.arc(player.x, player.y + 3, 5, .2, Math.PI - .2); g.strokePath();
+      if (player.lives === 1) { g.lineStyle(32, 0xff3e5f, .25); g.strokeRect(0, 0, width, height); }
+      if (flashLife > 0) { g.fillStyle(flashColor, Math.min(.18, flashLife)); g.fillRect(0, 0, width, height); }
       this.hud.setText(`SCORE ${score}      LIVES ${'♥'.repeat(player.lives)}      TIME ${Math.floor(runElapsed)}s`);
       this.banner.setText(messages.at(-1)?.text ?? '');
     }
   }
   const phaser = new Phaser.Game({ type: Phaser.AUTO, width, height, parent, backgroundColor: '#102337', scene: Arena, scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH } });
-  return { apply, removeMutation, snapshot, destroy: () => phaser.destroy(true) };
+  return { apply, removeMutation, snapshot, enableSound: () => audio.enable(), configure: value => { settings = value as StudioSettings; audio.configure(settings); }, destroy: () => { audio.destroy(); phaser.destroy(true); } };
 }

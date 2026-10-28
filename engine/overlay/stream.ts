@@ -6,7 +6,8 @@ root.innerHTML = '<div class="stream-shell"><header><div class="brand">LIVE PATC
 
 async function refresh() {
   try {
-    const { round, runs, mutations, ideas, events } = await dashboardData();
+    const { round, runs, mutations, ideas, events, settings } = await dashboardData();
+    root.className = `${settings.reduceFlashing ? 'reduced-effects ' : ''}${settings.overlayCompact ? 'compact-overlay' : ''}`;
     document.querySelector('#phase')!.textContent = `ROUND ${round.number} · ${round.phase.toUpperCase()}`;
     document.querySelector('#clock')!.textContent = roundClock(round.remainingMs);
     const patches = document.querySelector<HTMLElement>('#patches')!; patches.replaceChildren();
@@ -15,8 +16,7 @@ async function refresh() {
       const title = /title\s*:\s*['"`]([^'"`]{1,80})/.exec(mutation.source)?.[1] ?? mutation.name;
       const run = runs.find(item => item.status === 'shipped' && item.mutationName === mutation.name);
       const idea = ideas.find(item => item.id === run?.ideaId);
-      const fallbackAuthor = /author\s*:\s*['"`]([^'"`]{1,80})/.exec(mutation.source)?.[1] ?? '';
-      const credit = idea?.contributors?.map(name => `@${name}`).join(', ') ?? (idea ? `@${idea.authorName}` : fallbackAuthor ? `@${fallbackAuthor}` : '');
+      const credit = run ? (idea?.contributors?.map(name => `@${name}`).join(', ') ?? (idea ? `@${idea.authorName}` : 'Viewer patch')) : 'Built-in';
       appendText(pill, 'strong', title); if (credit) appendText(pill, 'small', credit);
       patches.append(pill);
     }
@@ -27,11 +27,18 @@ async function refresh() {
       const idea = ideas.find(item => item.id === latest.ideaId);
       appendText(work, 'p', idea?.spec ?? idea?.text ?? latest.mutationName ?? 'Patch run');
       if (idea) appendText(work, 'small', idea.contributors?.map(name => `@${name}`).join(', ') ?? `@${idea.authorName}`);
-      const steps = events.filter(event => event.runId === latest.id).slice(-5);
-      for (const step of steps) {
-        const label = step.type === 'file' ? `File: ${step.message ?? 'mutation'}` : step.type === 'testing' ? 'Smoke test running' : step.type === 'passed' ? 'Smoke test passed' : step.type === 'sandbox_verified' ? 'Sandbox verified' : step.type === 'failed' ? 'Build failed' : step.type === 'shipped' ? 'Patch shipped' : '';
-        if (label) appendText(work, 'small', label, 'work-step');
+      const steps = events.filter(event => event.runId === latest.id);
+      const stages = [
+        { id: 'sandbox_verified', label: 'Sandbox checked' }, { id: 'file', label: 'Writing mutation' },
+        { id: 'testing', label: 'Smoke test' }, { id: latest.status === 'failed' ? 'failed' : 'shipped', label: latest.status === 'failed' ? 'Build failed' : 'Patch shipped' }
+      ];
+      const seen = new Set(steps.map(step => step.type));
+      if (latest.status === 'shipped' || latest.status === 'failed') seen.add(latest.status);
+      for (const stage of stages) {
+        const step = steps.find(item => item.type === stage.id);
+        appendText(work, 'small', `${seen.has(stage.id) ? '✓' : '○'} ${stage.label}${stage.id === 'file' && step?.message ? ` · ${step.message}` : ''}`, `work-step ${seen.has(stage.id) ? 'complete' : ''}`);
       }
+      if (latest.status === 'shipped') appendText(work, 'strong', '✦ PATCH SHIPPED ✦', 'shipped-moment');
       if (!steps.length && latest.mutationName) appendText(work, 'small', `File: ${latest.mutationName}`);
       if (latest.error) appendText(work, 'small', latest.error);
       else if (latest.durationMs) appendText(work, 'small', `${Math.round(latest.durationMs / 1000)}s`);
@@ -46,7 +53,16 @@ async function refresh() {
       const bar = document.createElement('div'); bar.className = 'vote-bar'; bar.style.width = `${Math.round(candidate.votes.length / maxVotes * 100)}%`;
       track.append(bar); card.append(track); candidates.append(card);
     }
-    if (!round.candidates.length) appendText(candidates, 'p', round.phase === 'pitch' ? 'Pitch ideas with !idea <mechanic>' : 'Waiting for the next round');
+    if (round.phase === 'pitch') {
+      const pending = ideas.filter(item => ['submitted', 'shortlisted'].includes(item.status));
+      appendText(candidates, 'p', `${pending.length} pitch${pending.length === 1 ? '' : 'es'} in the queue · !idea <mechanic>`);
+      for (const idea of pending.slice(-3).reverse()) {
+        const card = document.createElement('div'); card.className = 'candidate';
+        appendText(card, 'strong', idea.spec ?? idea.text);
+        appendText(card, 'small', `${idea.contributors?.map(name => `@${name}`).join(', ') ?? `@${idea.authorName}`}${idea.contributors && idea.contributors.length > 1 ? ' · merged pitch' : ''}`);
+        candidates.append(card);
+      }
+    } else if (!round.candidates.length) appendText(candidates, 'p', 'Waiting for the next round');
   } catch (error) { document.querySelector('#work')!.textContent = `Overlay reconnecting: ${String(error)}`; }
 }
 

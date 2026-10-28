@@ -12,6 +12,13 @@ const argumentSchema = z.object({
 export const manifestSchema = z.object({
   name: z.string().min(1),
   hint: z.string().max(200),
+  description: z.string().max(500).optional(),
+  cover: z.string().regex(/^[\w./-]+\.(?:png|jpe?g|webp)$/i).optional(),
+  tags: z.array(z.string().max(30)).max(8).optional(),
+  version: z.string().max(40).optional(),
+  author: z.string().max(80).optional(),
+  audio: z.array(z.string().regex(/^[a-zA-Z][\w-]*$/)).max(32).optional(),
+  effects: z.array(z.string().regex(/^[a-zA-Z][\w-]*$/)).max(32).optional(),
   entry: z.string().regex(/^src\/[\w./-]+\.ts$/),
   mutationDir: z.string().regex(/^[\w./-]+\/$/),
   apiDocs: z.string().regex(/^[\w./-]+\.md$/),

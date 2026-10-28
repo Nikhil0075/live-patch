@@ -72,7 +72,7 @@ export function codexAgent(worktree: string, signal: AbortSignal, emit: (type: R
   };
 }
 
-function smoke(command: string, root: string, gameDirectory: string, filename: string, signal: AbortSignal): Promise<void> {
+export function smoke(command: string, root: string, gameDirectory: string, filename: string, signal: AbortSignal): Promise<void> {
   if (!command.includes('{file}')) throw Error('Manifest testCommand must contain {file}');
   if (!/^[\w .\/\\{}:-]+$/.test(command)) throw Error('Manifest testCommand contains unsupported shell characters');
   const shellCommand = command.replaceAll('{file}', filename);

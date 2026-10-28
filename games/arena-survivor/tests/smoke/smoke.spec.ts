@@ -357,8 +357,8 @@ test('simulator submits ideas and chat through the live game path as plain text'
     await simulator.locator('select[name="role"]').selectOption('broadcaster');
     await simulator.locator('textarea[name="text"]').fill('!reject 1');
     await simulator.getByRole('button', { name: 'Send' }).click();
-    await expect(simulator.locator('#ideas li').filter({ hasText: 'Coins flee from the player' })).not.toContainText('Vote 1');
-    await expect(simulator.locator('#ideas li').filter({ hasText: '<img src=x' })).toContainText('Vote 1');
+    await expect(simulator.locator('#ideas li').filter({ hasText: '<img src=x' })).not.toContainText('Vote 1');
+    await expect(simulator.locator('#ideas li').filter({ hasText: 'Coins flee from the player' })).toContainText('Vote 1');
   } finally { await simulator.close(); fs.rmSync(file, { force: true }); }
 });
 
@@ -394,4 +394,37 @@ test('operator controls timed voting and the OBS overlay renders viewer text saf
   await expect(page.locator('#notice')).toContainText('rejected');
   const runsAfter = await page.evaluate(async () => (await fetch('/api/runs').then(response => response.json())).runs.length as number);
   expect(runsAfter).toBe(runsBefore);
+});
+
+test('studio navigation, setup and build library keep viewer data plain text', async ({ page }) => {
+  test.setTimeout(45_000);
+  await page.goto('/');
+  await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible();
+  for (const name of ['Home', 'Library', 'Go Live', 'Builds', 'Setup', 'Settings']) await expect(page.locator('#app-nav a').filter({ hasText: name })).toBeVisible();
+  await page.locator('#app-nav a').filter({ hasText: 'Library' }).click();
+  await expect(page.locator('#game-cards')).toContainText('Arena Survivor');
+  await expect(page.locator('#game-cards')).toContainText('CONCEPT — NOT PLAYABLE');
+  await page.locator('#app-nav a').filter({ hasText: 'Setup' }).click();
+  await expect(page.locator('#setup-checks')).toContainText('Codex CLI and sign-in', { timeout: 20_000 });
+  await expect(page.locator('input[name="clientSecret"]')).toHaveValue('');
+  const denied = await page.request.post('/api/twitch/credentials', { headers: { Origin: 'https://outside.example', 'Content-Type': 'application/json' }, data: { clientSecret: 'fake-secret' } });
+  expect(denied.status()).toBe(403);
+  const nonJson = await page.request.post('/api/twitch/credentials', { headers: { Origin: new URL(page.url()).origin, 'Content-Type': 'text/plain' }, data: 'clientSecret=fake-secret' });
+  expect(nonJson.status()).toBe(403);
+  await page.locator('#app-nav a').filter({ hasText: 'Builds' }).click();
+  await expect(page.getByRole('heading', { name: 'Saved builds' })).toBeVisible();
+});
+
+test('mutation sound and visual requests are throttled while the game keeps running', async ({ page }) => {
+  const file = path.join(mutationDir, 'zz-effects-spam.js');
+  try {
+    fs.writeFileSync(file, `export const meta={id:'effects-spam',title:'Effects spam',author:'test',description:'test'}; export function onTick(game){for(let i=0;i<20;i++){game.playSound('coin');game.burst('spark',480,320);game.flash('#ffffff');game.shake(.01);}}`);
+    await page.goto('/?mutation=zz-effects-spam.js');
+    await expect(page.locator('#mutations')).toContainText('Effects spam · active');
+    await page.waitForTimeout(1200);
+    const state = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
+    expect(state.flashesLastSecond).toBeLessThanOrEqual(3);
+    expect(state.frame).toBeGreaterThan(40);
+    await expect(page.locator('#mutations')).toContainText('actions skipped');
+  } finally { fs.rmSync(file, { force: true }); }
 });

@@ -1,10 +1,13 @@
 # Adding a game
 
-Create a folder containing `live-patch.json`, a TypeScript entry, API documentation, a mutation directory and a game-specific Playwright suite under `tests/smoke/`. Start with `npm run dev -- --game path/to/game`. To make it the default for `npm run dev` and `npm test`, update `package.json` → `livePatch.defaultGame`. The engine never imports game source directly.
+Create a folder containing `live-patch.json`, a TypeScript entry, API documentation, a mutation directory and a game-specific Playwright suite under `tests/smoke/`. Start with `npm run new-game -- "My Game"` for a working template. Import an existing folder through Library after manifest validation and smoke testing, then use **Make active** to switch the running game without editing `package.json`. The engine never imports game source directly.
 
 ## Manifest reference
 
 - `name`: display name shown on the page.
+- Optional `description`, `tags`, `version`, and `author`: Library card metadata.
+- Optional `cover`: relative PNG, JPEG or WebP inside the game folder, at most 1 MB.
+- Optional `audio` and `effects`: allow lists of names for sound and effect actions. Games should validate the action again in their adapter, and the engine enforces per-module and global rate limits.
 - `hint`: short game-specific control instructions, rendered as plain text.
 - `entry`: relative `src/*.ts` entry exporting `createGame`.
 - `mutationDir`: relative folder containing `.js` mutation modules.

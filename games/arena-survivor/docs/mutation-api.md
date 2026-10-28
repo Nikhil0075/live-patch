@@ -1,5 +1,19 @@
 # Arena Survivor mutation API
 
+## Sound and effects
+
+`game.playSound(name)` accepts the manifest's nine named sounds: `coin`, `hit`, `death`, `hurt`, `round-start`, `vote-tick`, `patch-shipped`, `patch-failed`, and `rollback`. `game.burst(kind, x, y)` accepts `spark`, `coin`, `slime`, or `celebration` at arena coordinates. `game.shake(strength)` accepts 0–0.01. `game.flash(colour)` accepts `#ffffff`, `#8bffcf`, or `#ff8d82`.
+
+```js
+export const meta = { id: 'coin-spark', title: 'Coin spark', author: 'Viewer', description: 'Coins sparkle on score.' };
+export function onScore(game) {
+  game.playSound('coin');
+  game.burst('coin', 480, 320);
+}
+```
+
+The host drops excess requests: at most four sounds or eight bursts per module each second, one shake per second, and three full-screen flashes in any rolling second across all modules. Operator settings cap volume and intensity; reduced flashing and shake makes those effects no-ops. Sound starts only after the streamer clicks **Enable sound** in the play view. The OBS overlay remains silent.
+
 Place one `.js` module in `mutations/`. Export `meta = { id, title, author, description }` with four nonempty strings under 120 characters. Export any of `onStart(game)`, `onTick(game, event)`, `onSpawn(game, event)`, `onHit(game, event)`, `onCollide(game, event)`, `onEntityCollide(game, event)`, `onScore(game, event)` or `onChat(game, event)`. No imports or browser globals are available. The module runs in its own sandboxed Worker, and its hooks may return promises. Each load has a 1.5 second deadline; each hook call has a 200 ms deadline. A timeout or error disables the module without stopping the game.
 
 `onStart` runs once when this file is added or changed. Adding, removing or failing another module does not rerun it. Editing this file replaces its Worker, reruns its `onStart`, and removes its owned entities, effects and parameter writes. Removing or failing this file also removes those owned effects. Score already earned remains. Module-local variables persist until this file changes or is removed. A full development-server restart, including one caused by editing the manifest, reloads the page and resets the run.

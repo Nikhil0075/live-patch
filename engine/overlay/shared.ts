@@ -8,18 +8,20 @@ export interface RoundView {
 export interface RunView { id: string; ideaId: string; status: string; mutationName?: string; threadId?: string; durationMs?: number; error?: string }
 export interface RunnerProgressView { runId: string; ideaId: string; type: string; message?: string; at: string }
 export interface MutationView { name: string; source: string; error?: string }
+export interface SettingsView { reduceFlashing: boolean; overlayCompact: boolean }
 
 export async function dashboardData() {
-  const [roundResponse, runsResponse, mutationsResponse, ideasResponse, eventsResponse] = await Promise.all([
-    fetch('/api/round'), fetch('/api/runs'), fetch('/api/mutations'), fetch('/api/ideas'), fetch('/api/runner-events')
+  const [roundResponse, runsResponse, mutationsResponse, ideasResponse, eventsResponse, settingsResponse] = await Promise.all([
+    fetch('/api/round'), fetch('/api/runs'), fetch('/api/mutations'), fetch('/api/ideas'), fetch('/api/runner-events'), fetch('/api/settings')
   ]);
-  if (![roundResponse, runsResponse, mutationsResponse, ideasResponse, eventsResponse].every(response => response.ok)) throw Error('Dashboard data unavailable');
+  if (![roundResponse, runsResponse, mutationsResponse, ideasResponse, eventsResponse, settingsResponse].every(response => response.ok)) throw Error('Dashboard data unavailable');
   const round = await roundResponse.json() as RoundView;
   const runs = (await runsResponse.json() as { runs: RunView[] }).runs;
   const mutations = await mutationsResponse.json() as MutationView[];
   const ideas = (await ideasResponse.json() as { ideas: RoundView['candidates'] }).ideas;
   const events = (await eventsResponse.json() as { events: RunnerProgressView[] }).events;
-  return { round, runs, mutations, ideas, events };
+  const settings = await settingsResponse.json() as SettingsView;
+  return { round, runs, mutations, ideas, events, settings };
 }
 
 export function appendText(parent: HTMLElement, tag: keyof HTMLElementTagNameMap, value: string, className?: string) {
