@@ -18,9 +18,11 @@ Place one `.js` module in `mutations/`. Export `meta = { id, title, author, desc
 
 `onStart` runs once when this file is added or changed. Adding, removing or failing another module does not rerun it. Editing this file replaces its Worker, reruns its `onStart`, and removes its owned entities, effects and parameter writes. Removing or failing this file also removes those owned effects. Score already earned remains. Module-local variables persist until this file changes or is removed. A full development-server restart, including one caused by editing the manifest, reloads the page and resets the run.
 
+While the game is paused, `onTick` and game event delivery stop; `elapsed` and `runElapsed` do not advance. Actions from hook replies already in flight are held until resume. Removing or disabling a module while paused drops its held actions.
+
 Rollback removes the module, its owned entities, drawings, messages and parameter writes. Changes it made to other modules' entities (including velocity, radius, tag, position or removal) are not reversed. Score already earned remains.
 
-`game.state` is a JSON snapshot. It contains `player: {x,y,lives}`, `score`, `elapsed` (seconds since page load), `runElapsed` (seconds in current run), `frame`, `enemies`, `coins`, `floatingTexts`, `frameRate`, `maxFrameGap`, and `entities`. `entities` contains at most 100 live `{id,kind,x,y,radius,vx,vy,tag}` records. IDs are stable for an entity's lifetime. Kinds are `enemy`, `coin`, `bomb` and `fire`. Arena coordinates are 1152×648 (16:9).
+`game.state` is a JSON snapshot. It contains `player: {x,y,lives}`, `score`, `elapsed` (active seconds since page load), `runElapsed` (active seconds in current run), `frame`, `enemies`, `coins`, `floatingTexts`, `frameRate`, `maxFrameGap`, and `entities`. `entities` contains at most 100 live `{id,kind,x,y,radius,vx,vy,tag}` records. IDs are stable for an entity's lifetime. Kinds are `enemy`, `coin`, `bomb` and `fire`. Arena coordinates are 1152×648 (16:9).
 
 Events:
 

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-export const ideaStatuses = ['submitted', 'shortlisted', 'voting', 'approved', 'building', 'shipped', 'rolled_back', 'failed', 'rejected', 'merged', 'lost_vote'] as const;
+export const ideaStatuses = ['submitted', 'shortlisted', 'voting', 'approved', 'building', 'shipped', 'demo', 'rolled_back', 'failed', 'rejected', 'merged', 'lost_vote'] as const;
 export type IdeaStatus = typeof ideaStatuses[number];
 export interface Idea {
   id: string;

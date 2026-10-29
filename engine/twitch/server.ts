@@ -8,6 +8,7 @@ import { ChatPipeline } from '../pipeline/commands';
 import { TwitchAuth, authorizationError, defaultTwitchRedirectUri, type Role, type TwitchConfig } from './auth';
 import { chatDeliveryIssue } from './chat';
 import { EventSubClient } from './eventsub';
+import { practiceDemoEligible } from './practice-demo';
 import { TwitchConnection } from './connection';
 import { forwardToGame, normalizeSimulator } from './events';
 import type { GameManifest } from '../manifest/schema';
@@ -353,7 +354,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
         const body = await readJson(req) as { ideaId?: string };
         const state = rounds.snapshot();
         const selected = state.candidates.find(idea => idea.id === body.ideaId);
-        if (state.phase !== 'approval' || !selected?.practice) throw Error('Demo patches are available only for a Practice pitch at approval');
+        if (!selected || !practiceDemoEligible(state.phase, state.candidates, selected.id, Boolean(auth.identity('broadcaster') && auth.identity('bot') && eventsub.status().startsWith('connected')))) throw Error('Demo patches require an all-Practice ballot at approval with live Twitch chat disconnected');
         if (!manifest.demoMutation || gameDirectory.startsWith(path.resolve(root, 'builds') + path.sep)) throw Error('This game has no Practice demo patch');
         const sourcePath = path.resolve(gameDirectory, manifest.demoMutation);
         const mutationDir = path.resolve(gameDirectory, manifest.mutationDir);
@@ -367,14 +368,14 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
         fs.writeFileSync(temporary, source, { flag: 'wx' });
         try { fs.renameSync(temporary, target); } catch (error) { fs.rmSync(temporary, { force: true }); throw error; }
         rounds.approved(selected);
-        store.setStatus(selected.id, 'shipped');
+        store.setStatus(selected.id, 'demo');
         const now = new Date().toISOString();
         const runId = randomUUID();
         runs.upsert({ id: runId, ideaId: selected.id, gameDirectory, status: 'shipped', startedAt: now, finishedAt: now, mutationName: name, demo: true, durationMs: 0 });
         rounds.runFinished(selected.id);
-        const event: RunnerEvent = { runId, ideaId: selected.id, type: 'shipped', at: now, message: 'Demo patch shipped' };
+        const event: RunnerEvent = { runId, ideaId: selected.id, type: 'shipped', at: now, message: `Demo patch: Coin Shower (stands in for “${selected.text}”)` };
         progress.push(event); server.ws.send({ type: 'custom', event: 'live-patch:runner', data: event });
-        json(res, 200, { message: 'Demo patch shipped. Open Play to see it.', name, demo: true });
+        json(res, 200, { message: `Demo patch: Coin Shower (stands in for “${selected.text}”). Open Play to see it.`, name, demo: true });
       } catch (error) { json(res, 400, { error: String(error) }); }
       return;
     }
@@ -390,6 +391,15 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
         else if (body.action === 'triage-discard') rounds.discardTriagePreview();
         else if (body.action === 'force-next') { rounds.forceNext(); runner.cancelBuild(); if (predictions.active()) void predictions.cancel().catch(error => console.error('Prediction cancel after force-next failed:', error)); }
         else if (body.action === 'save') { json(res, 200, await saveBuild(root, gameDirectory, manifest, store, runs)); return; }
+        else if (body.action === 'remove-demo') {
+          const demos = runs.list().filter(run => run.gameDirectory === gameDirectory && run.demo && run.status === 'shipped' && /^demo-[a-f0-9]{8}\.js$/.test(run.mutationName ?? ''));
+          for (const run of demos) {
+            fs.rmSync(path.join(gameDirectory, manifest.mutationDir, run.mutationName!), { force: true });
+            runs.upsert({ ...run, status: 'rolled_back', finishedAt: new Date().toISOString() });
+            store.setStatus(run.ideaId, 'rolled_back');
+          }
+          json(res, 200, { message: demos.length ? `Removed ${demos.length} Practice demo patch${demos.length === 1 ? '' : 'es'}` : 'No Practice demo patches are active' }); return;
+        }
         else if (body.action === 'bet-start') {
           const candidate = rounds.snapshot().candidates.find(idea => idea.id === body.ideaId);
           if (rounds.snapshot().phase !== 'approval' || !candidate) throw Error('Open a points bet for an idea in the approval stage');

@@ -1,7 +1,14 @@
 import type { OverlayWidget, OverlayWidgetType, StudioSettings } from '../studio/settings-defaults';
 
 const labels: Record<OverlayWidgetType, string> = { patches: 'Patch credits', codex: 'Codex progress', ballot: 'Chat ballot', ticker: 'Pitch ticker' };
-const sizes: Record<OverlayWidgetType, [number, number]> = { patches: [1080, 110], codex: [350, 590], ballot: [1010, 235], ticker: [1336, 58] };
+const sizes: Record<OverlayWidgetType, [number, number]> = { patches: [420, 430], codex: [350, 590], ballot: [1010, 320], ticker: [1336, 58] };
+const keepClear = [
+  { label: 'Game HUD', x: 0, y: 0, width: 430, height: 165 },
+  { label: 'Patch toast', x: 685, y: 60, width: 550, height: 110 }
+];
+function overlap(a: OverlayWidget, b: { x: number; y: number; width: number; height: number }) {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
 
 export async function createLayoutEditor(parent: HTMLElement): Promise<void> {
   const root = document.createElement('section'); root.className = 'live-card overlay-editor';
@@ -24,6 +31,13 @@ export async function createLayoutEditor(parent: HTMLElement): Promise<void> {
   const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, Math.round(value)));
   function render() {
     stage.replaceChildren(); list.replaceChildren(); select.replaceChildren();
+    for (const zone of keepClear) {
+      const marker = document.createElement('div'); marker.className = 'overlay-keep-clear'; marker.textContent = `${zone.label} · keep clear`;
+      Object.assign(marker.style, { left: `${zone.x / 1920 * 100}%`, top: `${zone.y / 1080 * 100}%`, width: `${zone.width / 1920 * 100}%`, height: `${zone.height / 1080 * 100}%` });
+      stage.append(marker);
+    }
+    const collisions = widgets.flatMap(widget => keepClear.filter(zone => overlap(widget, zone)).map(zone => `${labels[widget.type]} covers ${zone.label}`));
+    if (collisions.length) status.textContent = `Warning: ${collisions.join('; ')}. Move it before streaming.`;
     for (const [type, label] of Object.entries(labels) as [OverlayWidgetType, string][]) if (!widgets.some(item => item.type === type)) {
       const option = document.createElement('option'); option.value = type; option.textContent = label; select.append(option);
     }

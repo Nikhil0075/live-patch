@@ -4,6 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { SettingsStore } from '../engine/studio/settings';
 import { generatedCover } from '../engine/manifest/cover-art';
+import { practiceDemoEligible } from '../engine/twitch/practice-demo';
 
 const css = fs.readFileSync(path.resolve('engine/tokens.css'), 'utf8');
 function token(name: string) { return new RegExp(`--${name}:\\s*(#[0-9a-f]{6})`, 'i').exec(css)?.[1] ?? ''; }
@@ -28,6 +29,8 @@ describe('Phase 5.5 studio tokens', () => {
     expect(contrast(token('muted'), token('surface'))).toBeGreaterThanOrEqual(4.5);
     expect(contrast('#ffffff', token('accent'))).toBeGreaterThanOrEqual(4.5);
     expect(contrast('#bf94ff', token('surface'))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(token('accent-text'), token('surface'))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(token('text-soft'), token('surface'))).toBeGreaterThanOrEqual(4.5);
   });
 });
 
@@ -43,11 +46,35 @@ describe('user-configurable overlay and generated game art', () => {
       expect(saved).toEqual([{ type: 'ballot', x: 1120, y: 780, width: 800, height: 300 }]);
     } finally { fs.rmSync(folder, { recursive: true, force: true }); }
   });
+  it('moves the previous untouched default layout below the ship toast', () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'live-patch-layout-upgrade-'));
+    try {
+      const file = path.join(folder, 'settings.json');
+      fs.writeFileSync(file, JSON.stringify({ overlayWidgets: [
+        { type: 'patches', x: 24, y: 120, width: 1080, height: 110 },
+        { type: 'codex', x: 1546, y: 165, width: 350, height: 590 },
+        { type: 'ballot', x: 24, y: 725, width: 1010, height: 235 },
+        { type: 'ticker', x: 560, y: 998, width: 1336, height: 58 }
+      ] }));
+      const widgets = new SettingsStore(file).snapshot().overlayWidgets;
+      expect(widgets.find(item => item.type === 'patches')).toMatchObject({ x: 24, y: 180, width: 420, height: 430 });
+    } finally { fs.rmSync(folder, { recursive: true, force: true }); }
+  });
   it('creates unique, escaped artwork for games without a supplied cover', () => {
     const a = generatedCover('New <Game> & Friends');
     expect(a).toContain('width="720" height="960"');
     expect(a).toContain('New &lt;Game&gt; &amp; Friends');
     expect(a).not.toContain('New <Game>');
     expect(a).not.toBe(generatedCover('Another game'));
+  });
+});
+
+describe('Practice demo boundary', () => {
+  const practice = { id: 'practice', practice: true };
+  it('accepts only an all-Practice approval ballot with live chat disconnected', () => {
+    expect(practiceDemoEligible('approval', [practice], practice.id, false)).toBe(true);
+    expect(practiceDemoEligible('vote', [practice], practice.id, false)).toBe(false);
+    expect(practiceDemoEligible('approval', [practice, { id: 'twitch' }], practice.id, false)).toBe(false);
+    expect(practiceDemoEligible('approval', [practice], practice.id, true)).toBe(false);
   });
 });

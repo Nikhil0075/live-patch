@@ -9,4 +9,5 @@ test-results/
 *.log
 .live-patch-test-*/
 .test-runner-*/
+games/*/mutations/demo-*.js
 builds/*/

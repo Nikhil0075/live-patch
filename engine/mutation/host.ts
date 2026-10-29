@@ -59,6 +59,7 @@ export class MutationHost {
   private effectLimits: EffectLimits;
   private paused = false;
   private deferredActions: { action: GameAction; origin: string }[] = [];
+  private deliveredTicks = 0;
 
   constructor(private game: GameAdapter, private manifest: GameManifest, private list: HTMLElement, private notice: HTMLElement) {
     this.effectLimits = new EffectLimits(manifest);
@@ -169,6 +170,7 @@ export class MutationHost {
   private pump(entry: Loaded) {
     if (this.paused || !['starting', 'active'].includes(entry.status) || entry.pending || !entry.queue.length) return;
     const events = entry.status === 'starting' ? [entry.queue.shift()!] : entry.queue.splice(0, 16);
+    this.deliveredTicks += events.filter(event => event.type === 'tick').length;
     const id = this.nextId++;
     const deadline = Math.min(600, EVENT_DEADLINE_MS + (events.length - 1) * 25);
     entry.pending = { id, eventType: events[0].type, timeout: window.setTimeout(() => this.disable(entry, 'Event deadline exceeded'), deadline) };
@@ -185,6 +187,7 @@ export class MutationHost {
   }
 
   private dispose(entry: Loaded) {
+    this.deferredActions = this.deferredActions.filter(item => item.origin !== entry.file.name);
     window.clearTimeout(entry.loadTimeout);
     if (entry.pending) window.clearTimeout(entry.pending.timeout);
     entry.frame?.contentWindow?.postMessage({ type: 'dispose' }, '*');
@@ -205,12 +208,16 @@ export class MutationHost {
   setPaused(paused: boolean) {
     this.paused = paused;
     if (!paused) {
-      for (const item of this.deferredActions.splice(0)) this.game.apply(item.action, item.origin);
+      for (const item of this.deferredActions.splice(0)) {
+        const entry = this.loaded.get(item.origin);
+        if (entry?.status === 'active') this.game.apply(item.action, item.origin);
+      }
       for (const entry of this.loaded.values()) this.pump(entry);
     }
   }
 
   entries() { return [...this.loaded.values()].map(item => ({ title: item.title, author: item.author ?? 'Unknown viewer', description: item.description ?? '', status: item.status, reason: item.reason, startedAt: item.startedAt })); }
+  tickDeliveries() { return this.deliveredTicks; }
 
   destroy() { window.removeEventListener('message', this.onMessage); for (const entry of this.loaded.values()) this.dispose(entry); this.loaded.clear(); }
 }

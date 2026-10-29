@@ -35,6 +35,7 @@ test('Play fills a 16:9 game capture without cutting off the arena', async ({ pa
 
 test('OBS widgets can be removed, added and resized across reloads', async ({ page }) => {
   await page.goto('/?view=go-live');
+  await page.getByRole('link', { name: /Customize OBS overlay/ }).click();
   const original = await page.evaluate(() => fetch('/api/settings').then(response => response.json()).then(data => data.overlayWidgets));
   try {
     await expect(page.locator('.overlay-edit-widget')).toHaveCount(original.length);
@@ -47,6 +48,7 @@ test('OBS widgets can be removed, added and resized across reloads', async ({ pa
     await width.fill('750'); await width.blur();
     await expect(width).toHaveValue('750');
     await page.reload();
+    await page.getByRole('link', { name: /Customize OBS overlay/ }).click();
     await expect(page.getByRole('spinbutton', { name: 'Chat ballot width' })).toHaveValue('750');
     const overlay = await page.context().newPage();
     try { await overlay.goto('/overlay.html'); await expect(overlay.locator('.stream-shell footer')).toHaveCSS('width', '750px'); }
@@ -66,6 +68,32 @@ test('top-bar Practice and Live switch navigates both views', async ({ page }) =
   await expect(page.locator('#mode-switch a[data-mode="practice"]')).toHaveAttribute('aria-current', 'page');
 });
 
+test('studio navigation works with Tab and Enter and shows focus', async ({ page }) => {
+  await page.goto('/');
+  for (const destination of ['Practice', 'Go Live']) {
+    let focused = false;
+    for (let index = 0; index < 18; index++) {
+      await page.keyboard.press('Tab');
+      focused = await page.evaluate(name => (document.activeElement as HTMLElement)?.textContent?.trim().includes(name) && (document.activeElement as HTMLElement).tagName === 'A', destination);
+      if (focused) break;
+    }
+    expect(focused).toBe(true);
+    const outline = await page.evaluate(() => getComputedStyle(document.activeElement!).outlineStyle);
+    expect(outline).not.toBe('none');
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(new RegExp(`view=${destination === 'Practice' ? 'practice' : 'go-live'}`));
+  }
+});
+
+test('Codex and OBS status resolve on Go Live and Library', async ({ page }) => {
+  for (const view of ['go-live', 'library']) {
+    await page.goto(`/?view=${view}`);
+    await expect(page.locator('#codex-connection')).not.toContainText(/checking/i, { timeout: 20_000 });
+    await expect(page.locator('#dot-codex')).toHaveCount(1);
+    await expect(page.locator('#dot-obs')).toHaveCount(1);
+  }
+});
+
 test('play window pauses frames and mutation ticks, then resumes from the same state', async ({ page }) => {
   await page.goto('/play');
   await expect(page.locator('#status')).toContainText('LIVE');
@@ -75,15 +103,40 @@ test('play window pauses frames and mutation ticks, then resumes from the same s
   await expect(page.locator('#play-menu')).toBeVisible();
   await expect(page.locator('#resume-button')).toBeFocused();
   const before = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
+  const ticksBefore = await page.evaluate(() => (window as any).__livePatch.host.tickDeliveries());
   await page.waitForTimeout(600);
   const during = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
   expect(during.frame).toBe(before.frame);
   expect(during.elapsed).toBe(before.elapsed);
+  expect(await page.evaluate(() => (window as any).__livePatch.host.tickDeliveries())).toBe(ticksBefore);
   await page.getByRole('button', { name: 'Controls' }).click();
   await expect(page.locator('#menu-panel')).toContainText('Space');
   await page.keyboard.press('Escape');
   await expect(page.locator('#play-menu')).toBeHidden();
   await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().frame)).toBeGreaterThan(before.frame + 10);
+  await expect.poll(() => page.evaluate(() => (window as any).__livePatch.host.tickDeliveries())).toBeGreaterThan(ticksBefore);
+});
+
+test('rollback while paused drops in-flight actions and gameplay keys leave tools hidden', async ({ page }) => {
+  await page.goto('/play');
+  await expect(page.locator('#status')).toContainText('LIVE');
+  await expect(page.locator('#play-shell')).toHaveClass(/stream-clean/, { timeout: 5_000 });
+  await page.keyboard.press('d');
+  await expect(page.locator('#play-shell')).toHaveClass(/stream-clean/);
+  await page.evaluate(() => (window as any).__livePatch.host.sync([{ name: 'rolled-back.js', source: "export const meta={id:'rolled-back',title:'Rollback Probe',author:'test',description:'Tests paused removal'}; export function onTick(game){game.setParameter('playerSpeed',500)}", error: null }]));
+  await expect(page.locator('#mutations')).toContainText('Rollback Probe · active');
+  const applied = await page.evaluate(() => {
+    const { game, host } = (window as any).__livePatch;
+    const seen: unknown[] = [];
+    const original = game.apply.bind(game);
+    game.apply = (action: unknown, origin: string) => { seen.push({ action, origin }); return original(action, origin); };
+    host.setPaused(true);
+    host.deferredActions.push({ action: { type: 'setParameter', args: ['playerSpeed', 500] }, origin: 'rolled-back.js' });
+    host.sync([]);
+    host.setPaused(false);
+    return seen;
+  });
+  expect(applied).not.toContainEqual({ action: { type: 'setParameter', args: ['playerSpeed', 500] }, origin: 'rolled-back.js' });
 });
 
 test('Practice can run a round and ship a labelled demo without Codex', async ({ page }) => {
@@ -93,12 +146,37 @@ test('Practice can run a round and ship a labelled demo without Codex', async ({
   await expect(page.locator('#demo-ship')).toBeVisible();
   await page.locator('#demo-ship').click();
   await expect(page.locator('#quick-result')).toContainText('Done.', { timeout: 15_000 });
-  await expect(page.locator('#practice-chat')).toContainText('Demo patch shipped', { timeout: 15_000 });
+  await expect(page.locator('#practice-chat')).toContainText('Demo patch: Coin Shower', { timeout: 15_000 });
+  const demoState = await page.evaluate(async () => {
+    const runs = await fetch('/api/runs').then(r => r.json());
+    const ideas = await fetch('/api/ideas').then(r => r.json());
+    const run = runs.runs.at(-1);
+    return { demo: run.demo, ideaStatus: ideas.ideas.find((idea: any) => idea.id === run.ideaId)?.status };
+  });
+  expect(demoState).toEqual({ demo: true, ideaStatus: 'demo' });
   await page.goto('/play');
-  await expect(page.locator('#mutations')).toContainText('Demo: Quick Feet · active');
+  await expect(page.locator('#mutations')).toContainText('Demo patch: Coin Shower · active');
+  await expect(page.locator('#play-toast')).toContainText('Demo patch: Coin Shower');
+  await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().coins)).toBeGreaterThan(5);
   const rollback = await page.evaluate(() => fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'rollback' }) }).then(r => r.json()));
   expect(rollback.accepted).toBe(true);
-  await expect(page.locator('#mutations')).not.toContainText('Demo: Quick Feet · active');
+  await expect(page.locator('#mutations')).not.toContainText('Demo patch: Coin Shower · active');
+});
+
+test('Go Live can remove Practice demo patches before a stream', async ({ page }) => {
+  await page.goto('/?view=practice');
+  await page.getByRole('button', { name: 'Run a full round automatically' }).click();
+  await expect(page.locator('#demo-ship')).toBeVisible({ timeout: 15_000 });
+  await page.locator('#demo-ship').click();
+  await expect(page.locator('#quick-result')).toContainText('Done.', { timeout: 15_000 });
+  await page.goto('/?view=go-live');
+  const remove = page.getByRole('button', { name: 'Remove demo patches' });
+  await expect(remove).toBeVisible();
+  page.once('dialog', dialog => void dialog.accept());
+  await remove.click();
+  await expect(remove).toBeHidden({ timeout: 10_000 });
+  const files = await page.evaluate(() => fetch('/api/mutations').then(r => r.json()) as Promise<{ name: string }[]>);
+  expect(files.some(file => file.name.startsWith('demo-'))).toBe(false);
 });
 
 test('Go Live mirrors one Play window and persists panel layout', async ({ page }) => {
@@ -110,6 +188,7 @@ test('Go Live mirrors one Play window and persists panel layout', async ({ page 
     await expect(page.locator('#play-mirror')).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('iframe[src="/preview.html"]')).toHaveCount(0);
     await page.locator('#layout-preset').selectOption('chat-focus');
+    await page.getByLabel('Options for Recent chat').click();
     await page.getByRole('button', { name: 'Collapse Recent chat' }).click();
     await page.reload();
     await expect(page.locator('#layout-preset')).toHaveValue('chat-focus');
@@ -131,6 +210,21 @@ test('OBS widgets keep the 1920px HUD and toast zones clear', async ({ page }) =
   expect(geometry.ballotText).toBeGreaterThanOrEqual(28);
   expect(geometry.secondary).toBeGreaterThanOrEqual(20);
   expect(geometry.clock).toBeGreaterThanOrEqual(42);
+  const play = await page.context().newPage();
+  try {
+    await play.setViewportSize({ width: 1920, height: 1080 });
+    await play.goto('/play');
+    await expect(play.locator('#status')).toContainText('LIVE');
+    const toast = await play.evaluate(() => {
+      const element = document.querySelector<HTMLElement>('#play-toast')!;
+      element.textContent = 'New patch: Coin Shower — by @Live Patch Demo';
+      const rect = element.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom };
+    });
+    for (const widget of [geometry.patches, geometry.work, geometry.ballot, geometry.ticker]) {
+      expect(widget.x >= toast.right || widget.right <= toast.x || widget.y >= toast.bottom || widget.bottom <= toast.y).toBe(true);
+    }
+  } finally { await play.close(); }
 });
 
 for (const example of chosen ? [chosen] : examples) test(`game plays for five seconds with ${example}`, async ({ page }) => {
@@ -526,18 +620,21 @@ test('simulator submits ideas and chat through the live game path as plain text'
     await page.goto('/play?mutation=zz-simulator-chat.js');
     await expect(page.locator('#mutations')).toContainText('Sim Chat · active');
     await simulator.goto('/simulator.html');
+    await simulator.locator('.practice-advanced summary').click();
     await simulator.locator('textarea[name="text"]').fill('hello from simulator');
-    await simulator.getByRole('button', { name: 'Send', exact: true }).click();
+    await simulator.locator('#send button:not([type])').click();
+    await expect(simulator.locator('#result')).toContainText('No command');
     await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().floatingTexts)).toBeGreaterThan(0);
     await simulator.locator('textarea[name="text"]').fill('!idea <img src=x onerror=alert(1)>');
-    await simulator.getByRole('button', { name: 'Send', exact: true }).click();
+    await simulator.locator('#send button:not([type])').click();
+    await expect(simulator.locator('#result')).toContainText('Idea received');
     await expect(simulator.locator('#ideas')).toContainText('<img src=x onerror=alert(1)>');
     await expect(simulator.locator('#ideas img')).toHaveCount(0);
     await simulator.locator('input[name="id"]').fill('viewer-2');
     await simulator.locator('input[name="login"]').fill('viewer2');
     await simulator.locator('select[name="kind"]').selectOption('reward');
     await simulator.locator('textarea[name="text"]').fill('Coins flee from the player');
-    await simulator.getByRole('button', { name: 'Send', exact: true }).click();
+    await simulator.locator('#send button:not([type])').click();
     await expect(simulator.locator('#ideas')).toContainText('Coins flee from the player');
     const ideas = await simulator.request.get('/api/ideas').then(response => response.json()) as { ideas: { id: string; text: string; status: string; source: string }[] };
     const unsafeText = ideas.ideas.find(item => item.text === '<img src=x onerror=alert(1)>');
@@ -547,7 +644,7 @@ test('simulator submits ideas and chat through the live game path as plain text'
     await simulator.locator('select[name="kind"]').selectOption('chat');
     await simulator.locator('select[name="role"]').selectOption('broadcaster');
     await simulator.locator('textarea[name="text"]').fill(`!reject ${unsafeText!.id}`);
-    await simulator.getByRole('button', { name: 'Send', exact: true }).click();
+    await simulator.locator('#send button:not([type])').click();
     await expect.poll(async () => (await simulator.request.get('/api/ideas').then(response => response.json()) as { ideas: { id: string; status: string }[] }).ideas.find(item => item.id === unsafeText!.id)?.status).toBe('rejected');
     expect((await simulator.request.get('/api/ideas').then(response => response.json()) as { ideas: { id: string; status: string }[] }).ideas.find(item => item.id === rewardIdea!.id)?.status).not.toBe('rejected');
   } finally { await simulator.close(); fs.rmSync(file, { force: true }); }
@@ -585,8 +682,12 @@ test('operator controls timed voting and the OBS overlay renders viewer text saf
     const pitchSize = await overlay.locator('#candidates .candidate strong').first().evaluate(element => parseFloat(getComputedStyle(element).fontSize));
     expect(pitchSize).toBeGreaterThanOrEqual(28);
   } finally { await overlay.close(); }
+  await page.getByRole('button', { name: 'Next stage' }).click();
+  await expect(page.locator('#round')).toContainText('APPROVAL');
   const runsBefore = await page.evaluate(async () => (await fetch('/api/runs').then(response => response.json())).runs.length as number);
-  await page.locator('#candidates article').filter({ hasText: pitch }).getByRole('button', { name: 'Reject' }).click();
+  const ballot = page.locator('#candidates article').filter({ hasText: pitch });
+  await ballot.locator('summary').click();
+  await ballot.getByRole('button', { name: 'Reject' }).click();
   await expect(page.locator('#notice')).toContainText('rejected');
   const runsAfter = await page.evaluate(async () => (await fetch('/api/runs').then(response => response.json())).runs.length as number);
   expect(runsAfter).toBe(runsBefore);
@@ -662,6 +763,7 @@ test('saved build compares original and evolved games without changing the live 
 
 test('Practice generates three distinct pitches and one-click votes', async ({ page }) => {
   await page.goto('/?view=practice');
+  await page.locator('.practice-advanced summary').click();
   await page.evaluate(async () => {
     const action = (name: string) => fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: name }) });
     for (let attempt = 0; attempt < 4; attempt++) {

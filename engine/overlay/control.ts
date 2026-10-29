@@ -14,7 +14,14 @@ root.innerHTML = `<main class="go-live-dashboard"><div class="live-status"><stro
 <section class="live-card panel-patches" data-panel="patches"><div class="live-card-heading"><h3>Active patches</h3><span id="patch-count"></span></div><div id="patches"></div><h4>Saved builds</h4><div id="builds"></div></section>
 </div><p id="notice" role="status"></p></main>`;
 const panels = root.querySelector<HTMLElement>('#dashboard-panels')!;
-const editorHost = document.createElement('div'); editorHost.className = 'overlay-editor-host'; editorHost.id = 'overlay-editor'; panels.after(editorHost); void createLayoutEditor(editorHost);
+const roundClockCard = document.createElement('div'); roundClockCard.className = 'round-clock-card'; roundClockCard.innerHTML = '<strong id="round-phase">PITCH</strong><b id="round-timer">—</b><small>Chat decides what ships next.</small>';
+root.querySelector('.panel-round .live-card-heading')!.after(roundClockCard);
+const removeDemos = document.createElement('button'); removeDemos.textContent = 'Remove demo patches'; removeDemos.dataset.action = 'remove-demo'; removeDemos.className = 'secondary';
+root.querySelector<HTMLElement>('.panel-patches')!.append(removeDemos);
+const editorHost = document.createElement('dialog'); editorHost.className = 'overlay-editor-host'; editorHost.id = 'overlay-editor'; editorHost.setAttribute('aria-label', 'Customize OBS overlay'); panels.after(editorHost); void createLayoutEditor(editorHost);
+const editorClose = document.createElement('button'); editorClose.type = 'button'; editorClose.textContent = 'Close overlay editor'; editorClose.className = 'secondary'; editorHost.prepend(editorClose);
+editorClose.addEventListener('click', () => editorHost.close());
+root.querySelector<HTMLAnchorElement>('a[href="#overlay-editor"]')!.addEventListener('click', event => { event.preventDefault(); editorHost.showModal(); });
 const popoutId = location.hash.slice(1);
 if (popoutId && panels.querySelector(`[data-panel="${popoutId}"]`)) { document.body.classList.add('dashboard-popout'); panels.dataset.popout = popoutId; document.title = `${popoutId} · Live Patch`; }
 const preset = root.querySelector<HTMLSelectElement>('#layout-preset')!;
@@ -25,8 +32,10 @@ preset.addEventListener('change', () => { panels.dataset.preset = preset.value; 
 for (const panel of Array.from(panels.querySelectorAll<HTMLElement>('[data-panel]'))) {
   const heading = panel.querySelector('.live-card-heading')!;
   const controls = document.createElement('div'); controls.className = 'panel-controls';
-  for (const [action, symbol] of [['collapse','−'],['left','←'],['right','→'],['popout','↗']]) { const button = document.createElement('button'); button.className = 'secondary'; button.textContent = symbol; button.dataset.panelAction = action; button.setAttribute('aria-label', `${action === 'left' ? 'Move' : action === 'right' ? 'Move' : action === 'popout' ? 'Pop out' : 'Collapse'} ${panel.querySelector('h3')?.textContent ?? 'panel'}${action === 'left' ? ' left' : action === 'right' ? ' right' : ''}`); controls.append(button); }
-  heading.append(controls);
+  const handle = document.createElement('span'); handle.className = 'panel-drag-handle'; handle.textContent = '⠿'; handle.setAttribute('aria-hidden', 'true');
+  const menu = document.createElement('details'); menu.className = 'panel-options'; const menuLabel = document.createElement('summary'); menuLabel.textContent = '⋮'; menuLabel.setAttribute('aria-label', `Options for ${panel.querySelector('h3')?.textContent ?? 'panel'}`); menu.append(menuLabel);
+  for (const [action, symbol] of [['popout','↗'],['collapse','−'],['left','←'],['right','→']]) { const button = document.createElement('button'); button.className = 'secondary'; button.textContent = symbol; button.dataset.panelAction = action; button.setAttribute('aria-label', `${action === 'left' ? 'Move' : action === 'right' ? 'Move' : action === 'popout' ? 'Pop out' : 'Collapse'} ${panel.querySelector('h3')?.textContent ?? 'panel'}${action === 'left' ? ' left' : action === 'right' ? ' right' : ''}`); if (action === 'popout') controls.append(button); else menu.append(button); }
+  controls.append(menu); heading.append(handle, controls);
   panel.draggable = true;
 }
 function orderPanels(order: string[]) { for (const id of order) { const panel = panels.querySelector(`[data-panel="${id}"]`); if (panel) panels.append(panel); } localStorage.setItem('live-patch:dashboard-order', JSON.stringify(Array.from(panels.children).map(item => (item as HTMLElement).dataset.panel))); }
@@ -47,7 +56,7 @@ window.addEventListener('beforeunload', () => channel.close());
 
 let currentCandidateId: string | undefined;
 async function action(name: string, ideaId?: string) {
-  const confirmations: Record<string, string> = { rollback: 'Roll back the latest shipped patch?', 'force-next': 'Cancel the current build and start a new round?', 'triage-discard': 'Discard these AI triage suggestions?', 'bet-cancel': 'Cancel the points prediction and return all points?' };
+  const confirmations: Record<string, string> = { rollback: 'Roll back the latest shipped patch?', 'force-next': 'Cancel the current build and start a new round?', 'triage-discard': 'Discard these AI triage suggestions?', 'bet-cancel': 'Cancel the points prediction and return all points?', 'remove-demo': 'Remove all active Practice demo patches before going live?' };
   if (confirmations[name] && !confirm(confirmations[name])) return;
   const notify = (message: string) => {
     root.querySelector('#notice')!.textContent = message;
@@ -59,7 +68,8 @@ async function action(name: string, ideaId?: string) {
   try {
     const response = await fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: name, ideaId: ideaId ?? (name === 'bet-start' ? currentCandidateId : undefined) }) });
     const data = await response.json() as { error?: string; message?: string; id?: string; applied?: number; preview?: unknown[] };
-    notify(response.ok ? (data.message ?? (data.id ? `Saved build ${data.id}` : data.preview ? `Review ${data.preview.length} AI suggestion(s) below` : data.applied !== undefined ? `AI triage updated ${data.applied} pitch(es)` : `${name} complete`)) : (data.error ?? data.message ?? `HTTP ${response.status}`));
+    const successWords: Record<string, string> = { advance: 'Round moved to the next stage', pause: 'Round paused', resume: 'Round resumed', rollback: 'Latest patch rolled back', 'force-next': 'Build cancelled; next round started' };
+    notify(response.ok ? (data.message ?? (data.id ? `Saved build ${data.id}` : data.preview ? `Review ${data.preview.length} AI suggestion(s) below` : data.applied !== undefined ? `AI triage updated ${data.applied} pitch(es)` : successWords[name] ?? `${name} complete`)) : (data.error ?? data.message ?? `HTTP ${response.status}`));
     await refresh();
   } catch (error) { notify(String(error)); }
 }
@@ -84,7 +94,7 @@ async function refresh() {
       fetch('/api/chat/recent').then(response => response.json()) as Promise<{ messages: { at: string; author: string; text: string }[] }>,
       fetch('/api/builds').then(response => response.json()) as Promise<{ builds: { id: string; patches: unknown[]; createdAt?: string }[] }>,
       fetch('/api/twitch/refunds').then(response => response.json()) as Promise<{ refunds: { redemptionId: string; action?: 'refund' | 'fulfill'; status: string; message: string; updatedAt?: string }[] }>,
-      fetch('/api/predictions').then(response => response.json()) as Promise<{ active?: { ideaId: string; status: string; error?: string } }>
+      fetch('/api/predictions').then(response => response.json()) as Promise<{ active?: { ideaId: string; status: string; error?: string; createdAt?: string } }>
     ]);
     const { round, runs, mutations, ideas, rollbackVote, events, settings } = data;
     currentCandidateId = round.candidates[0]?.id;
@@ -92,6 +102,10 @@ async function refresh() {
       ? `Chat rollback vote ${rollbackVote.votes}/${rollbackVote.threshold}${rollbackVote.ready ? ' · threshold met; moderator can confirm with !rollback' : ''} · moderator !rollback is always immediate · expires ${new Date(rollbackVote.expiresAt).toLocaleTimeString()}`
       : 'Chat can vote with !rollbackvote after a patch ships. A moderator can use !rollback immediately.';
     root.querySelector('#round')!.textContent = `ROUND ${round.number} · ${round.phase.toUpperCase()} · ${roundClock(round.remainingMs)}`;
+    root.querySelector<HTMLElement>('.quick-tiles [data-action="pause"]')!.hidden = round.phase === 'paused';
+    root.querySelector<HTMLElement>('.quick-tiles [data-action="resume"]')!.hidden = round.phase !== 'paused';
+    root.querySelector('#round-phase')!.textContent = round.phase.toUpperCase();
+    root.querySelector('#round-timer')!.textContent = roundClock(round.remainingMs);
     root.querySelector('#twitch-pill')!.textContent = twitch.broadcaster && twitch.bot ? `● Twitch ${twitch.eventsub}${twitch.reward && !['enabled', 'unconfigured'].includes(twitch.reward.state) ? ` · ${twitch.reward.reason}` : ''}${twitch.refundIssue ? ` · ${twitch.refundIssue}` : ''}` : '○ Practice mode';
     root.querySelector('#codex-pill')!.textContent = runs.at(-1)?.status === 'building' ? '◉ Codex building' : '○ Codex standing by';
     root.querySelector('#sound-pill')!.textContent = settings.muted ? '○ Sound muted' : '● Sound on in play view';
@@ -126,34 +140,46 @@ async function refresh() {
     for (const [index, idea] of round.candidates.entries()) {
       const card = document.createElement('article'); card.className = 'ballot-item';
       const percent = total ? Math.round(idea.votes.length / total * 100) : 0;
-      appendText(card, 'strong', `${index + 1}. ${idea.spec ?? idea.text}`);
+      appendText(card, 'span', String(index + 1), 'ballot-number');
+      appendText(card, 'strong', idea.spec ?? idea.text);
       appendText(card, 'small', `${percent}% · ${idea.votes.length} vote${idea.votes.length === 1 ? '' : 's'} · ${idea.contributors?.map(name => `@${name}`).join(', ') ?? `@${idea.authorName}`}`);
       const track = document.createElement('div'); track.className = 'dashboard-vote-track'; const bar = document.createElement('div'); bar.className = 'dashboard-vote-bar'; bar.style.width = `${percent}%`; track.append(bar); card.append(track);
       appendText(card, 'small', `!vote ${index + 1}`);
       const buttons = document.createElement('div'); buttons.className = 'actions';
-      if (round.phase === 'approval' && !betData.active) { const bet = document.createElement('button'); bet.textContent = 'Open points prediction'; bet.dataset.action = 'bet-start'; bet.dataset.ideaId = idea.id; buttons.append(bet); }
-      for (const name of ['approve', 'reject']) { const button = document.createElement('button'); button.textContent = name === 'approve' ? 'Approve and build' : 'Reject'; button.dataset.action = name; button.dataset.ideaId = idea.id; buttons.append(button); }
+      if (round.phase === 'approval') {
+        const approve = document.createElement('button'); approve.textContent = 'Approve'; approve.dataset.action = 'approve'; approve.dataset.ideaId = idea.id; buttons.append(approve);
+        const more = document.createElement('details'); more.className = 'ballot-more'; const moreLabel = document.createElement('summary'); moreLabel.textContent = 'More actions'; more.append(moreLabel);
+        if (!betData.active) { const bet = document.createElement('button'); bet.textContent = 'Open points prediction'; bet.dataset.action = 'bet-start'; bet.dataset.ideaId = idea.id; more.append(bet); }
+        const reject = document.createElement('button'); reject.textContent = 'Reject'; reject.dataset.action = 'reject'; reject.dataset.ideaId = idea.id; more.append(reject); buttons.append(more);
+      }
       card.append(buttons); candidates.append(card);
     }
     if (!round.candidates.length) appendText(candidates, 'p', round.phase === 'pitch' ? 'Ballot opens after the pitch window. The oldest three pending ideas will appear here.' : 'No voting candidates yet. Start the next round.', 'empty-state');
 
     const runList = root.querySelector<HTMLElement>('#runs')!; runList.replaceChildren();
     const latest = runs.at(-1);
-    appendText(runList, 'p', latest ? `${latest.demo ? 'DEMO · ' : ''}${latest.status.toUpperCase()} · ${latest.mutationName ?? latest.error ?? 'Codex working'}` : 'No Codex run yet. Approve an idea to begin.', latest ? 'run-summary' : 'empty-state');
+    const latestMutation = mutations.find(item => item.name === latest?.mutationName);
+    const latestTitle = latestMutation ? /title\s*:\s*['"`]([^'"`]{1,80})/.exec(latestMutation.source)?.[1] : undefined;
+    appendText(runList, 'p', latest ? `${latest.demo ? 'DEMO · ' : ''}${latest.status.toUpperCase()} · ${latestTitle ?? latest.error ?? 'Codex working'}` : 'No Codex run yet. Approve an idea to begin.', latest ? 'run-summary' : 'empty-state');
     const seen = new Set(events.filter(event => event.runId === latest?.id).map(event => event.type));
     if (latest && ['shipped', 'failed', 'rolled_back'].includes(latest.status)) seen.add(latest.status);
     for (const [id, label] of [['sandbox_verified', 'Sandbox verified'], ['file', 'Writing patch'], ['testing', 'Smoke test'], [latest?.status === 'failed' ? 'failed' : latest?.status === 'rolled_back' ? 'rolled_back' : 'shipped', latest?.status === 'failed' ? 'Failed' : latest?.status === 'rolled_back' ? 'Rolled back' : 'Shipped']]) {
-      appendText(runList, 'p', `${seen.has(id) ? '✓' : '○'} ${label}`, `timeline-step ${seen.has(id) ? 'complete' : ''}`);
+      const step = document.createElement('p'); step.className = `timeline-step ${seen.has(id) ? 'complete' : ''}`;
+      const symbol = document.createElement('span'); symbol.textContent = seen.has(id) ? '✓' : '○'; symbol.className = 'timeline-symbol';
+      const name = document.createElement('strong'); name.textContent = label;
+      const state = document.createElement('small'); state.textContent = seen.has(id) ? 'Done' : latest?.status === 'building' && id === 'file' ? 'In progress' : 'Pending';
+      step.append(symbol, name, state); runList.append(step);
     }
     const patches = root.querySelector<HTMLElement>('#patches')!; patches.replaceChildren();
     const active = mutations.filter(item => !item.error); root.querySelector('#patch-count')!.textContent = String(active.length);
+    removeDemos.hidden = !runs.some(run => run.demo && run.status === 'shipped' && active.some(item => item.name === run.mutationName));
     if (!active.length) appendText(patches, 'p', 'No active patches. Ship a viewer idea to evolve the game.', 'empty-state');
     for (const item of active) {
       const title = /title\s*:\s*['"`]([^'"`]{1,80})/.exec(item.source)?.[1] ?? item.name;
       const run = runs.find(entry => entry.status === 'shipped' && entry.mutationName === item.name);
       const idea = ideas.find(entry => entry.id === run?.ideaId);
       const card = document.createElement('article'); card.className = 'patch-item';
-      appendText(card, 'strong', title); appendText(card, 'small', idea ? (idea.contributors?.map(name => `@${name}`).join(', ') ?? `@${idea.authorName}`) : 'Built-in'); patches.append(card);
+      appendText(card, 'strong', title); appendText(card, 'small', run?.demo ? '@Live Patch Demo' : idea ? (idea.contributors?.map(name => `@${name}`).join(', ') ?? `@${idea.authorName}`) : 'Built-in'); patches.append(card);
     }
     const predictionBox = root.querySelector<HTMLElement>('#prediction')!; predictionBox.replaceChildren();
     if (betData.active) {
@@ -172,7 +198,7 @@ async function refresh() {
     for (const build of saved.builds.slice(0, 3)) appendText(builds, 'p', `${build.id} · ${build.patches.length} patch(es)`);
     const strip = root.querySelector<HTMLElement>('#chat-strip')!; strip.replaceChildren();
     if (!chat.messages.length) appendText(strip, 'p', 'Recent viewer chat appears here once a message arrives.', 'empty-state');
-    for (const message of chat.messages) { const line = document.createElement('p'); appendText(line, 'strong', `${message.author}: `); appendText(line, 'span', message.text); strip.append(line); }
+    for (const message of chat.messages) { const line = document.createElement('p'); const time = document.createElement('time'); time.textContent = new Date(message.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); line.append(time); appendText(line, 'strong', `${message.author}: `); const command = /^!\w+/.exec(message.text); if (command) { appendText(line, 'b', command[0], 'chat-command'); appendText(line, 'span', message.text.slice(command[0].length)); } else appendText(line, 'span', message.text); strip.append(line); }
     const activity: { at: string; text: string }[] = [];
     for (const idea of ideas) {
       if (idea.createdAt) activity.push({ at: idea.createdAt, text: `${idea.source === 'reward' ? 'Reward redemption' : 'Pitch'} · @${idea.authorName}: ${idea.text}` });
@@ -181,9 +207,15 @@ async function refresh() {
     for (const event of events) activity.push({ at: event.at, text: `${event.type.replaceAll('_',' ')} · ${event.message ?? 'Codex run'}` });
     for (const refund of refundData.refunds) if (refund.updatedAt) activity.push({ at: refund.updatedAt, text: `${refund.action === 'fulfill' ? 'Redemption' : 'Refund'} · ${refund.status}: ${refund.message}` });
     for (const build of saved.builds) if (build.createdAt) activity.push({ at: build.createdAt, text: `Saved build · ${build.id}` });
-    if (betData.active) activity.push({ at: new Date().toISOString(), text: `Prediction · ${betData.active.status}` });
+    if (betData.active) activity.push({ at: betData.active.createdAt ?? ideas.find(idea => idea.id === betData.active?.ideaId)?.updatedAt ?? new Date().toISOString(), text: `Prediction · ${betData.active.status}` });
     const feed = root.querySelector<HTMLElement>('#activity-feed')!; feed.replaceChildren();
-    for (const item of activity.sort((a,b) => b.at.localeCompare(a.at)).slice(0, 20)) appendText(feed, 'p', `${new Date(item.at).toLocaleTimeString()} · ${item.text}`);
+    for (const item of activity.sort((a,b) => b.at.localeCompare(a.at)).slice(0, 20)) {
+      const row = document.createElement('p'); row.className = 'activity-row';
+      const [kind, ...rest] = item.text.split(' · ');
+      const icon = document.createElement('span'); icon.className = 'activity-icon'; icon.textContent = ({ Pitch: '✦', 'Reward redemption': '◇', shipped: '🚀', testing: '⚗', 'Saved build': '▣', Prediction: '↗', Refund: '↩' } as Record<string,string>)[kind] ?? '•';
+      const copy = document.createElement('span'); const title = document.createElement('strong'); title.textContent = kind; const detail = document.createElement('small'); detail.textContent = rest.join(' · '); copy.append(title, detail);
+      const time = document.createElement('time'); time.textContent = new Date(item.at).toLocaleTimeString(); row.append(icon, copy, time); feed.append(row);
+    }
     if (!activity.length) appendText(feed, 'p', 'Activity appears here after the first pitch.');
   } catch (error) { root.querySelector('#notice')!.textContent = `Control panel reconnecting: ${String(error)}`; }
 }

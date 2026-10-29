@@ -1,12 +1,15 @@
 @import '../tokens.css';
 :root,body{background:transparent}
 .stream-shell [hidden]{display:none!important}
-.stream-shell header{top:120px;left:24px;right:auto;width:1080px;display:block}
-.stream-shell .patches{justify-content:flex-start;flex-wrap:wrap;gap:10px}
-.stream-shell .patch{max-width:270px;min-width:160px;background:#15121ef0;border:2px solid #9146ff;border-radius:6px;box-shadow:0 8px 24px #000a}
+.stream-shell header{top:180px;left:24px;right:auto;width:420px;display:block;background:#15121ef0;border:2px solid #9146ff;border-radius:6px;padding:16px}
+.stream-shell .patches{display:grid;justify-content:stretch;gap:10px}
+.stream-shell .patch-list-title{margin:0 0 4px;font-size:22px;letter-spacing:.12em;color:#dfcaff}
+.stream-shell .patch{position:relative;max-width:none;min-width:0;padding-left:54px;background:#27202ff2;border:1px solid #77549c;border-radius:6px;box-shadow:0 8px 24px #000a}
+.stream-shell .patch-icon{position:absolute;left:12px;top:10px;display:grid;place-items:center;width:30px;height:30px;border-radius:4px;background:#563385;color:#fff;font-size:22px}
 .stream-shell .patch small{color:#dbc4ff}
 .stream-shell aside{top:165px;right:24px;width:350px;background:#15121ef2;border-color:#9146ff;border-radius:6px}
 .stream-shell .panel-label{color:#d8baff}
+.stream-shell #work .work-step{display:inline-flex;align-items:center;margin:8px 4px 0 0;padding:5px 8px;border-left:0;border-bottom:3px solid #6c5b7b;font-size:15px}.stream-shell #work .work-step.complete{border-bottom-color:#9aeead}
 .stream-shell .run-status.shipped{color:#9ef3c2}
 .stream-shell footer{left:24px;right:auto;bottom:120px;width:1010px;min-height:235px;background:#15121ef4;border-color:#9146ff;border-radius:6px}
 .stream-shell .candidates{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}

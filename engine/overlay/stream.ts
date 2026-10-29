@@ -21,15 +21,17 @@ async function refresh() {
       element.hidden = !widget;
       if (widget) Object.assign(element.style, { left: `${widget.x}px`, top: `${widget.y}px`, width: `${widget.width}px`, height: `${widget.height}px`, right: 'auto', bottom: 'auto', minHeight: '0', boxSizing: 'border-box', overflow: 'hidden' });
     }
-    document.querySelector('#phase')!.textContent = `ROUND ${round.number} · ${round.phase.toUpperCase()}`;
+    document.querySelector('#phase')!.textContent = `Round ${round.number} · ${round.phase === 'vote' ? 'Vote' : round.phase.toUpperCase()}`;
     document.querySelector('#clock')!.textContent = roundClock(round.remainingMs);
     const patches = document.querySelector<HTMLElement>('#patches')!; patches.replaceChildren();
+    appendText(patches, 'h2', 'LIVE PATCHES', 'patch-list-title');
     for (const mutation of mutations.filter(item => !item.error).slice(-10)) {
       const pill = document.createElement('div'); pill.className = 'patch';
       const title = /title\s*:\s*['"`]([^'"`]{1,80})/.exec(mutation.source)?.[1] ?? mutation.name;
       const run = runs.find(item => item.status === 'shipped' && item.mutationName === mutation.name);
       const idea = ideas.find(item => item.id === run?.ideaId);
-      const credit = run ? (idea?.contributors?.map(name => `@${name}`).join(', ') ?? (idea ? `@${idea.authorName}` : 'Viewer patch')) : 'Built-in';
+      const credit = run?.demo ? 'by @Live Patch Demo' : run ? (idea?.contributors?.map(name => `@${name}`).join(', ') ?? (idea ? `@${idea.authorName}` : 'Viewer patch')) : 'Built-in';
+      appendText(pill, 'span', '✦', 'patch-icon');
       appendText(pill, 'strong', run?.demo && !title.toLowerCase().startsWith('demo') ? `DEMO · ${title}` : title); if (credit) appendText(pill, 'small', credit);
       patches.append(pill);
     }
@@ -39,8 +41,9 @@ async function refresh() {
     if (latest) {
       appendText(work, 'strong', latest.status.toUpperCase(), `run-status ${latest.status}`);
       const idea = ideas.find(item => item.id === latest.ideaId);
-      appendText(work, 'p', idea?.spec ?? idea?.text ?? latest.mutationName ?? 'Patch run');
-      if (idea) appendText(work, 'small', idea.contributors?.map(name => `@${name}`).join(', ') ?? `@${idea.authorName}`);
+      appendText(work, 'p', latest.demo ? `Demo patch: Coin Shower (stands in for “${idea?.text ?? 'a Practice idea'}”)` : idea?.spec ?? idea?.text ?? latest.mutationName ?? 'Patch run');
+      if (latest.demo) appendText(work, 'small', 'by @Live Patch Demo');
+      else if (idea) appendText(work, 'small', idea.contributors?.map(name => `@${name}`).join(', ') ?? `@${idea.authorName}`);
       const steps = events.filter(event => event.runId === latest.id);
       const endStage = latest.status === 'failed' ? { id: 'failed', label: 'Build failed' } : latest.status === 'rolled_back' ? { id: 'rolled_back', label: 'Rolled back' } : { id: 'shipped', label: 'Patch shipped' };
       const stages = latest.demo ? [
@@ -56,7 +59,7 @@ async function refresh() {
         const step = steps.find(item => item.type === stage.id);
         appendText(work, 'small', `${seen.has(stage.id) ? '✓' : '○'} ${stage.label}${stage.id === 'file' && step?.message ? ` · ${step.message}` : ''}`, `work-step ${seen.has(stage.id) ? 'complete' : ''}`);
       }
-      if (latest.status === 'shipped') appendText(work, 'strong', '✦ PATCH SHIPPED ✦', 'shipped-moment');
+      if (latest.status === 'shipped') appendText(work, 'strong', latest.demo ? '✦ DEMO PATCH ✦' : '✦ PATCH SHIPPED ✦', 'shipped-moment');
       if (latest.status === 'failed') appendText(work, 'strong', 'BUILD FAILED', 'failed-moment');
       if (latest.status === 'rolled_back') appendText(work, 'strong', 'PATCH ROLLED BACK', 'rolled-moment');
       if (!steps.length && latest.mutationName) appendText(work, 'small', `File: ${latest.mutationName}`);
@@ -88,8 +91,8 @@ async function refresh() {
     } else if (!round.candidates.length) appendText(candidates, 'p', 'Waiting for the next round');
     const ticker = document.querySelector<HTMLElement>('#pitch-ticker')!; ticker.replaceChildren();
     const latestPitch = ideas.filter(item => ['submitted','shortlisted','voting'].includes(item.status)).at(-1);
-    appendText(ticker, 'strong', latestPitch ? `@${latestPitch.authorName}: ${latestPitch.spec ?? latestPitch.text}` : 'Your idea could change the game.');
-    appendText(ticker, 'span', 'type !idea to pitch');
+    appendText(ticker, 'strong', latestPitch ? `New pitch from @${latestPitch.authorName}: ${latestPitch.spec ?? latestPitch.text}` : 'Your idea could change the game.');
+    appendText(ticker, 'span', `type !idea to pitch · ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
   } catch (error) { document.querySelector('#work')!.textContent = `Overlay reconnecting: ${String(error)}`; }
 }
 

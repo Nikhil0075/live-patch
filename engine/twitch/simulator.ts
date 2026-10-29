@@ -3,6 +3,19 @@ import './simulator.css';
 const root = document.querySelector<HTMLDivElement>('#simulator')!;
 root.innerHTML = `<main><header><div><p class="eyebrow">PRACTICE MODE</p><h1>Try the whole loop</h1><p>Send chat or reward events through the same idea pipeline as Twitch.</p></div><a href="/">Open game ↗</a></header><section class="grid"><form id="send"><h2>Send an event</h2><button type="button" id="sample-pitch" class="secondary">Generate sample pitch</button><div class="links"><button type="button" class="secondary practice-vote" data-vote="1">Vote 1 as new viewer</button><button type="button" class="secondary practice-vote" data-vote="2">Vote 2 as new viewer</button><button type="button" class="secondary practice-vote" data-vote="3">Vote 3 as new viewer</button></div><label>Account ID<input name="id" value="viewer-1" required maxlength="40"></label><label>Login<input name="login" value="viewer1" required maxlength="40"></label><label>Display name<input name="name" value="Viewer 1" required maxlength="60"></label><label>Role<select name="role"><option value="viewer">Viewer</option><option value="moderator">Moderator</option><option value="broadcaster">Broadcaster</option></select></label><label>Event<select name="kind"><option value="chat">Chat message</option><option value="reward">Pitch reward</option></select></label><label>Text<textarea name="text" rows="4" maxlength="600" placeholder="!idea Enemies split when hit" required></textarea></label><button>Send</button><p id="result" role="status"></p><p class="hint">Generate three pitches, vote during the ballot, then switch to Moderator for <code>!approve 1</code>. Reward text needs no command.</p></form><div><section><h2>Twitch connection</h2><p id="connection">Loading…</p><p id="accounts"></p><div class="links"><a href="/api/twitch/auth/broadcaster/start">Connect broadcaster</a><a href="/api/twitch/auth/bot/start">Connect bot</a></div></section><section><h2>Ideas</h2><ul id="ideas"></ul></section><section><h2>Codex runs</h2><ul id="runs"></ul></section><section><h2>Bot replies</h2><ul id="replies"></ul></section></div></section></main>`;
 root.querySelector('main')!.insertAdjacentHTML('afterbegin', '<div class="practice-banner">PRACTICE MODE · Nothing is sent to Twitch</div><div class="practice-quick"><section><h2>Practice chat</h2><div id="practice-chat" aria-live="polite"><p>Sample viewers are ready to pitch a mechanic.</p></div><button id="send-sample-pitch" type="button">Send sample pitch</button></section><section><h2>Your first round</h2><div id="practice-timeline"><span data-stage="pitch">1 Pitch</span><span data-stage="vote">2 Vote</span><span data-stage="approval">3 Approve</span><span data-stage="building">4 Build</span><span data-stage="ship">5 Ship</span></div><p id="practice-stage">Loading round…</p><div class="practice-actions"><button id="add-three-votes" type="button">Add 3 votes</button><button id="auto-round" type="button">Run a full round automatically</button><button id="demo-ship" type="button" hidden>Ship a demo patch</button></div><p id="quick-result" role="status"></p></section></div>');
+const practiceColumns = root.querySelector<HTMLElement>('.practice-quick')!;
+const chatColumn = practiceColumns.children[0] as HTMLElement;
+const roundColumn = practiceColumns.children[1] as HTMLElement;
+roundColumn.querySelector('h2')!.textContent = 'Round status';
+roundColumn.querySelector('h2')!.insertAdjacentHTML('afterend', '<div class="practice-phase"><strong id="practice-phase">Pitch window</strong><b id="practice-clock">—</b><small>Chat decides what ships next.</small></div>');
+chatColumn.insertAdjacentHTML('beforeend', '<form id="practice-message"><input aria-label="Practice chat message" name="message" placeholder="!idea Your mechanic" maxlength="500" required><button>Send</button></form>');
+chatColumn.append(roundColumn.querySelector('.practice-actions')!);
+const guide = document.createElement('section'); guide.className = 'practice-guide';
+guide.innerHTML = '<h2>Your first round</h2><div class="guide-step"><b>✓</b><div><strong>Pitch 3 ideas</strong><small>Chat submits ideas in the pitch window.</small></div></div><div class="guide-step"><b>✓</b><div><strong>Let chat vote</strong><small>Move to the ballot and gather votes.</small></div></div><div class="guide-step"><b>3</b><div><strong>Approve the winner</strong><small>Review the top idea and approve it.</small></div></div><div class="guide-step"><b>4</b><div><strong>Watch the patch ship</strong><small>See a prepared demo when Codex is not set up.</small></div></div><p class="practice-safe">✧ This is a safe space to learn the flow. Nothing here affects your real stream.</p>';
+practiceColumns.append(guide);
+const advanced = document.createElement('details'); advanced.className = 'practice-advanced';
+const advancedLabel = document.createElement('summary'); advancedLabel.textContent = 'Advanced · developer event simulator, Twitch status and raw ideas';
+const developerGrid = root.querySelector<HTMLElement>('.grid')!; developerGrid.before(advanced); advanced.append(advancedLabel, developerGrid);
 root.querySelector('header a')!.setAttribute('href', '/play');
 
 const form = document.querySelector<HTMLFormElement>('#send')!;
@@ -13,8 +26,17 @@ async function postPractice(text: string, number: number) {
   const response = await fetch('/api/simulator/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: crypto.randomUUID(), kind: 'chat', text, viewer: { id: `quick-${number}-${crypto.randomUUID()}`, login: `quick${number}`, name: `Sample viewer ${number}`, moderator: false, broadcaster: false } }) });
   const data = await response.json() as { message?: string; error?: string };
   if (!response.ok) throw Error(data.message ?? data.error ?? `HTTP ${response.status}`);
-  const line = document.createElement('p'); line.textContent = `Sample viewer ${number}: ${text}`; root.querySelector('#practice-chat')!.append(line);
+  const line = document.createElement('p');
+  const time = document.createElement('time'); time.textContent = new Date().toLocaleTimeString();
+  const author = document.createElement('strong'); author.textContent = `Sample viewer ${number}:`;
+  const message = document.createElement('span'); message.textContent = text;
+  line.append(time, author, message); root.querySelector('#practice-chat')!.append(line);
 }
+root.querySelector<HTMLFormElement>('#practice-message')!.addEventListener('submit', event => {
+  event.preventDefault(); const input = root.querySelector<HTMLInputElement>('#practice-message input')!;
+  const message = input.value.trim(); if (!message) return; input.value = '';
+  void quick(async () => { await postPractice(message, ++practiceViewer); });
+});
 async function advance() { const response = await fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'advance' }) }); if (!response.ok) throw Error((await response.json() as {error?:string}).error ?? 'Could not advance round'); }
 async function quick(work: () => Promise<void>) { const result = root.querySelector('#quick-result')!; result.textContent = 'Working…'; try { await work(); result.textContent = 'Done. Follow the round timeline for the next step.'; await refresh(); } catch (error) { result.textContent = `${String(error)} Try again, or use the event form below.`; } }
 root.querySelector('#send-sample-pitch')!.addEventListener('click', () => { void quick(async () => { await postPractice(`!idea ${sampleIdeas[practicePitch++ % sampleIdeas.length]}`, practicePitch); }); });
@@ -54,13 +76,18 @@ form.addEventListener('submit', async event => {
 });
 
 async function refresh() {
-  const round = await fetch('/api/round').then(r => r.json()) as { phase: string; candidates: { practice?: boolean }[] };
+  const round = await fetch('/api/round').then(r => r.json()) as { phase: string; remainingMs: number | null; candidates: { practice?: boolean }[] };
+  root.querySelector('#practice-phase')!.textContent = ({ pitch: 'Pitch window', vote: 'Vote window', approval: 'Approve the winner', building: 'Building patch', paused: 'Round paused' } as Record<string, string>)[round.phase] ?? 'Round status';
+  root.querySelector('#practice-clock')!.textContent = round.remainingMs === null ? '—' : `${Math.floor(Math.max(0, round.remainingMs) / 60000)}:${String(Math.floor(Math.max(0, round.remainingMs) / 1000) % 60).padStart(2, '0')}`;
   root.querySelector('#practice-stage')!.textContent = `Current stage: ${round.phase}. ${round.phase === 'approval' ? 'Choose a Practice demo patch or approve a real Codex build.' : round.phase === 'pitch' ? 'Send sample pitches to begin.' : round.phase === 'vote' ? 'Add votes, then advance the round in Go Live.' : 'The round continues.'}`;
   for (const step of Array.from(root.querySelectorAll<HTMLElement>('#practice-timeline span'))) step.classList.toggle('current', step.dataset.stage === round.phase);
+  const progress = ({ pitch: 0, vote: 1, approval: 2, building: 3, ship: 4 } as Record<string, number>)[round.phase] ?? 0;
+  for (const [index, mark] of Array.from(root.querySelectorAll<HTMLElement>('.guide-step b')).entries()) mark.textContent = index < progress ? '✓' : String(index + 1);
   (root.querySelector<HTMLButtonElement>('#demo-ship')!).hidden = round.phase !== 'approval' || !round.candidates.some(item => item.practice);
   const [ideasResponse, statusResponse, runsResponse] = await Promise.all([fetch('/api/ideas'), fetch('/api/twitch/status'), fetch('/api/runs')]);
   const data = await ideasResponse.json() as { ideas: { id: string; authorName: string; text: string; source: string; status: string; votes: string[] }[]; candidateIds: (string | null)[]; replies: { text: string }[] };
   const status = await statusResponse.json() as { configured: boolean; rewardConfigured: boolean; authIssue: string; chatIssue: string; broadcaster: { login: string } | null; bot: { login: string } | null; eventsub: string };
+  (root.querySelector<HTMLButtonElement>('#demo-ship')!).hidden = round.phase !== 'approval' || !round.candidates.length || round.candidates.some(item => !item.practice) || Boolean(status.broadcaster && status.bot && status.eventsub.startsWith('connected'));
   document.querySelector('#connection')!.textContent = status.configured ? `EventSub: ${status.eventsub}${status.rewardConfigured ? '' : ' · Set TWITCH_PITCH_REWARD_ID for reward events'}${status.authIssue ? ` · ${status.authIssue}` : ''}${status.chatIssue ? ` · ${status.chatIssue}` : ''}` : 'Twitch app is not configured; simulator is ready.';
   document.querySelector('#accounts')!.textContent = `Broadcaster: ${status.broadcaster?.login ?? 'not connected'} · Bot: ${status.bot?.login ?? 'not connected'}`;
   const ideas = document.querySelector('#ideas')!; ideas.replaceChildren();

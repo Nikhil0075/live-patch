@@ -45,33 +45,37 @@ root.querySelector<HTMLFormElement>('#new-game')!.addEventListener('submit', eve
 function showDetails(game?: GameCard) {
   detail.replaceChildren();
   if (!game) { appendText(detail, 'h2', 'Choose a game'); return; }
-  appendText(detail, 'p', game.valid ? 'GAME DETAILS' : 'NEEDS ATTENTION', 'app-kicker');
+  const close = document.createElement('button'); close.className = 'library-detail-close secondary'; close.textContent = '✕'; close.setAttribute('aria-label', 'Close game details'); close.addEventListener('click', () => { selected = ''; detail.replaceChildren(); }); detail.append(close);
+  if (game.cover) { const cover = document.createElement('img'); cover.className = 'library-detail-cover'; cover.src = game.cover; cover.alt = ''; detail.append(cover); }
   appendText(detail, 'h2', game.name);
   appendText(detail, 'p', game.description || game.error || 'No description supplied.');
+  const actions = document.createElement('div'); actions.className = 'library-card-actions';
+  const play = document.createElement('button'); play.textContent = 'Play in new window'; play.disabled = !game.valid;
+  play.addEventListener('click', () => { if (game.directory === library.active) window.open('/play', 'live-patch-play'); else void request('active', { directory: game.directory }); });
+  const active = document.createElement('button'); active.textContent = game.directory === library.active ? 'Active game' : 'Make active for streams'; active.className = 'secondary'; active.disabled = !game.valid || game.directory === library.active;
+  active.addEventListener('click', () => { void request('active', { directory: game.directory }); });
+  actions.append(play, active); detail.append(actions);
   for (const [label, value] of [
     ['Version', game.version ?? 'Unspecified'], ['Creator', game.author ?? 'Unspecified'],
     ['Controls', game.controls?.map(item => `${item.action}: ${item.keys.join(', ')}`).join(' · ') || 'Not declared'],
     ['Hooks', game.hooks?.join(' · ') || 'Unspecified'], ['Actions', game.actions?.join(' · ') || 'Unspecified'],
     ['Audio', game.audio?.join(' · ') || 'None'], ['Effects', game.effects?.join(' · ') || 'None']
   ]) {
-    const row = document.createElement('p'); row.className = 'library-detail-row';
-    appendText(row, 'strong', label); appendText(row, 'span', value); detail.append(row);
+    if (['Version', 'Creator'].includes(label)) continue;
+    const row = document.createElement('details'); row.className = 'library-detail-row';
+    const summary = document.createElement('summary'); summary.textContent = `${label} · ${value === 'None' || value === 'Not declared' || value === 'Unspecified' ? 0 : value.split(' · ').length}  ›`;
+    const contents = document.createElement('p'); contents.textContent = value; row.append(summary, contents); detail.append(row);
   }
   const badges = document.createElement('div'); badges.className = 'library-badges';
   for (const label of [`Manifest ${game.valid ? 'valid' : 'invalid'}`, `Smoke ${game.smoke?.status ?? 'not run'}`, `${game.examples} examples`, `${game.shipped} shipped`]) appendText(badges, 'span', label);
   detail.append(badges);
-  const actions = document.createElement('div'); actions.className = 'library-card-actions';
-  const play = document.createElement('button'); play.textContent = 'Play in new window'; play.disabled = !game.valid;
-  play.addEventListener('click', () => { if (game.directory === library.active) window.open('/play', 'live-patch-play'); else void request('active', { directory: game.directory }); });
-  const active = document.createElement('button'); active.textContent = game.directory === library.active ? 'Active game' : 'Make active for streams'; active.className = 'secondary'; active.disabled = !game.valid || game.directory === library.active;
-  active.addEventListener('click', () => { void request('active', { directory: game.directory }); });
   const docs = document.createElement('button'); docs.textContent = 'Mutation API'; docs.className = 'secondary'; docs.disabled = !game.valid;
   docs.addEventListener('click', async () => {
     const response = await fetch(`/api/library/docs?directory=${encodeURIComponent(game.directory)}`);
     root.querySelector('#docs-text')!.textContent = await response.text();
     root.querySelector<HTMLDialogElement>('#docs-dialog')!.showModal();
   });
-  actions.append(play, active, docs); detail.append(actions);
+  detail.append(docs);
 }
 
 function render() {
@@ -85,13 +89,15 @@ function render() {
     const cover = document.createElement('div'); cover.className = 'library-cover';
     if (game.cover) { const image = document.createElement('img'); image.src = game.cover; image.alt = ''; cover.append(image); }
     else { const icon = document.createElement('span'); icon.textContent = '✳'; cover.append(icon); }
-    card.append(cover);
+    const star = document.createElement('span'); star.className = 'library-star'; star.textContent = '☆'; star.setAttribute('aria-hidden', 'true'); cover.append(star); card.append(cover);
     const content = document.createElement('div'); content.className = 'library-card-content';
     appendText(content, 'small', game.directory === data.active ? 'ACTIVE GAME' : game.valid ? 'READY TO PLAY' : 'NEEDS ATTENTION', 'app-kicker');
     appendText(content, 'h3', game.name);
+    appendText(content, 'strong', `${game.shipped} patch${game.shipped === 1 ? '' : 'es'} active`, 'library-patch-count');
     appendText(content, 'p', game.description || game.error || 'Add a description to the game manifest.');
     appendText(content, 'small', `Manifest ${game.valid ? 'valid' : 'invalid'} · Smoke ${game.smoke?.status ?? 'not run'}${game.smoke?.at ? ` (${new Date(game.smoke.at).toLocaleString()})` : ''} · ${game.examples} example${game.examples === 1 ? '' : 's'} · ${game.shipped} shipped`);
-    if (game.tags.length) appendText(content, 'small', game.tags.join(' · '));
+    if (game.tags.length) { const tags = document.createElement('div'); tags.className = 'library-tags'; for (const tag of game.tags) appendText(tags, 'span', tag); content.append(tags); }
+    appendText(content, 'small', game.valid ? 'Ready to stream · ⋯' : 'Needs attention · ⋯', 'library-card-footer');
     card.append(content); card.addEventListener('click', () => { selected = game.directory; render(); }); cards.append(card);
   }
   if (!search && filter === 'all') {

@@ -52,7 +52,7 @@ Make Live Patch feel at home to a Twitch streamer from the first minute:
   - Three corner icon buttons: Sound, Full screen, Menu. Each has a label and a tooltip.
   - A key-hint pill ("Esc Menu · F Full screen · M Mute") that fades after a few seconds.
   - Toasts for "Patch shipped — by @viewer", "Patch rolled back" and "Patch failed safely".
-  - **Stream-clean:** the corner buttons and the key-hint pill hide after 3 seconds without mouse movement, as in a video player, and come back on mouse movement or a key press. That way OBS Window Capture shows a clean game.
+  - **Stream-clean:** the corner buttons and the key-hint pill hide after 3 seconds without mouse movement, as in a video player, and come back on mouse movement or a menu key (Esc, P, F, M or Tab). Movement and attack keys keep the capture clean.
   - **No overlap with the overlay:** the stream overlay is composited over this window. Publish one layout map (which screen regions belong to the HUD, toasts and overlay widgets at 1920×1080) and have both sides follow it. The concepts put the overlay's patch list where the HUD score sits; that's the collision to avoid.
 - **Pause menu** (Esc, or P), with Resume focused by default. The game dims and blurs behind it, and it never traps the player. Sections:
   - **Resume.**

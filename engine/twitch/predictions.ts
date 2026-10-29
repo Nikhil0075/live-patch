@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { TwitchAuth } from './auth';
 
-export interface PatchPrediction { id: string; ideaId: string; shipId: string; failId: string; status: 'open' | 'settling' | 'resolved' | 'canceled' | 'error'; error?: string }
+export interface PatchPrediction { id: string; ideaId: string; shipId: string; failId: string; status: 'open' | 'settling' | 'resolved' | 'canceled' | 'error'; error?: string; createdAt?: string }
 export class PatchPredictions {
   private records: PatchPrediction[];
   private operation: Promise<unknown> = Promise.resolve();
@@ -27,7 +27,7 @@ export class PatchPredictions {
     const data = await response.json() as { data?: { id: string; outcomes: { id: string }[] }[] };
     const result = data.data?.[0];
     if (!result?.id || result.outcomes?.length !== 2) throw Error('Twitch prediction response was incomplete');
-    const record: PatchPrediction = { id: result.id, ideaId, shipId: result.outcomes[0].id, failId: result.outcomes[1].id, status: 'open' };
+    const record: PatchPrediction = { id: result.id, ideaId, shipId: result.outcomes[0].id, failId: result.outcomes[1].id, status: 'open', createdAt: new Date().toISOString() };
     this.records.push(record); this.save(); return record;
   }
   settle(ideaId: string, shipped: boolean): Promise<PatchPrediction | undefined> { return this.serialize(() => this.settleNow(ideaId, shipped)); }

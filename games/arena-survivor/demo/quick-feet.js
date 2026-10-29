@@ -1,2 +1,11 @@
-export const meta = { id: 'demo-quick-feet', title: 'Demo: Quick Feet', author: 'Live Patch Demo', description: 'The survivor moves faster. This prepared patch shows how shipping works in Practice.' };
-export function onStart(game) { game.setParameter('playerSpeed', 300); game.showMessage('DEMO PATCH SHIPPED'); }
+export const meta = { id: 'demo-coin-shower', title: 'Demo patch: Coin Shower', author: 'Live Patch Demo', description: 'A prepared Practice patch scatters bright coins around the survivor.' };
+export function onStart(game) {
+  for (let i = 0; i < 12; i++) {
+    const angle = i * Math.PI / 6;
+    const x = game.state.player.x + Math.cos(angle) * 80;
+    const y = game.state.player.y + Math.sin(angle) * 80;
+    game.spawn('coin', x, y, 9);
+    game.burst('coin', x, y);
+  }
+  game.showMessage('DEMO PATCH: COIN SHOWER');
+}

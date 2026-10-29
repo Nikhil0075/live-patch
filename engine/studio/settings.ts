@@ -1,6 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { defaultOverlayWidgets, type OverlayWidget, type StudioSettings } from './settings-defaults';
+const previousDefaultWidgets: OverlayWidget[] = [
+  { type: 'patches', x: 24, y: 120, width: 1080, height: 110 },
+  { type: 'codex', x: 1546, y: 165, width: 350, height: 590 },
+  { type: 'ballot', x: 24, y: 725, width: 1010, height: 235 },
+  { type: 'ticker', x: 560, y: 998, width: 1336, height: 58 }
+];
+function isPreviousDefault(value: unknown): boolean {
+  return Array.isArray(value) && value.length === previousDefaultWidgets.length && previousDefaultWidgets.every((expected, index) => {
+    const item = value[index] as OverlayWidget;
+    return item?.type === expected.type && item.x === expected.x && item.y === expected.y && item.width === expected.width && item.height === expected.height;
+  });
+}
 export { defaultSettings, defaultOverlayWidgets } from './settings-defaults';
 export type { StudioSettings, OverlayWidget } from './settings-defaults';
 const clamp = (value: unknown, fallback: number, min: number, max: number) => typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
@@ -23,7 +35,7 @@ export class SettingsStore {
   private normalize(input: Partial<StudioSettings>): StudioSettings {
     const types = new Set(['patches', 'codex', 'ballot', 'ticker']);
     const seen = new Set<string>();
-    const source = Array.isArray(input.overlayWidgets) ? input.overlayWidgets : defaultOverlayWidgets;
+    const source = Array.isArray(input.overlayWidgets) && !isPreviousDefault(input.overlayWidgets) ? input.overlayWidgets : defaultOverlayWidgets;
     const overlayWidgets: OverlayWidget[] = [];
     for (const item of source) {
       if (!item || typeof item !== 'object' || !types.has(item.type) || seen.has(item.type)) continue;

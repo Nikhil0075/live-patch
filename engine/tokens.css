@@ -15,6 +15,11 @@
   --live: #eb0400;
   --success: #5fdba5;
   --warning: #ffcf70;
+  --accent-text: #bf94ff;
+  --text-soft: #c9c9d1;
+  --border-strong: #6c6583;
+  --panel-border: #47474e;
+  --play-ink: #0b1828;
   --radius: 4px;
   --space: 8px;
   --mint: var(--accent);

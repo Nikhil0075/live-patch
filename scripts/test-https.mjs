@@ -56,9 +56,8 @@ try {
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ ignoreHTTPSErrors: true });
   await page.goto(`${origin}/?view=practice`);
-  await page.getByRole('button', { name: 'Generate sample pitch' }).click();
-  await page.locator('#send button:not([type])').click();
-  await page.locator('#result').getByText('Idea received', { exact: false }).waitFor();
+  await page.getByRole('button', { name: 'Send sample pitch' }).click();
+  await page.locator('#quick-result').getByText('Done. Follow the round timeline', { exact: false }).waitFor();
   const ideas = await page.evaluate(() => fetch('/api/ideas').then(response => response.json()));
   assert.equal(ideas.ideas.length, 1, 'Practice pitch is persisted');
   await page.goto(`${origin}/?view=go-live`);
