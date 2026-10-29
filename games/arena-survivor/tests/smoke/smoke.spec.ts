@@ -21,14 +21,34 @@ test('Vite refuses the local OAuth token file', async ({ request }) => {
   expect([403, 404]).toContain(response.status());
 });
 
+test('play window pauses frames and mutation ticks, then resumes from the same state', async ({ page }) => {
+  await page.goto('/play');
+  await expect(page.locator('#status')).toContainText('LIVE');
+  await page.evaluate(() => (window as any).__livePatch.host.sync([{ name: 'pause-probe.js', source: `export const meta={id:'pause-probe',title:'Pause Probe',author:'test',description:'Counts ticks'}; let ticks=0; export function onTick(game){ticks++; if(ticks%30===0) game.spawn('coin',100,100);}`, error: null }]));
+  await expect(page.locator('#mutations')).toContainText('Pause Probe · active');
+  await page.keyboard.press('p');
+  await expect(page.locator('#play-menu')).toBeVisible();
+  await expect(page.locator('#resume-button')).toBeFocused();
+  const before = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
+  await page.waitForTimeout(600);
+  const during = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
+  expect(during.frame).toBe(before.frame);
+  expect(during.elapsed).toBe(before.elapsed);
+  await page.getByRole('button', { name: 'Controls' }).click();
+  await expect(page.locator('#menu-panel')).toContainText('Space');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#play-menu')).toBeHidden();
+  await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().frame)).toBeGreaterThan(before.frame + 10);
+});
+
 for (const example of chosen ? [chosen] : examples) test(`game plays for five seconds with ${example}`, async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto('/?mutation=__none__');
+  await page.goto('/play?mutation=__none__');
   await expect(page.locator('#status')).toContainText('LIVE');
   await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().frame)).toBeGreaterThan(60);
   const baseline = await page.evaluate(() => (window as any).__livePatch.game.snapshot().frameRate as number);
-  await page.goto(combined ? '/' : `/?mutation=${encodeURIComponent(example)}`);
+  await page.goto(combined ? '/play' : `/play?mutation=${encodeURIComponent(example)}`);
   await expect(page.locator('#status')).toContainText('LIVE');
   await expect(page.locator('#mutations li')).toHaveCount(combined ? examples.length : 1);
   await expect.poll(async () => (await page.locator('#mutations li').allTextContents()).every(text => text.includes('· active'))).toBe(true);
@@ -66,11 +86,11 @@ test('combined smoke detects a conflict that candidate-only smoke misses', async
   try {
     fs.writeFileSync(watcher, "export const meta={id:'watch',title:'Conflict Watch',author:'test',description:'test'}; export function onSpawn(game,e){if(e.origin==='zz-conflict-candidate.js')throw Error('patch conflict');}");
     fs.writeFileSync(candidate, "export const meta={id:'candidate',title:'Conflict Candidate',author:'test',description:'test'};let done=false;export function onTick(game){if(!done&&game.state.elapsed>2){done=true;game.spawn('coin',100,100);}}");
-    await page.goto('/?mutation=zz-conflict-candidate.js');
+    await page.goto('/play?mutation=zz-conflict-candidate.js');
     await expect(page.locator('#mutations')).toContainText('Conflict Candidate · active');
     await page.waitForTimeout(2500);
     await expect(page.locator('#mutations')).toContainText('Conflict Candidate · active');
-    await page.goto('/');
+    await page.goto('/play');
     await expect(page.locator('#mutations')).toContainText('Conflict Watch · active');
     await expect(page.locator('#mutations')).toContainText('Conflict Watch · failed', { timeout: 8000 });
     await expect(page.locator('#mutations')).toContainText('Conflict Candidate · active');
@@ -80,7 +100,7 @@ test('combined smoke detects a conflict that candidate-only smoke misses', async
 test('an endless hook loop is stopped without freezing the game', async ({ page }) => {
   const file = path.join(mutationDir, 'zz-loop-test.js');
   try {
-    await page.goto('/'); await expect(page.locator('#status')).toContainText('LIVE');
+    await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
     fs.writeFileSync(file, `export const meta = { id:'loop', title:'Loop', author:'test', description:'loop' }; export function onTick(game) { if (game.state.elapsed > .3) while (true) {} }`);
     await expect(page.locator('#notice')).toContainText('deadline exceeded', { timeout: 5000 });
     const first = await page.evaluate(() => (window as any).__livePatch.game.snapshot().frame);
@@ -93,7 +113,7 @@ test('an endless hook loop is stopped without freezing the game', async ({ page 
 test('a top-level loop is stopped at load time', async ({ page }) => {
   const file = path.join(mutationDir, 'zz-load-loop-test.js');
   try {
-    await page.goto('/'); await expect(page.locator('#status')).toContainText('LIVE');
+    await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
     fs.writeFileSync(file, `export const meta = { id:'load-loop', title:'Load Loop', author:'test', description:'loop' }; while (true) {}`);
     await expect(page.locator('#notice')).toContainText('Load deadline exceeded', { timeout: 5000 });
     const first = await page.evaluate(() => (window as any).__livePatch.game.snapshot().frame);
@@ -105,7 +125,7 @@ test('a top-level loop is stopped at load time', async ({ page }) => {
 test('a three-second hook stall is rejected without a long host frame gap', async ({ page }) => {
   const file = path.join(mutationDir, 'zz-stall-test.js');
   try {
-    await page.goto('/'); await expect(page.locator('#status')).toContainText('LIVE');
+    await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
     fs.writeFileSync(file, `export const meta = { id:'stall', title:'Stall', author:'test', description:'slow' }; export function onTick(game) { if(game.state.elapsed > .3) { const start=Date.now(); while(Date.now()-start<3000) {} } }`);
     await expect(page.locator('#mutations')).toContainText('Stall · failed', { timeout: 5000 });
     const state = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
@@ -116,7 +136,7 @@ test('a three-second hook stall is rejected without a long host frame gap', asyn
 test('an asynchronous hook rejection disables its module', async ({ page }) => {
   const file = path.join(mutationDir, 'zz-async-test.js');
   try {
-    await page.goto('/'); await expect(page.locator('#status')).toContainText('LIVE');
+    await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
     fs.writeFileSync(file, `export const meta = { id:'async', title:'Async', author:'test', description:'throws' }; export async function onTick() { await Promise.resolve(); throw Error('async fault'); }`);
     await expect(page.locator('#notice')).toContainText('async fault', { timeout: 5000 });
     await expect(page.locator('#mutations')).toContainText('failed');
@@ -127,7 +147,7 @@ test('unrelated reloads do not repeat another module start effect', async ({ pag
   const source = path.join(mutationDir, 'zz-once-test.js');
   const unrelated = path.join(mutationDir, 'zz-unrelated-test.js');
   try {
-    await page.goto('/'); await expect(page.locator('#status')).toContainText('LIVE');
+    await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
     fs.writeFileSync(source, `export const meta = { id:'once', title:'Once', author:'test', description:'spawns' }; export function onStart(game) { for (let i=0;i<10;i++) game.spawn('enemy',80+i*30,80); }`);
     await expect(page.locator('#mutations')).toContainText('Once · active');
     await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().enemies)).toBeGreaterThanOrEqual(12);
@@ -144,7 +164,7 @@ test('unrelated reloads do not repeat another module start effect', async ({ pag
 });
 
 test('a frame ignores a load message that did not come from its parent', async ({ page }) => {
-  await page.goto('/'); await expect(page.locator('#mutations')).toContainText('Quick Feet · active');
+  await page.goto('/play'); await expect(page.locator('#mutations')).toContainText('Quick Feet · active');
   const frame = page.frames().find(item => item.url() === 'about:srcdoc');
   expect(frame).toBeDefined();
   await frame!.evaluate(() => window.postMessage({ type: 'load', source: `export const meta = {id:'spoof',title:'Spoof',author:'test',description:'bad'}` }, '*'));
@@ -154,7 +174,7 @@ test('a frame ignores a load message that did not come from its parent', async (
 });
 
 test('a burst of matching events reaches one module in order', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/play');
   await expect(page.locator('#status')).toContainText('LIVE');
   await page.evaluate(() => (window as any).__livePatch.host.sync([{ name: 'batch.js', source: `export const meta={id:'batch',title:'Batch',author:'test',description:'order'}; let next=0; export function onChat(game,event){ if(Number(event.text)!==next) throw Error('event order'); next++; if(next===30) game.spawn('coin',100,100); }`, error: null }]));
   await expect(page.locator('#mutations')).toContainText('Batch · active');
@@ -164,7 +184,7 @@ test('a burst of matching events reaches one module in order', async ({ page }) 
 });
 
 test('a slow but bounded event batch stays active during a busy moment', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/play');
   await expect(page.locator('#status')).toContainText('LIVE');
   await page.evaluate(() => (window as any).__livePatch.host.sync([{ name: 'bounded-batch.js', source: `export const meta={id:'bounded-batch',title:'Bounded Batch',author:'test',description:'busy'}; let seen=0; export function onChat(game){const until=Date.now()+15; while(Date.now()<until){} seen++; if(seen===17) game.spawn('coin',100,100);}`, error: null }]));
   await expect(page.locator('#mutations')).toContainText('Bounded Batch · active');
@@ -176,7 +196,7 @@ test('a slow but bounded event batch stays active during a busy moment', async (
 test('an action storm is throttled before it fills the arena', async ({ page }) => {
   const file = path.join(mutationDir, 'zz-storm-test.js');
   try {
-    await page.goto('/'); await expect(page.locator('#status')).toContainText('LIVE');
+    await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
     fs.writeFileSync(file, `export const meta = { id:'storm', title:'Storm', author:'test', description:'storm' }; export function onTick(game) { for (let i=0;i<10;i++) game.spawn('coin',100+i*25,200); }`);
     await expect(page.locator('#mutations')).toContainText('Storm · active', { timeout: 5000 });
     await expect(page.locator('#mutations')).toContainText('actions skipped', { timeout: 5000 });
@@ -187,7 +207,7 @@ test('an action storm is throttled before it fills the arena', async ({ page }) 
 });
 
 test('the arena caps enemies and clears a swarm on a new run', async ({ page }) => {
-  await page.goto('/?mutation=__none__'); await expect(page.locator('#status')).toContainText('LIVE');
+  await page.goto('/play?mutation=__none__'); await expect(page.locator('#status')).toContainText('LIVE');
   const capped = await page.evaluate(() => {
     const game = (window as any).__livePatch.game;
     const { x, y } = game.snapshot().player;
@@ -204,7 +224,7 @@ test('the arena caps enemies and clears a swarm on a new run', async ({ page }) 
 test('entity hit and chat hooks can express split enemies and speech bubbles', async ({ page }) => {
   const file = path.join(mutationDir, 'zz-entity-test.js');
   try {
-    await page.goto('/?mutation=zz-entity-test.js'); await expect(page.locator('#status')).toContainText('LIVE');
+    await page.goto('/play?mutation=zz-entity-test.js'); await expect(page.locator('#status')).toContainText('LIVE');
     fs.writeFileSync(file, `export const meta = { id:'entity', title:'Entity Ideas', author:'test', description:'split and speak' }; export function onHit(game,e) { if(e.target==='enemy') { game.spawn('enemy',e.x-15,e.y,8); game.spawn('enemy',e.x+15,e.y,8); } } export function onChat(game,e) { const foe=game.state.entities.find(x=>x.kind==='enemy'); if(foe) game.drawText(e.text,foe.x,foe.y-25); }`);
     await expect(page.locator('#mutations')).toContainText('Entity Ideas · active');
     const before = await page.evaluate(() => {
@@ -223,7 +243,7 @@ test('entity hit and chat hooks can express split enemies and speech bubbles', a
 test('a broken mutation disables itself while the game continues', async ({ page }) => {
   const file = path.join(mutationDir, 'zz-broken-test.js');
   try {
-    await page.goto('/');
+    await page.goto('/play');
     await expect(page.locator('#status')).toContainText('LIVE');
     fs.writeFileSync(file, `export const meta = { id: 'broken', title: 'Broken', author: 'test', description: 'throws' }; export function onTick() { throw Error('test fault'); }`);
     await expect(page.locator('#notice')).toContainText('disabled', { timeout: 5000 });
@@ -237,7 +257,7 @@ test('a broken mutation disables itself while the game continues', async ({ page
 test('adding and removing a mutation updates the list without navigation', async ({ page }) => {
   const file = path.join(mutationDir, 'zz-reload-test.js');
   try {
-    await page.goto('/');
+    await page.goto('/play');
     await expect(page.locator('#status')).toContainText('LIVE');
     const before = await page.evaluate(() => performance.getEntriesByType('navigation').length);
     const addedAt = Date.now();
@@ -255,7 +275,7 @@ test('adding and removing a mutation updates the list without navigation', async
 test('removing a mutation reverses its parameter change', async ({ page }) => {
   const file = path.join(mutationDir, 'zz-gravity-test.js');
   try {
-    await page.goto('/');
+    await page.goto('/play');
     await expect(page.locator('#status')).toContainText('LIVE');
     fs.writeFileSync(file, `export const meta = { id: 'gravity', title: 'Gravity Test', author: 'test', description: 'drift' }; export function onStart(game) { game.setParameter('gravityX', 100); }`);
     await expect(page.locator('#mutations')).toContainText('Gravity Test');
@@ -274,7 +294,7 @@ test('removing a mutation reverses its parameter change', async ({ page }) => {
 });
 
 test('rollback restores another entity and removes patch-earned score', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/play');
   await expect(page.locator('#status')).toContainText('LIVE');
   const result = await page.evaluate(async () => {
     const game = (window as any).__livePatch.game;
@@ -298,7 +318,7 @@ test('rollback restores another entity and removes patch-earned score', async ({
 });
 
 test('rollback does not resurrect hostile enemies on the player', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/play');
   await expect(page.locator('#status')).toContainText('LIVE');
   const result = await page.evaluate(() => {
     const game = (window as any).__livePatch.game;
@@ -313,7 +333,7 @@ test('rollback does not resurrect hostile enemies on the player', async ({ page 
 });
 
 test('one crowded Space attack keeps unrelated patches active', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/play');
   await expect(page.locator('#mutations li')).toHaveCount(3);
   await page.evaluate(() => {
     const game = (window as any).__livePatch.game;
@@ -330,7 +350,7 @@ test('one crowded Space attack keeps unrelated patches active', async ({ page })
 
 test('WebGL crowd keeps patches active', async ({ page }) => {
   test.skip(process.env.LIVE_PATCH_WEBGL !== '1', 'Opt-in WebGL renderer check');
-  await page.goto('/');
+  await page.goto('/play');
   await expect(page.locator('#mutations li')).toHaveCount(3);
   expect(await page.evaluate(() => (window as any).__livePatch.game.snapshot().renderer)).toBe('webgl');
   await page.evaluate(() => {
@@ -347,7 +367,7 @@ test('WebGL crowd keeps patches active', async ({ page }) => {
 test('out-of-range text and parameter arguments are bounded', async ({ page }) => {
   const file = path.join(mutationDir, 'zz-bounds-test.js');
   try {
-    await page.goto('/?mutation=zz-bounds-test.js');
+    await page.goto('/play?mutation=zz-bounds-test.js');
     fs.writeFileSync(file, `export const meta = {id:'bounds',title:'Bounds',author:'test',description:'bounds'}; export function onStart(game) { game.setParameter('enemySpeed', 600); } export function onChat(game,e) { game.drawText(e.text, 30, -25); }`);
     await expect(page.locator('#mutations')).toContainText('Bounds · active');
     await page.evaluate(() => (window as any).__livePatch.host.emit({ type: 'chat', text: 'x'.repeat(120), author: 'test' }));
@@ -357,14 +377,14 @@ test('out-of-range text and parameter arguments are bounded', async ({ page }) =
 });
 
 test('mutation Worker cannot create nested Workers', async ({ page }) => {
-  await page.goto('/?mutation=__none__');
+  await page.goto('/play?mutation=__none__');
   await expect(page.locator('#status')).toContainText('LIVE');
   await page.evaluate(() => (window as any).__livePatch.host.sync([{ name: 'probe.js', source: `export const meta = {id:'probe',title:'Probe',author:'test',description:'worker'}; export function onStart() { if (typeof Worker !== 'undefined' || typeof SharedWorker !== 'undefined' || typeof importScripts !== 'undefined') throw Error('nested worker available'); }`, error: null }]));
   await expect(page.locator('#mutations')).toContainText('Probe · active');
 });
 
 test('skipped ticks contribute to the next delivered delta', async ({ page }) => {
-  await page.goto('/?mutation=__none__');
+  await page.goto('/play?mutation=__none__');
   await expect(page.locator('#status')).toContainText('LIVE');
   await page.evaluate(() => (window as any).__livePatch.host.sync([{ name: 'delta.js', source: `export const meta = {id:'delta',title:'Delta',author:'test',description:'clock'}; let total = 0; export function onTick(game,e) { total += e.delta; if (game.state.elapsed < 1.2) { const start = Date.now(); while (Date.now()-start < 25) {} } if (game.state.elapsed > 1.4 && total < .7) throw Error('lost tick time'); }`, error: null }]));
   await expect(page.locator('#mutations')).toContainText('Delta · active');
@@ -379,7 +399,7 @@ for (const idea of ['split-enemy', 'flip-gravity', 'fleeing-coins', 'fire-trail'
     const file = path.join(mutationDir, `zz-${idea}-fixture.js`);
     try {
       fs.copyFileSync(path.join(gameDirectory, 'tests', 'fixtures', `${idea}.js`), file);
-      await page.goto(`/?mutation=${path.basename(file)}`);
+      await page.goto(`/play?mutation=${path.basename(file)}`);
       await expect(page.locator('#status')).toContainText('LIVE');
       await expect(page.locator('#mutations')).toContainText('active');
       await page.evaluate((name) => {
@@ -411,7 +431,7 @@ test('simulator submits ideas and chat through the live game path as plain text'
   const simulator = await context.newPage();
   try {
     fs.writeFileSync(file, `export const meta={id:'sim-chat',title:'Sim Chat',author:'test',description:'chat'}; export function onChat(game,e){game.drawText(e.text,100,100);}`);
-    await page.goto('/?mutation=zz-simulator-chat.js');
+    await page.goto('/play?mutation=zz-simulator-chat.js');
     await expect(page.locator('#mutations')).toContainText('Sim Chat · active');
     await simulator.goto('/simulator.html');
     await simulator.locator('textarea[name="text"]').fill('hello from simulator');
@@ -525,7 +545,7 @@ test('studio navigation, setup and build library keep viewer data plain text', a
 
 test('saved build compares original and evolved games without changing the live run', async ({ page }) => {
   test.setTimeout(60_000);
-  await page.goto('/');
+  await page.goto('/play');
   await expect(page.locator('#mutations')).toContainText('Quick Feet');
   const before = await page.evaluate(() => (window as any).__livePatch.game.snapshot().frame);
   const saved = await page.evaluate(async () => fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save' }) }).then(response => response.json())) as { id: string };
@@ -581,7 +601,7 @@ test('mutation sound and visual requests are throttled while the game keeps runn
   const file = path.join(mutationDir, 'zz-effects-spam.js');
   try {
     fs.writeFileSync(file, `export const meta={id:'effects-spam',title:'Effects spam',author:'test',description:'test'}; export function onTick(game){for(let i=0;i<20;i++){game.playSound('coin');game.burst('spark',480,320);game.flash('#ffffff');game.shake(.01);}}`);
-    await page.goto('/?mutation=zz-effects-spam.js');
+    await page.goto('/play?mutation=zz-effects-spam.js');
     await expect(page.locator('#mutations')).toContainText('Effects spam · active');
     await page.waitForTimeout(1200);
     const state = await page.evaluate(() => (window as any).__livePatch.game.snapshot());

@@ -8,6 +8,13 @@
   "author": "Live Patch",
   "audio": ["coin", "hit", "death", "hurt", "round-start", "vote-tick", "patch-shipped", "patch-failed", "rollback"],
   "effects": ["spark", "coin", "slime", "celebration"],
+  "controls": [
+    { "action": "Move", "keys": ["W", "A", "S", "D", "Arrow keys"] },
+    { "action": "Attack", "keys": ["Space"] },
+    { "action": "Menu", "keys": ["Esc", "P"] },
+    { "action": "Full screen", "keys": ["F"] },
+    { "action": "Mute", "keys": ["M"] }
+  ],
   "entry": "src/main.ts",
   "mutationDir": "mutations/",
   "apiDocs": "docs/mutation-api.md",

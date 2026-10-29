@@ -9,6 +9,9 @@ interface Loaded {
   file: MutationFile;
   status: 'loading' | 'starting' | 'active' | 'failed' | 'rejected';
   title: string;
+  author?: string;
+  description?: string;
+  startedAt?: number;
   reason?: string;
   frame?: HTMLIFrameElement;
   queue: GameEvent[];
@@ -54,6 +57,8 @@ export class MutationHost {
   private loaded = new Map<string, Loaded>();
   private nextId = 1;
   private effectLimits: EffectLimits;
+  private paused = false;
+  private deferredActions: { action: GameAction; origin: string }[] = [];
 
   constructor(private game: GameAdapter, private manifest: GameManifest, private list: HTMLElement, private notice: HTMLElement) {
     this.effectLimits = new EffectLimits(manifest);
@@ -78,6 +83,7 @@ export class MutationHost {
   }
 
   emit(event: GameEvent) {
+    if (this.paused) return;
     for (const entry of this.loaded.values()) {
       if (entry.status !== 'active' || event.origin === entry.file.name) continue;
       if (!entry.hooks.has(event.type)) continue;
@@ -129,7 +135,7 @@ export class MutationHost {
         this.disable(entry, 'Malformed ready message'); return;
       }
       window.clearTimeout(entry.loadTimeout);
-      entry.status = 'starting'; entry.title = meta.title; entry.hooks = new Set(data.hooks);
+      entry.status = 'starting'; entry.title = meta.title; entry.author = meta.author; entry.description = meta.description; entry.hooks = new Set(data.hooks);
       entry.queue.push({ type: 'start' });
       this.pump(entry);
     } else if (data.type === 'reply') {
@@ -150,10 +156,10 @@ export class MutationHost {
         }
         if (!this.effectLimits.allow(normalized, entry.file.name)) { entry.droppedActions.add(); continue; }
         entry.budgetCount++;
-        try { this.game.apply(normalized, entry.file.name); }
+        try { if (this.paused) this.deferredActions.push({ action: normalized, origin: entry.file.name }); else this.game.apply(normalized, entry.file.name); }
         catch (error) { this.disable(entry, `Game action failed: ${String(error)}`); return; }
       }
-      if (completedType === 'start') entry.status = 'active';
+      if (completedType === 'start') { entry.status = 'active'; entry.startedAt = Date.now(); }
       this.pump(entry);
     } else if (data.type === 'error') this.disable(entry, String(data.error).slice(0, 200));
     else this.disable(entry, 'Unknown worker message');
@@ -161,7 +167,7 @@ export class MutationHost {
   };
 
   private pump(entry: Loaded) {
-    if (!['starting', 'active'].includes(entry.status) || entry.pending || !entry.queue.length) return;
+    if (this.paused || !['starting', 'active'].includes(entry.status) || entry.pending || !entry.queue.length) return;
     const events = entry.status === 'starting' ? [entry.queue.shift()!] : entry.queue.splice(0, 16);
     const id = this.nextId++;
     const deadline = Math.min(600, EVENT_DEADLINE_MS + (events.length - 1) * 25);
@@ -195,6 +201,16 @@ export class MutationHost {
     }
     if (!this.loaded.size) { const li = document.createElement('li'); li.textContent = 'No mutations yet'; this.list.append(li); }
   }
+
+  setPaused(paused: boolean) {
+    this.paused = paused;
+    if (!paused) {
+      for (const item of this.deferredActions.splice(0)) this.game.apply(item.action, item.origin);
+      for (const entry of this.loaded.values()) this.pump(entry);
+    }
+  }
+
+  entries() { return [...this.loaded.values()].map(item => ({ title: item.title, author: item.author ?? 'Unknown viewer', description: item.description ?? '', status: item.status, reason: item.reason, startedAt: item.startedAt })); }
 
   destroy() { window.removeEventListener('message', this.onMessage); for (const entry of this.loaded.values()) this.dispose(entry); this.loaded.clear(); }
 }

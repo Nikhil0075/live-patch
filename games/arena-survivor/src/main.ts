@@ -286,5 +286,5 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     }
   }
   const phaser = new Phaser.Game({ type: Phaser.AUTO, width, height, parent, backgroundColor: '#102337', scene: Arena, scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH } });
-  return { apply, removeMutation, snapshot, enableSound: () => audio.enable(), configure: value => { settings = value as StudioSettings; audio.configure(settings); }, destroy: () => { audio.destroy(); phaser.destroy(true); } };
+  return { apply, removeMutation, snapshot, enableSound: () => audio.enable(), configure: value => { settings = value as StudioSettings; audio.configure(settings); }, pause: () => { scene?.scene.pause(); audio.pause(); }, resume: () => { scene?.scene.resume(); audio.resume(); }, destroy: () => { audio.destroy(); phaser.destroy(true); } };
 }

@@ -36,3 +36,4 @@ The engine adds `origin` to actions and skips a module's own spawned events when
 ## API documentation checklist
 
 Document metadata fields, all hook names and event payloads, the snapshot schema, every action and its limits, timing units, ownership and reload semantics, error behavior, and at least one complete module. Explain how chat events enter when the game supports them. The [Arena Survivor API](../games/arena-survivor/docs/mutation-api.md) is the reference example.
+- `controls` (optional): read-only key map shown in the `/play` pause menu. Each entry has an `action` label and a nonempty `keys` array. The engine handles Menu (Esc or P), Full screen (F) and Mute (M); include those in the map so players can discover them.

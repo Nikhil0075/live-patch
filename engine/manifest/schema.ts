@@ -19,6 +19,7 @@ export const manifestSchema = z.object({
   author: z.string().max(80).optional(),
   audio: z.array(z.string().regex(/^[a-zA-Z][\w-]*$/)).max(32).optional(),
   effects: z.array(z.string().regex(/^[a-zA-Z][\w-]*$/)).max(32).optional(),
+  controls: z.array(z.object({ action: z.string().min(1).max(60), keys: z.array(z.string().min(1).max(30)).min(1).max(8) })).max(24).optional(),
   entry: z.string().regex(/^src\/[\w./-]+\.ts$/),
   mutationDir: z.string().regex(/^[\w./-]+\/$/),
   apiDocs: z.string().regex(/^[\w./-]+\.md$/),

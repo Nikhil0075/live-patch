@@ -56,7 +56,7 @@ function showDetails(game?: GameCard) {
   detail.append(badges);
   const actions = document.createElement('div'); actions.className = 'library-card-actions';
   const play = document.createElement('button'); play.textContent = 'Play'; play.disabled = !game.valid;
-  play.addEventListener('click', () => { if (game.directory === library.active) location.href = '/'; else void request('active', { directory: game.directory }); });
+  play.addEventListener('click', () => { if (game.directory === library.active) window.open('/play', 'live-patch-play'); else void request('active', { directory: game.directory }); });
   const active = document.createElement('button'); active.textContent = game.directory === library.active ? 'Active game' : 'Make active'; active.className = 'secondary'; active.disabled = !game.valid || game.directory === library.active;
   active.addEventListener('click', () => { void request('active', { directory: game.directory }); });
   const docs = document.createElement('button'); docs.textContent = 'Mutation API'; docs.className = 'secondary'; docs.disabled = !game.valid;

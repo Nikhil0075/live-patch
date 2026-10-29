@@ -15,10 +15,12 @@ fetch('/api/builds').then(response => response.json()).then((data: { builds: { i
     notes.addEventListener('click', async () => { root.querySelector('#notes-content')!.textContent = await fetch(`/api/builds/notes?id=${encodeURIComponent(build.id)}`).then(response => response.text()); root.querySelector<HTMLDialogElement>('#notes-dialog')!.showModal(); });
     const play = document.createElement('button'); play.textContent = 'Play (play-only)';
     play.addEventListener('click', async () => {
+      const playWindow = window.open('about:blank', 'live-patch-play');
       const response = await fetch('/api/builds/play', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: build.id }) });
       const result = await response.json() as { message?: string; error?: string };
       root.querySelector('#build-notice')!.textContent = result.message ?? result.error ?? 'Could not open build';
-      if (response.ok) setTimeout(() => { location.href = '/'; }, 1200);
+      if (response.ok) { if (playWindow) playWindow.location.href = '/play'; else root.querySelector('#build-notice')!.textContent = 'Build ready. Use Play in the top bar to open it.'; }
+      else playWindow?.close();
     });
     const compare = document.createElement('a'); compare.className = 'button secondary'; compare.textContent = 'Compare with original'; compare.href = `/compare.html?id=${encodeURIComponent(build.id)}`; compare.target = '_blank'; compare.rel = 'noopener';
     actions.append(notes, play, compare); card.append(actions); list.append(card);

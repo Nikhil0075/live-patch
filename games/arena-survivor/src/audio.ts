@@ -14,6 +14,7 @@ export class ArenaAudio {
   private music?: GainNode;
   private loop?: number;
   private beat = 0;
+  private paused = false;
   private times = new Map<string, number[]>();
   constructor(private settings: StudioSettings) {}
   enable() {
@@ -24,7 +25,7 @@ export class ArenaAudio {
       this.music.gain.value = 0;
       this.loop = window.setInterval(() => this.musicBeat(), 240);
     }
-    void this.context.resume(); this.configure(this.settings);
+    if (!this.paused) void this.context.resume(); this.configure(this.settings);
   }
   configure(settings: StudioSettings) {
     this.settings = settings;
@@ -34,7 +35,7 @@ export class ArenaAudio {
     this.music.gain.setTargetAtTime(settings.muted ? 0 : Math.min(.3, settings.musicVolume), now, .3);
   }
   play(name: SoundEvent) {
-    if (!this.context || !this.master || this.settings.muted || !Object.hasOwn(tones, name)) return;
+    if (!this.context || !this.master || this.settings.muted || this.paused || !Object.hasOwn(tones, name)) return;
     const nowMs = performance.now(); const recent = (this.times.get(name) ?? []).filter(time => nowMs - time < 1000);
     if (recent.length >= 5) return; recent.push(nowMs); this.times.set(name, recent);
     const [start, end, duration] = tones[name];
@@ -46,6 +47,8 @@ export class ArenaAudio {
     }
   }
   destroy() { if (this.loop) clearInterval(this.loop); void this.context?.close(); }
+  pause() { this.paused = true; void this.context?.suspend(); }
+  resume() { this.paused = false; void this.context?.resume(); }
   private tone(start: number, end: number, duration: number, volume: number, destination: AudioNode) {
     if (!this.context) return;
     const now = this.context.currentTime;
@@ -55,7 +58,7 @@ export class ArenaAudio {
     oscillator.connect(gain); gain.connect(destination); oscillator.start(now); oscillator.stop(now + duration + .01);
   }
   private musicBeat() {
-    if (!this.context || !this.music || this.settings.muted) return;
+    if (!this.context || !this.music || this.settings.muted || this.paused) return;
     const notes = [220, 0, 330, 0, 262, 0, 392, 0, 220, 0, 294, 0, 262, 0, 330, 0];
     const note = notes[this.beat++ % notes.length];
     if (note) this.tone(note, note, .2, .09, this.music);
