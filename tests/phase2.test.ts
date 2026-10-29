@@ -85,6 +85,24 @@ describe('Phase 2 idea pipeline', () => {
     expect(onRejectedReward).toHaveBeenCalledWith(event, expect.stringContaining('Ideas must be'));
   }));
 
+  it('immediately accepts moderator rollback with no viewer ballot', async () => tempStore(async store => {
+    const onControl = vi.fn();
+    const pipeline = new ChatPipeline(store, { rewardId: 'reward-1', reply: async () => {}, onControl, onRollbackVote: () => ({ accepted: false, votes: 0, threshold: 3, ready: false }) });
+    const mod = { ...viewer, id: 'mod', moderator: true };
+    expect((await pipeline.ingest({ ...inbound('rollback-zero-votes', '!rollback'), viewer: mod })).accepted).toBe(true);
+    expect(onControl).toHaveBeenCalledWith('rollback');
+    expect(store.rollbackRequests()).toHaveLength(1);
+  }));
+
+  it('fulfills an accepted reward once after storing its idea', async () => tempStore(async store => {
+    const onAcceptedReward = vi.fn(async () => { expect(store.list()).toHaveLength(1); });
+    const pipeline = new ChatPipeline(store, { rewardId: 'reward-1', reply: async () => {}, onAcceptedReward });
+    const reward: Extract<InboundEvent, { kind: 'reward' }> = { kind: 'reward', origin: 'twitch', id: 'accepted-1', redemptionId: 'redemption-1', viewer, rewardId: 'reward-1', text: 'Coins glow' };
+    expect((await pipeline.ingest(reward)).accepted).toBe(true);
+    await pipeline.ingest(reward);
+    expect(onAcceptedReward).toHaveBeenCalledTimes(1);
+  }));
+
   it('restricts moderation, tracks one vote per viewer, and records rollback requests', async () => tempStore(async (store, file) => {
     const pipeline = new ChatPipeline(store, { rewardId: 'reward-1', reply: async () => {} });
     await pipeline.ingest(inbound('idea', '!idea Bigger enemies'));

@@ -7,7 +7,7 @@ root.innerHTML = `<main class="go-live-dashboard">
   <div class="live-columns">
     <section class="live-card pitch-column"><div class="live-card-heading"><h3>Pitch queue</h3><span id="pitch-count"></span></div><p class="muted">Oldest pending pitches enter the ballot first.</p><div id="pitch-queue"></div><div id="triage-preview"></div><div class="actions"><button data-action="triage" title="Shortcut T">Preview AI triage · T</button></div></section>
     <section class="live-card centre-column"><div class="live-card-heading"><h3>Game preview · separate run</h3><button id="preview-toggle" class="secondary">Start preview</button></div><div class="game-preview"><p id="preview-placeholder">Preview is off. Start it to inspect the current patches in a separate game run.</p><iframe title="Separate game preview" tabindex="-1" hidden></iframe></div><div class="live-card-heading"><h3>Current ballot</h3><span id="ballot-total"></span></div><div id="candidates"></div><div class="actions"><button data-action="pause" title="Shortcut P">Pause · P</button><button data-action="resume" title="Shortcut R">Resume · R</button><button data-action="advance" title="Shortcut N">Next stage · N</button><button data-action="force-next" class="danger">Cancel build and next round</button></div><p id="timing-hint" class="hint"></p></section>
-    <section class="live-card run-column"><div class="live-card-heading"><h3>Codex at work</h3></div><div id="runs"></div><div class="live-card-heading"><h3>Active patches</h3><span id="patch-count"></span></div><div id="patches"></div><p id="rollback-vote" class="hint">Chat can vote with !rollbackvote after a patch ships.</p><div class="actions"><button data-action="rollback" class="danger">Roll back latest</button><button data-action="save">Save build and patch notes</button></div><div class="live-card-heading"><h3>Points prediction</h3></div><div id="prediction"></div><div class="live-card-heading"><h3>Reward refunds</h3></div><div id="refunds"></div><div class="live-card-heading"><h3>Saved builds</h3></div><div id="builds"></div></section>
+    <section class="live-card run-column"><div class="live-card-heading"><h3>Codex at work</h3></div><div id="runs"></div><div class="live-card-heading"><h3>Active patches</h3><span id="patch-count"></span></div><div id="patches"></div><p id="rollback-vote" class="hint">Chat can vote with !rollbackvote after a patch ships. A moderator can use !rollback immediately.</p><div class="actions"><button data-action="rollback" class="danger">Roll back latest</button><button data-action="save">Save build and patch notes</button></div><div class="live-card-heading"><h3>Points prediction</h3></div><div id="prediction"></div><div class="live-card-heading"><h3>Reward redemptions</h3></div><div id="refunds"></div><div class="live-card-heading"><h3>Saved builds</h3></div><div id="builds"></div></section>
   </div><section class="live-card recent-chat"><h3>Recent chat</h3><div id="chat-strip"></div></section><p id="notice" role="status"></p>
 </main>`;
 const preview = root.querySelector<HTMLIFrameElement>('.game-preview iframe')!;
@@ -61,13 +61,13 @@ async function refresh() {
       fetch('/api/twitch/status').then(response => response.json()) as Promise<{ broadcaster: { login: string } | null; bot: { login: string } | null; eventsub: string; reward?: { state: string; reason: string }; refundIssue?: string }>,
       fetch('/api/chat/recent').then(response => response.json()) as Promise<{ messages: { at: string; author: string; text: string }[] }>,
       fetch('/api/builds').then(response => response.json()) as Promise<{ builds: { id: string; patches: unknown[] }[] }>,
-      fetch('/api/twitch/refunds').then(response => response.json()) as Promise<{ refunds: { redemptionId: string; status: string; message: string }[] }>,
+      fetch('/api/twitch/refunds').then(response => response.json()) as Promise<{ refunds: { redemptionId: string; action?: 'refund' | 'fulfill'; status: string; message: string }[] }>,
       fetch('/api/predictions').then(response => response.json()) as Promise<{ active?: { ideaId: string; status: string; error?: string } }>
     ]);
     const { round, runs, mutations, ideas, rollbackVote, events, settings } = data;
     root.querySelector('#rollback-vote')!.textContent = rollbackVote
-      ? `Chat rollback vote ${rollbackVote.votes}/${rollbackVote.threshold}${rollbackVote.ready ? ' · threshold met; moderator can confirm with !rollback' : ''} · expires ${new Date(rollbackVote.expiresAt).toLocaleTimeString()}`
-      : 'Chat can vote with !rollbackvote after a patch ships.';
+      ? `Chat rollback vote ${rollbackVote.votes}/${rollbackVote.threshold}${rollbackVote.ready ? ' · threshold met; moderator can confirm with !rollback' : ''} · moderator !rollback is always immediate · expires ${new Date(rollbackVote.expiresAt).toLocaleTimeString()}`
+      : 'Chat can vote with !rollbackvote after a patch ships. A moderator can use !rollback immediately.';
     root.querySelector('#round')!.textContent = `ROUND ${round.number} · ${round.phase.toUpperCase()} · ${roundClock(round.remainingMs)}`;
     root.querySelector('#twitch-pill')!.textContent = twitch.broadcaster && twitch.bot ? `● Twitch ${twitch.eventsub}${twitch.reward && !['enabled', 'unconfigured'].includes(twitch.reward.state) ? ` · ${twitch.reward.reason}` : ''}${twitch.refundIssue ? ` · ${twitch.refundIssue}` : ''}` : '○ Practice mode';
     root.querySelector('#codex-pill')!.textContent = runs.at(-1)?.status === 'building' ? '◉ Codex building' : '○ Codex standing by';
@@ -138,10 +138,10 @@ async function refresh() {
       const cancel = document.createElement('button'); cancel.className = 'secondary'; cancel.dataset.action = 'bet-cancel'; cancel.textContent = 'Cancel and refund points'; predictionBox.append(cancel);
     } else appendText(predictionBox, 'p', 'Optional: open a two-minute Twitch prediction before approving a patch.', 'empty-state');
     const refundBox = root.querySelector<HTMLElement>('#refunds')!; refundBox.replaceChildren();
-    if (!refundData.refunds.length) appendText(refundBox, 'p', 'No rejected reward redemptions.', 'empty-state');
+    if (!refundData.refunds.length) appendText(refundBox, 'p', 'No reward redemptions yet.', 'empty-state');
     for (const refund of refundData.refunds.slice(-3).reverse()) {
       const item = document.createElement('p'); item.textContent = `${refund.status}: ${refund.message}`;
-      if (['failed', 'pending', 'not_unfulfilled'].includes(refund.status)) { const retry = document.createElement('button'); retry.className = 'secondary'; retry.textContent = 'Retry refund check'; retry.dataset.refund = refund.redemptionId; item.append(retry); }
+      if (['failed', 'pending', 'not_unfulfilled'].includes(refund.status)) { const retry = document.createElement('button'); retry.className = 'secondary'; retry.textContent = refund.action === 'fulfill' ? 'Retry fulfillment' : 'Retry refund check'; retry.dataset.refund = refund.redemptionId; item.append(retry); }
       refundBox.append(item);
     }
     const builds = root.querySelector<HTMLElement>('#builds')!; builds.replaceChildren();

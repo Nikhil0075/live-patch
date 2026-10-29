@@ -204,6 +204,7 @@ export class LiveRunner {
       if (within(mutationDir, candidate) && fs.existsSync(candidate) && fs.lstatSync(candidate).isFile()) fs.rmSync(candidate);
       record.status = 'failed';
       record.error = 'Server restarted during build';
+      record.failureKind = 'infrastructure';
       record.finishedAt = new Date().toISOString();
       this.runs.upsert(record);
       if (this.ideas.list().find(idea => idea.id === record.ideaId)?.status === 'building') this.ideas.setStatus(record.ideaId, 'failed');
@@ -228,7 +229,7 @@ export class LiveRunner {
     if (epoch !== this.rollbackEpoch) {
       if (this.ideas.list().find(item => item.id === idea.id)?.status === 'approved') {
         const now = new Date().toISOString();
-        const record: RunRecord = { id: randomUUID(), ideaId: idea.id, gameDirectory: this.gameDirectory, status: 'failed', startedAt: now, finishedAt: now, error: this.cancellationReason };
+        const record: RunRecord = { id: randomUUID(), ideaId: idea.id, gameDirectory: this.gameDirectory, status: 'failed', startedAt: now, finishedAt: now, error: this.cancellationReason, failureKind: 'infrastructure' };
         this.runs.upsert(record);
         this.ideas.setStatus(idea.id, 'failed');
         this.emit(record, 'failed', record.error);
@@ -243,6 +244,7 @@ export class LiveRunner {
     this.emit(record, 'started');
     let worktree: Awaited<ReturnType<LiveRunner['prepare']>> | undefined;
     let publishedFile: string | undefined;
+    let failureKind: RunRecord['failureKind'] = 'infrastructure';
     const abort = new AbortController();
     this.activeAbort = abort;
     const timeout = setTimeout(() => abort.abort('Run timed out after three minutes'), RUN_TIMEOUT_MS);
@@ -265,9 +267,11 @@ export class LiveRunner {
       let source = '';
       let repairReason = '';
       for (let attempt = 0; attempt < 2; attempt++) {
+        failureKind = 'infrastructure';
         await agent.run(attempt === 0 ? prompt : `The host rejected the previous output: ${repairReason}. Repair the worktree. Keep only the single required file ${path.posix.join(worktree.gameRelative.replaceAll('\\', '/'), this.manifest.mutationDir, filename)} relative to the worktree root; do not touch anything else.`);
         if (agent.threadId() && !record.threadId) { record.threadId = agent.threadId(); this.runs.upsert(record); }
         try {
+          failureKind = 'patch';
           const candidate = await gateCandidateAsync(worktree.directory, worktree.gameRelative, this.manifest, filename, worktree.pointer);
           source = candidate.source;
           this.emit(record, 'testing');
@@ -276,6 +280,7 @@ export class LiveRunner {
           if (after.source !== source) throw Error('Mutation changed during smoke test');
           if (abort.signal.aborted || this.closed || epoch !== this.rollbackEpoch) throw Error('Run stopped before publish');
           this.emit(record, 'passed');
+          failureKind = 'infrastructure';
           await gitAsync(worktree.directory, 'add', '--', path.relative(worktree.directory, candidate.file));
           await gitAsync(worktree.directory, 'commit', '-m', `live patch: ${idea.id}`);
           record.commit = await gitAsync(worktree.directory, 'rev-parse', 'HEAD');
@@ -302,6 +307,7 @@ export class LiveRunner {
       if (publishedFile && fs.existsSync(publishedFile)) fs.rmSync(publishedFile);
       record.status = 'failed';
       record.error = abort.signal.aborted ? String(abort.signal.reason) : String(error).slice(0, 1000);
+      record.failureKind = abort.signal.aborted ? 'infrastructure' : failureKind;
       record.finishedAt = new Date().toISOString();
       this.runs.upsert(record);
       this.ideas.setStatus(idea.id, 'failed');

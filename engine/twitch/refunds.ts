@@ -1,12 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { RefundResult } from './rewards';
+import type { RefundResult, FulfillmentResult } from './rewards';
 
 export interface RefundRecord {
   redemptionId: string;
   rewardId: string;
   reason: string;
-  status: RefundResult['status'] | 'pending';
+  action?: 'refund' | 'fulfill';
+  status: RefundResult['status'] | FulfillmentResult['status'] | 'pending';
   message: string;
   updatedAt: string;
 }

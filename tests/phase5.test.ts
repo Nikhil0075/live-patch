@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createManagedPitchReward, describeReward, fetchPitchReward, refundRedemption, type TwitchReward } from '../engine/twitch/rewards';
+import { createManagedPitchReward, describeReward, fetchPitchReward, refundRedemption, fulfillRedemption, type TwitchReward } from '../engine/twitch/rewards';
 import type { TwitchConfig } from '../engine/twitch/auth';
 import { RefundStore } from '../engine/twitch/refunds';
 import fs from 'node:fs';
@@ -47,6 +47,20 @@ describe('Phase 5 reward availability', () => {
     expect(await createManagedPitchReward(auth as any)).toBe('existing');
     expect(await createManagedPitchReward(auth as any)).toBe('created');
     expect(auth.helix.mock.calls[2][2]).toMatchObject({ cost: 1, is_user_input_required: true, should_redemptions_skip_request_queue: false });
+  });
+  it('fulfills an accepted pitch only after the app-owned reward and Twitch both confirm', async () => {
+    const auth = {
+      identity: () => ({ id: 'owner', login: 'streamer' }), hasScope: () => true,
+      helix: vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [{ id: 'pitch' }] }))),
+      helixRequest: vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [{ id: 'redemption', status: 'FULFILLED' }] })))
+    };
+    expect((await fulfillRedemption(auth as any, 'pitch', 'redemption')).status).toBe('fulfilled');
+    expect(auth.helixRequest.mock.calls[0][3]).toEqual({ status: 'FULFILLED' });
+    auth.helix.mockResolvedValueOnce(new Response(JSON.stringify({ data: [] })));
+    expect((await fulfillRedemption(auth as any, 'manual', 'another')).status).toBe('not_manageable');
+    expect(auth.helixRequest).toHaveBeenCalledTimes(1);
+    auth.helixRequest.mockResolvedValueOnce(new Response('', { status: 503 }));
+    expect((await fulfillRedemption(auth as any, 'pitch', 'retry')).status).toBe('failed');
   });
   it('keeps failed refund attempts visible across a server restart', () => {
     const directory = fs.mkdtempSync(path.join(process.cwd(), '.test-refunds-'));

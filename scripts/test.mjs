@@ -61,3 +61,4 @@ try {
   await server?.close();
   fs.rmSync(temp, { recursive: true, force: true });
 }
+if (!smoke && !browserOnly && process.exitCode === 0) process.exitCode = await run('scripts/test-https.mjs', []);

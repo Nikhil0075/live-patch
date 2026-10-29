@@ -1,87 +1,73 @@
 # Live Patch
 
-Live Patch is a browser game platform that gains new rules from small JavaScript mutation modules while play continues. The streamer studio has a game library, guided setup, practice chat, stream controls and a silent OBS overlay. Phase 2 adds Twitch, Phase 3 adds the gated Codex runner, Phase 4 adds timed rounds, and Phase 4.5 adds the streamer UI and game effects.
+Live Patch lets a Twitch audience redesign a browser game while the streamer plays. Viewers pitch mechanics, vote, and watch a moderator approve one. A confined Codex runner writes a small mutation, tests it with the active patches, and ships it into the running game. The studio includes a game library, practice mode, stream controls, OBS overlay, patch credits, saved builds and an original-versus-evolved comparison.
 
-## Run
+**Source:** [github.com/Nikhil0075/live-patch](https://github.com/Nikhil0075/live-patch)
 
-Requires Node.js 20 or newer.
+**Demo video:** Pending operator recording and upload. The [three-minute demo outline](docs/demo-script.md) lists the scenes to capture.
+
+## Quick start
+
+Use Windows 10 or 11, Node.js 20 or newer, and Git. The game and Practice work without Twitch credentials or a Codex account. Live AI patch building additionally needs a local Codex/ChatGPT sign-in and the Windows elevated Codex sandbox. Twitch chat, rewards and predictions require a Twitch developer app and eligible channel features.
 
 ```sh
+git clone https://github.com/Nikhil0075/live-patch.git
+cd live-patch
 npm run setup
 npm run dev
 ```
 
-Open https://localhost:5173. The development server uses a self-signed local certificate, so your browser may ask you to proceed past a certificate warning once. A first visit opens the six-step **Setup** wizard; use **Skip** to reach Practice without Twitch. The **Home** page plays the active game. Use WASD or arrow keys to move and Space to attack; click **Enable sound** after opening the play view. The Library, Go Live, Builds, Setup, Settings and Practice pages share the navigation rail. The overlay remains at `/overlay.html` with no app chrome. The old `/control.html` and `/simulator.html` URLs redirect to their sections.
+Open **https://localhost:5173**. The local HTTPS certificate is self-signed; accept the browser warning once. The first visit opens the six-step Setup wizard. Skip optional Twitch and sandbox steps to try Practice. `npm run setup` installs missing packages and Chromium, then checks the local prerequisites. It does not configure Windows security or connect Twitch accounts for you.
 
-Open https://localhost:5173/simulator.html to try chat commands or reward redemptions without Twitch. The simulator sends typed events to the same command pipeline as EventSub. Ideas and rollback requests persist in `.live-patch/ideas.json`; runner results in `.live-patch/runs.json`; OAuth tokens in `.live-patch/tokens.json`. These files are ignored by Git and denied by the development server. Viewer text is rendered with `textContent` in the simulator and Phaser text in the game.
+### What to see in two minutes
 
-Setup checks local requirements, Codex sign-in, its elevated Windows sandbox, the Playwright browser, project location, Twitch accounts and OBS overlay. The sandbox action starts the official Codex setup through Windows administrator approval, then runs the isolation probe. The Windows Security check is read-only and reports protected folders and recent Controlled Folder Access blocks when available. It never changes Defender settings. For a block, open Windows Security → Protection history and inspect the exact executable, or move the project out of the protected folder. Practice mode and its sample-pitch generator work without Twitch. Settings persist in ignored `.live-patch/settings.json`.
+1. Open **Practice** and click **Generate sample pitch**, then **Send**, three times. Each sample uses a different viewer, so the cooldown does not interfere.
+2. Open **Go Live** and click **Next stage** to reach voting. Use the **Vote 1/2/3 as new viewer** shortcuts in Practice. The ballot and percentages also appear at `/overlay.html`.
+3. Open **Play**, move with WASD or arrow keys and attack with Space. Click **Enable sound** after opening the play view. Go Live shows the patch list, Codex timeline, recent chat and stream controls.
+4. To build a live patch, complete **Setup → Codex sign-in** and **Sandbox**, approve an idea, and watch the file and smoke-test gates. This step requires the Windows sandbox; Practice and the game do not.
 
-```sh
-npm test
-npm run smoke -- --mutation 01-quick-feet.js
-npm run build
-npm run dev -- --game games/arena-survivor
-npm run new-game -- "My Game"
-```
+The game-agnostic engine reads the active game's `live-patch.json`; `games/arena-survivor` is the included example. [Architecture](docs/architecture.md) and [adding a game](docs/adding-a-game.md) explain the boundary and manifest. Saved builds are playable snapshots; **Compare with original** opens two isolated views without affecting the live run.
 
-`npm test` runs manifest, pipeline, runner and boundary checks plus five second browser smoke checks, fault isolation, live reload and simulator integration. `npm run smoke` focuses on one mutation. For a focused browser regression, use `node scripts/test.mjs --browser-only --browser-grep "one crowded Space attack"`. Both commands copy the game to a temporary folder and use free ports, so they work while `npm run dev` is still running and never put test mutations into the live game. Set `LIVE_PATCH_GAME=path/to/game` to test another game. The `--game` path starts another game folder with a valid manifest; `package.json` → `livePatch.defaultGame` selects the default folder. `npm run build` checks TypeScript and bundles the browser client.
+## Twitch and stream setup
 
-Use **Library → Add your game** or `npm run new-game -- <name>` to make a minimal manifest-driven game with an entry, mutation API, example and smoke test. The Library shows an imported game's smoke command and asks you to confirm before running its code. **Make active** stores the current selection in `active-game.json` under `LIVE_PATCH_DATA_DIR` (default `.live-patch/`) and reloads the runtime so the runner and smoke command use that manifest. A command-line `LIVE_PATCH_GAME` override still takes precedence for isolated testing. Saved Builds open temporarily as play-only snapshots; use **Return to original game** on Home or Go Live to resume coding.
+In **Setup**, enter the Twitch app client ID and secret locally, then connect the broadcaster and a separate bot account. Register the redirect URL shown by Setup exactly in the Twitch developer console. The app requests only the scopes needed for chat, reward handling and optional Channel Points Predictions; see [Twitch permissions](docs/twitch-permissions.md). Secrets and OAuth tokens stay in ignored local files and are denied by the dev server.
 
-## Phase 5 stream controls
+For reward pitches, select the app-owned **Live Patch Pitch** reward in Setup. It costs one point, requires viewer text, and can refund rejected redemptions when Twitch confirms cancellation. A reward created in the Twitch dashboard cannot be refunded by this app. The broadcaster cannot redeem their own reward, so test from a second account during a live stream. Accepted app-owned redemptions are marked fulfilled after the idea is stored; failed fulfillment or refund attempts appear in Go Live for retry.
 
-`npm run setup` works in a fresh clone: it installs missing packages and Chromium, checks Git and Codex sign-in, then points you to the six-step wizard. It leaves the elevated Windows sandbox and Twitch account connection to their explicit Setup actions. Practice now cycles through three sample ideas under distinct viewer names and offers one-click votes from new viewers.
+Go Live can open an optional two-minute Channel Points Prediction for an approval-stage idea. A shipped patch resolves **Ships**; a patch rejected by its file gates or smoke test resolves **Fails**. Sandbox problems, Codex quota or timeout, operator cancellation and restart cancel the prediction so Twitch returns points. The broadcaster must reconnect after granting `channel:manage:redemptions` and `channel:manage:predictions`.
 
-Setup and Go Live query Twitch for the pitch reward's enabled, paused and stock state. A reward redemption must be tested from a second account; the broadcaster cannot redeem their own reward. To refund rejected redemptions, reconnect the broadcaster with `channel:manage:redemptions`, then choose **Create refundable pitch reward** in Setup. The app-owned reward is one point and requires viewer text. Rejected requests are canceled through Twitch only when the reward belongs to this app and the redemption is still unfulfilled. Go Live shows any failed or unsupported refund and offers retry where appropriate. An existing reward created in Twitch's dashboard cannot be refunded by this app.
+For OBS, add `https://localhost:5173/overlay.html` as a Browser Source over a capture of the Play view. Verify certificate trust and that Play audio is heard once on the streaming PC. The overlay itself is silent.
 
-Go Live can open an optional two-minute Twitch Channel Points Prediction for one idea during the approval stage. Choose **Open points prediction** before **Approve and build**. The outcomes are **Ships** and **Fails**. A shipped build resolves Ships; a failed build resolves Fails; operator cancellation, rejection and a restart during building cancel the prediction so Twitch returns the points. Go Live shows settlement errors and allows the operator to cancel. Only one prediction can be active; Twitch offers predictions to eligible channels. This feature requires a broadcaster reconnect for `channel:manage:predictions`. Do not open a prediction unless the chosen idea is likely to be approved promptly.
+| Chat command | Who | Effect |
+|---|---|---|
+| `!idea <mechanic>` | Viewer | Submit one pitch, subject to a three-minute cooldown. |
+| `!vote 1`, `!vote 2`, `!vote 3` | Viewer | Vote once for a displayed ballot slot. |
+| `!approve <number or ID>` | Moderator/broadcaster | Approve a candidate for building. |
+| `!reject <number or ID>` | Moderator/broadcaster | Reject a candidate. |
+| `!rollbackvote` | Viewer | Vote once in a two-minute advisory ballot for the latest patch. Three votes prompt moderator attention. |
+| `!rollback` | Moderator/broadcaster | Immediately remove the latest shipped patch; no viewer vote is required. |
 
-After a patch ships, viewers can send `!rollbackvote`. Three distinct votes within two minutes expose a moderator confirmation in Go Live; a moderator or broadcaster sends `!rollback` to confirm. The local **Roll back latest** button remains an immediate operator control. The game now restores edits to other entities and removes score credited to the rolled-back patch during the current run. Saved Builds have **Compare with original**, which opens two isolated play views from one saved snapshot without changing the live game.
+The local **Roll back latest** button is also immediate. Rollback removes patch-owned effects and reverses recorded edits and score in the current run. It does not resurrect hostile enemies removed by that patch, because restoring a crowd at once could kill the player.
 
-For a WebGL crowd check on the streaming PC, in PowerShell run `$env:LIVE_PATCH_WEBGL=1; node scripts/test.mjs --browser-only --browser-grep "WebGL crowd"`. Keep the headed browser visible and check that all three patches stay active after the Space attack. To run the same WebGL code path without a visible window, also set `$env:LIVE_PATCH_HEADLESS=1`; the software WebGL check passed three times here. The player uses generated shaded textures without costly GPU postprocessing. In OBS, add the local overlay as a Browser Source and verify its HTTPS certificate is trusted, the play view loads, and audio plays once from the play view. OBS certificate trust, a timed first-run setup, Twitch reconnect and a live prediction/refund remain operator checks until observed.
+## Commands
 
-## Build and roll back a live patch
+| Command | Purpose |
+|---|---|
+| `npm run setup` | Install/check first-run requirements. |
+| `npm run dev` | Start the HTTPS studio, game and overlays. |
+| `npm test` | Unit, browser and real-HTTPS/HTTP2 regression tests in isolated data folders on free ports. |
+| `npm run test:https` | Focused HTTPS/HTTP2 Practice and Go Live regression. |
+| `npm run smoke -- --mutation <file>` | Five-second smoke test of a mutation with active patches. |
+| `npm run build` | TypeScript check and browser bundle. |
+| `npm run new-game -- "My Game"` | Create a manifest-driven game starter. |
+| `npm run dev -- --game <folder>` | Start a different game manifest. |
 
-Sign in to the local Codex CLI with ChatGPT before running the server; the runner uses the [Codex TypeScript SDK](https://learn.chatgpt.com/docs/codex-sdk) and that local sign-in. In the simulator, submit `!idea <text>`, switch to Moderator or Broadcaster, then send `!approve 1`. The idea moves to `building`; the Codex runs list and `GET /api/runs` show its thread ID, result and time. A passing mutation appears in the live game without a page reload. Send `!rollback` as a moderator or broadcaster to remove the most recently shipped patch. The Go Live panel and OBS overlay show progress from the `live-patch:runner` event.
+`npm test` and `npm run smoke` copy the selected game and use isolated data, so they can run while the live studio holds port 5173. `LIVE_PATCH_GAME` selects another game for tests; `LIVE_PATCH_DATA_DIR` selects a local data folder. **Library → Add your game** is the UI path for creating or importing a game. Imported code is run only after confirmation.
 
-Start with **Setup** in the studio. Its six steps check requirements, Codex sign-in, the Windows sandbox, Twitch, the active game and the OBS overlay. Use **Practice** to try a round without Twitch. On Windows, choose **Run setup** in the Sandbox step to request administrator approval, then **Run sandbox self-test**. Setup captures the launching Windows account and its `CODEX_HOME` before elevation, then passes both explicitly to `codex sandbox setup --elevated --user "<account>" --codex-home "<directory>"`. This keeps the target account correct even if a standard user approves UAC with an administrator password. On a managed machine, ask IT to provision it for that account and Codex home. If setup fails, the Sandbox step shows a reason, suggested fix and copyable diagnostics. For **Codex sandbox cannot write in its worktree**, check that elevated setup completed and that the account can write to the temporary worktree directory. For **Codex sandbox can write outside its worktree**, stop building until the sandbox configuration or machine policy is corrected. The runner keeps this pre-build check enabled and does not fall back to a weaker sandbox.
+### Live Codex sandbox
 
-`npm test` verifies MCP disablement with a simulated configuration, so its result does not depend on machine-specific MCP startup time. To check the installed Codex CLI and your actual MCP configuration separately, run `LIVE_PATCH_REAL_MCP=1 npx vitest run tests/phase3.test.ts`.
+Use **Setup → Sandbox → Run setup** to request the Windows administrator prompt, then **Run sandbox self-test**. Setup passes the launching Windows user and Codex home explicitly, including when a different administrator approves the prompt. The runner refuses to build if the sandbox cannot write in its worktree or can write outside it. On a managed PC, ask IT to provision the sandbox for the launching account. Setup shows a specific error and diagnostics when the pre-build probe fails.
 
-Each run has a dedicated Git worktree and branch. Builder `AGENTS.md` files and project `.codex` settings are removed from that worktree before Codex starts. The SDK pins `workspace-write`, the native Windows elevated sandbox, no extra writable roots, no tool network access, no shell tool, no apps or plugins, disabled web search and no approvals. The runner enumerates configured MCP servers, disables all of them for the Codex thread, and verifies the effective list before starting. A startup probe must confirm that the sandbox can write inside its worktree and cannot write in the main repository. The runner passes a restricted environment without Twitch credentials. It accepts exactly one new file in the active manifest's mutation folder, applies engine and manifest source gates, runs the manifest smoke command with the candidate and all active patches, and publishes only after a pass. One repair turn is allowed; the whole run times out after three minutes. Failed runs' branches are removed; shipped branches remain for rollback. `runs.json` keeps branch and commit details locally, while `/api/runs` exposes only a redacted summary. Do not put secrets in a game manifest or mutation API document because Codex reads those as its coding brief.
+Each build uses its own Git worktree. Codex has no network, shell, web search, apps, plugins or MCP servers in that build. It may add one module inside the active game's mutation folder. Engine and manifest source gates, a file-size limit and a smoke test with all active patches must pass before publication. The live game never receives a half-tested file. The runner stops after one repair attempt or three minutes.
 
-`!rollback` interrupts an in-progress build and removes the latest shipped module without waiting for the build queue. Any approvals already queued before rollback are marked failed with a cancellation reason in the run list. If nothing has shipped, rollback leaves the active build and queue alone. A restart marks interrupted builds failed, removes any half-published candidate and cleans their worktrees. Rollback removes owned entities, drawings, messages and parameter writes, restores changed entities where they still exist, and subtracts score credited to the patch in the current run. It cannot undo unrelated natural game progression.
-
-## Run a stream round
-
-Open **Go Live** at `https://localhost:5173/?view=go-live` for the local operator controls. The old `/control.html` URL redirects there. A round starts with 60 seconds for `!idea` pitches, then fixes the three oldest pending candidates for a 45-second `!vote 1`, `!vote 2`, or `!vote 3` window. Every ballot starts at zero votes. Pitches that miss a ballot stay queued; losing candidates retire when the round ends. Voting closes before approval; a moderator or the broadcaster chooses a candidate with `!approve` or the control panel. The panel can pause, resume or advance the clock. If a build gets stuck, **Cancel build and next round** stops the runner and starts a fresh pitch round. The current phase and fixed vote slots survive a dev-server restart. Simple safety and exact-duplicate triage runs when an idea arrives; duplicate contributors are credited together. During the pitch window, **Preview AI triage** asks a no-tool Codex thread to propose refinements and merges with a 20-second deadline. The operator reviews the proposals and applies or discards them. If that optional call fails, the original concise pitches remain available. `LIVE_PATCH_REAL_TRIAGE=1 npx vitest run tests/phase4-real.test.ts` checks the signed-in AI path separately from `npm test`.
-
-For OBS, add `https://localhost:5173/overlay.html` as a 1920×1080 Browser Source above a capture of the **player's game window** at `/`. The overlay has a transparent center for the game, contributor-credited patch chips across the top, a Codex panel with idea, author, file and smoke-test progress on the right, and vote bars below. Capture audio from the play view only; the overlay is silent. In OBS, select **Control audio via OBS** for the play view Browser Source. Set up the local certificate in OBS before a real stream; browser-source certificate validation is a manual operator check. Viewer names and pitches are inserted as text, not HTML. The control panel's **Save build and patch notes** button writes a snapshot under `builds/<id>/`; from the repository root, run `npm run dev -- --game builds/<id>/game` to play it. These snapshots are play-only: the runner refuses new builds there with a clear error. Return to the original game folder to keep building. Snapshots are ignored by Git and omit hidden files, tests, local data and unshipped generated patches.
-
-## Connect a Twitch test channel
-
-1. In the [Twitch Developer Console](https://dev.twitch.tv/console/apps), register a **Confidential** application. Add the exact OAuth redirect URL `https://localhost:5173/api/twitch/auth/callback`. Keep the app's client secret private. The OAuth redirect registered with Twitch must exactly match the URL sent by this app; `localhost` and `127.0.0.1` are different hosts. After changing the registration, begin a new connection from Setup rather than retrying an old Twitch authorization page.
-2. In **Setup**, enter the client ID, client secret and exact redirect URI, then choose **Save and reconnect**. The secret field stays empty on reload and reports only whether a secret is set. Saving updates `.env` atomically and reloads Twitch without a manual server restart. **Remove Twitch credentials** clears them and disconnects both accounts. As a manual fallback, copy `.env.example` to `.env` and fill those variables; restart `npm run dev` after manual file edits. Never commit either file or `.live-patch/`.
-3. Start `npm run dev` and open the simulator page. Click **Connect broadcaster**, sign in with the channel owner and authorize `channel:manage:redemptions` and `channel:manage:predictions`. Then click **Connect bot**, choose a **different** account and authorize `user:read:chat` and `user:write:chat`. Twitch will show its authorization screen each time. The page shows the account names and EventSub state. The broadcaster connection is used for reward events; the bot connection reads chat and sends replies.
-4. After Twitch enables Channel Points for the channel, create a custom reward such as “Pitch a mechanic” and turn on **Require Viewer to Enter Text**. Open `https://localhost:5173/api/twitch/rewards` to find its ID and confirm `requiresInput: true`, save the reward ID in Setup. Twitch requires separate EventSub WebSocket sessions for the bot's chat subscription and broadcaster's reward subscription. Chat stays connected if the reward subscription fails, and the simulator reports the reward failure. For refunds, use the app-owned reward created in Setup. Dashboard-created rewards cannot be refunded by this app.
-5. From a second account, send `!idea <text>` in the channel, or redeem the configured custom reward. Check the simulator idea list or `GET /api/ideas`; a new idea should appear promptly. During the vote window, send `!vote 1` for the first fixed ballot slot. A moderator or the broadcaster can send `!approve 1`, `!reject 1`, or `!rollback`. Phase 3 builds approved ideas and executes rollback.
-
-Idea text is limited to 200 characters and each viewer can submit one idea every three minutes across chat and reward input. During the vote and approval windows, the three fixed ballot ideas are numbered 1–3. Denied mod commands do not trigger bot replies; other error replies are limited to one per viewer every 30 seconds. EventSub reconnects and resubscribes after a dropped connection. Twitch may redeliver a notification, so message IDs are deduplicated. Tokens are validated at startup and hourly, transient validation failures retry, and a refreshed access and refresh token pair is stored locally. Rejected EventSub subscriptions stop retrying until the app restarts with new configuration or an account is reauthorized; temporary failures continue retrying. The simulator can be disabled with `LIVE_PATCH_SIMULATOR_ENABLED=0`.
-
-The simulator shows a Twitch chat delivery warning if Twitch accepts a Send Chat Message API request but reports that the bot's message was dropped. EventSub can remain connected while bot replies fail, so check this warning during the real-channel test.
-
-Scopes are limited to `channel:manage:redemptions` and `channel:manage:predictions` for the broadcaster and `user:read:chat` plus `user:write:chat` for the bot. See Twitch's [EventSub subscription types](https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/), [Send Chat Message API](https://dev.twitch.tv/docs/api/reference/#send-chat-message), [OAuth code grant](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/), and [token validation guidance](https://dev.twitch.tv/docs/authentication/validate-tokens/). No Twitch credentials are needed for the simulator or automated tests.
-
-## Add a game or mutation
-
-Read [the game contract](docs/adding-a-game.md) and [the Arena Survivor mutation API](games/arena-survivor/docs/mutation-api.md). Each mutation exports metadata and optional hooks. The loader rejects files over 120 lines or 12,000 bytes and direct use of forbidden APIs. It runs accepted modules in dedicated Workers inside sandboxed, opaque-origin frames with a restrictive Content Security Policy. Load and hook deadlines stop loops without freezing the game. Each module can only request bounded game actions; failures disable that module and leave the game running.
-
-## Research used for Phase 1
-
-- [Phaser Scene lifecycle](https://docs.phaser.io/phaser/concepts/scenes) establishes the scene update loop used by the game.
-- [Vite plugin API](https://vite.dev/guide/api-plugin.html) supports watching mutation files from the development server.
-- [MDN iframe sandbox guidance](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/iframe) explains why the mutation frame uses `allow-scripts` without `allow-same-origin`.
-- [Playwright web server and browser setup](https://playwright.dev/docs/test-webserver) informs the browser smoke test setup.
-
-The browser frame is one layer of isolation for the local app. The Phase 3 runner adds a worktree, SDK sandbox settings, path and source gates, and a browser smoke test before publishing generated modules.
+For a visible WebGL crowd check on the streaming PC, run `$env:LIVE_PATCH_WEBGL=1; node scripts/test.mjs --browser-only --browser-grep "WebGL crowd"` in PowerShell. Keep the browser visible and confirm that all three example patches remain active after a crowded Space attack. [Phase reports](docs/phases/) record development history and checks. [Phase 5 report](docs/phases/phase-5-report.md) tracks the remaining operator-only Twitch, OBS and timed-run checks.

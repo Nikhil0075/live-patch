@@ -71,7 +71,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
   function removeEntity(id: number, origin?: string) {
     const entity = entities.find(item => item.id === id && item.alive);
     if (!entity) return;
-    if (origin && entity.owner !== origin) {
+    if (origin && entity.owner !== origin && entity.kind === 'coin') {
       const removed = removedEntities.get(origin) ?? []; removed.push({ ...entity, ...entityEdits.get(origin)?.get(entity.id), sprite: undefined }); if (removed.length > 96) removed.shift(); removedEntities.set(origin, removed);
     }
     entity.alive = false;

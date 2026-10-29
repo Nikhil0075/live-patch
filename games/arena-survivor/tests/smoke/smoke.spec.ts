@@ -163,6 +163,16 @@ test('a burst of matching events reaches one module in order', async ({ page }) 
   await expect(page.locator('#mutations')).toContainText('Batch · active');
 });
 
+test('a slow but bounded event batch stays active during a busy moment', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#status')).toContainText('LIVE');
+  await page.evaluate(() => (window as any).__livePatch.host.sync([{ name: 'bounded-batch.js', source: `export const meta={id:'bounded-batch',title:'Bounded Batch',author:'test',description:'busy'}; let seen=0; export function onChat(game){const until=Date.now()+15; while(Date.now()<until){} seen++; if(seen===17) game.spawn('coin',100,100);}`, error: null }]));
+  await expect(page.locator('#mutations')).toContainText('Bounded Batch · active');
+  await page.evaluate(() => { for (let i = 0; i < 17; i++) (window as any).__livePatch.host.emit({ type: 'chat', text: String(i), author: 'test' }); });
+  await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().coins), { timeout: 5_000 }).toBeGreaterThanOrEqual(5);
+  await expect(page.locator('#mutations')).toContainText('Bounded Batch · active');
+});
+
 test('an action storm is throttled before it fills the arena', async ({ page }) => {
   const file = path.join(mutationDir, 'zz-storm-test.js');
   try {
@@ -285,6 +295,21 @@ test('rollback restores another entity and removes patch-earned score', async ({
   });
   expect(result.restored).toMatchObject({ tag: '', radius: 12 });
   expect(result.earned).toBeGreaterThan(result.after);
+});
+
+test('rollback does not resurrect hostile enemies on the player', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#status')).toContainText('LIVE');
+  const result = await page.evaluate(() => {
+    const game = (window as any).__livePatch.game;
+    const { x, y } = game.snapshot().player;
+    game.apply({ type: 'spawn', args: ['enemy', x + 60, y] }, 'system');
+    const enemy = game.snapshot().entities.find((entity: any) => entity.kind === 'enemy' && Math.abs(entity.x - (x + 60)) < 1);
+    game.apply({ type: 'removeEntity', args: [enemy.id] }, 'patch-test');
+    game.removeMutation('patch-test');
+    return game.snapshot().entities.some((entity: any) => entity.id === enemy.id);
+  });
+  expect(result).toBe(false);
 });
 
 test('one crowded Space attack keeps unrelated patches active', async ({ page }) => {

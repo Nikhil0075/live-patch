@@ -164,7 +164,8 @@ export class MutationHost {
     if (!['starting', 'active'].includes(entry.status) || entry.pending || !entry.queue.length) return;
     const events = entry.status === 'starting' ? [entry.queue.shift()!] : entry.queue.splice(0, 16);
     const id = this.nextId++;
-    entry.pending = { id, eventType: events[0].type, timeout: window.setTimeout(() => this.disable(entry, 'Event deadline exceeded'), EVENT_DEADLINE_MS) };
+    const deadline = Math.min(600, EVENT_DEADLINE_MS + (events.length - 1) * 25);
+    entry.pending = { id, eventType: events[0].type, timeout: window.setTimeout(() => this.disable(entry, 'Event deadline exceeded'), deadline) };
     entry.frame?.contentWindow?.postMessage({ type: 'event', id, events, state: this.game.snapshot(), actions: Object.keys(this.manifest.actions), hooks: this.manifest.hooks }, '*');
   }
 

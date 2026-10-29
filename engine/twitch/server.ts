@@ -22,7 +22,7 @@ import { execFileSync } from 'node:child_process';
 import { SettingsStore, type StudioSettings } from '../studio/settings';
 import { publicCredentials, saveCredentials, type CredentialInput } from '../studio/credentials';
 import { setupChecks, sandboxSelfTest, runSandboxSetup, classifySandboxError, type SetupCheck } from '../studio/setup';
-import { createManagedPitchReward, fetchPitchReward, refundRedemption, type RewardState, type TwitchReward } from './rewards';
+import { createManagedPitchReward, fetchPitchReward, refundRedemption, fulfillRedemption, type RewardState, type TwitchReward } from './rewards';
 import { RefundStore } from './refunds';
 import { validateMutation } from '../mutation/validate';
 import { RollbackVotes } from '../pipeline/rollback-votes';
@@ -52,7 +52,7 @@ function localOrigin(req: IncomingMessage): boolean {
   if (!origin) return true;
   try {
     const url = new URL(origin);
-    const host = req.headers.host;
+    const host = req.headers.host ?? req.headers[':authority'];
     return (url.hostname === '127.0.0.1' || url.hostname === 'localhost') && url.host === host;
   } catch { return false; }
 }
@@ -92,11 +92,22 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
     const prior = refunds.find(redemptionId);
     if (prior?.status === 'refunded' || refundInFlight.has(redemptionId)) return prior?.message ?? 'Refund is already being checked.';
     refundInFlight.add(redemptionId);
-    refunds.upsert({ redemptionId, rewardId, reason, status: 'pending', message: 'Checking refund with Twitch.' });
+    refunds.upsert({ redemptionId, rewardId, reason, action: 'refund', status: 'pending', message: 'Checking refund with Twitch.' });
     try {
       const result = await refundRedemption(auth, rewardId, redemptionId);
-      refunds.upsert({ redemptionId, rewardId, reason, ...result });
+      refunds.upsert({ redemptionId, rewardId, reason, action: 'refund', ...result });
       return result.message;
+    } finally { refundInFlight.delete(redemptionId); }
+  };
+  const tryFulfill = async (redemptionId: string, rewardId: string): Promise<void> => {
+    const prior = refunds.find(redemptionId);
+    if (prior?.status === 'fulfilled' || refundInFlight.has(redemptionId)) return;
+    refundInFlight.add(redemptionId);
+    const reason = 'Idea accepted';
+    refunds.upsert({ redemptionId, rewardId, reason, action: 'fulfill', status: 'pending', message: 'Checking fulfillment with Twitch.' });
+    try {
+      const result = await fulfillRedemption(auth, rewardId, redemptionId);
+      refunds.upsert({ redemptionId, rewardId, reason, action: 'fulfill', ...result });
     } finally { refundInFlight.delete(redemptionId); }
   };
   const runs = new RunStore(path.join(dataDir, 'runs.json'));
@@ -109,8 +120,8 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
     server.ws.send({ type: 'custom', event: 'live-patch:runner', data: event });
     if (event.type === 'shipped' || event.type === 'failed') {
       rounds?.runFinished(event.ideaId);
-      const restart = event.type === 'failed' && runs.get(event.runId)?.error === 'Server restarted during build';
-      void (restart ? predictions.cancel() : predictions.settle(event.ideaId, event.type === 'shipped')).catch(error => console.error(`Prediction for idea ${event.ideaId} could not settle:`, error));
+      const infrastructureFailure = event.type === 'failed' && runs.get(event.runId)?.failureKind !== 'patch';
+      void (infrastructureFailure ? predictions.cancel() : predictions.settle(event.ideaId, event.type === 'shipped')).catch(error => console.error(`Prediction for idea ${event.ideaId} could not settle:`, error));
     }
   });
   rounds = new RoundCoordinator(path.join(dataDir, 'rounds.json'), store, state => server.ws.send({ type: 'custom', event: 'live-patch:round', data: state }), Date.now, settings.snapshot());
@@ -139,13 +150,15 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
     onRejectedReward: async (event, reason) => event.origin === 'twitch' && event.redemptionId
       ? tryRefund(event.redemptionId, event.rewardId, reason)
       : 'Practice reward: no points were spent.',
+    onAcceptedReward: async event => {
+      if (event.origin === 'twitch' && event.redemptionId) await tryFulfill(event.redemptionId, event.rewardId);
+    },
     onRollbackVote: viewer => {
       const shipped = runs.lastShipped(gameDirectory);
       if (!shipped) return undefined;
       const vote = rollbackVotes.vote(shipped.id, viewer.id);
       return { accepted: vote.accepted, ...vote.state };
     },
-    canConfirmRollback: event => event.origin === 'simulator' || Boolean(rollbackVotes.confirm(runs.lastShipped(gameDirectory)?.id ?? '')),
     candidate: number => rounds.candidate(number),
     canVote: () => rounds.canVote(),
     onControl: (action, idea) => {
@@ -177,8 +190,8 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
     if (!active) return;
     const outcome = runs.list().filter(run => run.ideaId === active.ideaId).at(-1);
     if (outcome?.status === 'shipped') await predictions.settle(active.ideaId, true);
-    else if (outcome?.status === 'failed' && outcome.error === 'Server restarted during build') await predictions.cancel();
-    else if (outcome?.status === 'failed') await predictions.settle(active.ideaId, false);
+    else if (outcome?.status === 'failed' && outcome.failureKind === 'patch') await predictions.settle(active.ideaId, false);
+    else if (outcome?.status === 'failed') await predictions.cancel();
   })().catch(error => console.error('Prediction restart check failed:', error));
   server.httpServer?.on('close', () => { connection.stop(); runner.stop(); rounds.stop(); });
   server.middlewares.use(async (req, res, next) => {
@@ -366,7 +379,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
     if (route === '/api/runner-events' && req.method === 'GET') { json(res, 200, { events: progress }); return; }
     if (route === '/api/predictions' && req.method === 'GET') { json(res, 200, { predictions: predictions.list(), active: predictions.active() }); return; }
     if (route === '/api/twitch/status' && req.method === 'GET') {
-      json(res, 200, { configured: auth.configured(), rewardConfigured: Boolean(config.rewardId), reward: await checkedReward(), refundIssue: refunds.list().filter(item => item.status !== 'refunded').at(-1)?.message ?? '', broadcaster: auth.identity('broadcaster'), bot: auth.identity('bot'), eventsub: eventsub.status(), authIssue: connection.status(), chatIssue, simulator }); return;
+      json(res, 200, { configured: auth.configured(), rewardConfigured: Boolean(config.rewardId), reward: await checkedReward(), refundIssue: refunds.list().filter(item => !['refunded', 'fulfilled'].includes(item.status)).at(-1)?.message ?? '', broadcaster: auth.identity('broadcaster'), bot: auth.identity('bot'), eventsub: eventsub.status(), authIssue: connection.status(), chatIssue, simulator }); return;
     }
     if (route === '/api/twitch/refunds' && req.method === 'GET') { json(res, 200, { refunds: refunds.list().slice(-20) }); return; }
     if (route === '/api/twitch/refunds' && req.method === 'POST') {
@@ -374,9 +387,10 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
       try {
         const body = await readJson(req) as { redemptionId?: string };
         const record = body.redemptionId ? refunds.find(body.redemptionId) : undefined;
-        if (!record || record.status === 'not_manageable') { json(res, 400, { error: 'No retryable refund found' }); return; }
-        const message = await tryRefund(record.redemptionId, record.rewardId, record.reason);
-        json(res, 200, { message, refund: refunds.find(record.redemptionId) });
+        if (!record || record.status === 'not_manageable' || record.status === 'fulfilled' || record.status === 'refunded') { json(res, 400, { error: 'No retryable reward action found' }); return; }
+        if (record.action === 'fulfill') await tryFulfill(record.redemptionId, record.rewardId);
+        else await tryRefund(record.redemptionId, record.rewardId, record.reason);
+        json(res, 200, { message: refunds.find(record.redemptionId)?.message, refund: refunds.find(record.redemptionId) });
       } catch (error) { json(res, 400, { error: String(error) }); }
       return;
     }

@@ -44,6 +44,28 @@ export async function fetchPitchReward(auth: Pick<TwitchAuth, 'identity' | 'heli
 
 export interface RefundResult { status: 'refunded' | 'not_manageable' | 'not_unfulfilled' | 'failed'; message: string }
 
+export interface FulfillmentResult { status: 'fulfilled' | 'not_manageable' | 'failed'; message: string }
+
+export async function fulfillRedemption(auth: Pick<TwitchAuth, 'identity' | 'hasScope' | 'helix' | 'helixRequest'>, rewardId: string, redemptionId: string): Promise<FulfillmentResult> {
+  const broadcaster = auth.identity('broadcaster');
+  if (!broadcaster || !auth.hasScope('broadcaster', 'channel:manage:redemptions')) return { status: 'failed', message: 'Reconnect the broadcaster with redemption management permission to fulfill this reward.' };
+  if (!rewardId || !redemptionId) return { status: 'failed', message: 'Fulfillment needs a reward and redemption ID.' };
+  try {
+    const base = `channel_points/custom_rewards?broadcaster_id=${encodeURIComponent(broadcaster.id)}&id=${encodeURIComponent(rewardId)}`;
+    const owned = await auth.helix('broadcaster', `${base}&only_manageable_rewards=true`);
+    if (!owned.ok) return { status: owned.status === 404 ? 'not_manageable' : 'failed', message: `Twitch reward ownership check returned ${owned.status}; fulfillment not confirmed.` };
+    const data = await owned.json() as { data?: { id: string }[] };
+    if (!data.data?.some(item => item.id === rewardId)) return { status: 'not_manageable', message: 'This reward was created outside Live Patch; Twitch will not let this app fulfill it.' };
+    const route = `channel_points/custom_rewards/redemptions?broadcaster_id=${encodeURIComponent(broadcaster.id)}&reward_id=${encodeURIComponent(rewardId)}&id=${encodeURIComponent(redemptionId)}`;
+    const response = await auth.helixRequest('broadcaster', route, 'PATCH', { status: 'FULFILLED' });
+    if (!response.ok) return { status: 'failed', message: `Twitch fulfillment returned ${response.status}; fulfillment not confirmed.` };
+    const result = await response.json() as { data?: { id: string; status: string }[] };
+    return result.data?.some(item => item.id === redemptionId && item.status.toUpperCase() === 'FULFILLED')
+      ? { status: 'fulfilled', message: 'Twitch confirmed the redemption was fulfilled.' }
+      : { status: 'failed', message: 'Twitch did not confirm fulfillment.' };
+  } catch { return { status: 'failed', message: 'Twitch fulfillment request failed; fulfillment not confirmed.' }; }
+}
+
 export async function refundRedemption(auth: Pick<TwitchAuth, 'identity' | 'hasScope' | 'helix' | 'helixRequest'>, rewardId: string, redemptionId: string): Promise<RefundResult> {
   const broadcaster = auth.identity('broadcaster');
   if (!broadcaster || !auth.hasScope('broadcaster', 'channel:manage:redemptions')) return { status: 'failed', message: 'Reconnect the broadcaster with redemption management permission to check a refund.' };

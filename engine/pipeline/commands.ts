@@ -13,8 +13,8 @@ export interface PipelineOptions {
   onControl?: (action: 'approve' | 'reject' | 'rollback', idea?: Idea) => void;
   onIdea?: (idea: Idea) => void;
   onRejectedReward?: (event: Extract<InboundEvent, { kind: 'reward' }>, reason: string) => Promise<string>;
+  onAcceptedReward?: (event: Extract<InboundEvent, { kind: 'reward' }>) => Promise<void>;
   onRollbackVote?: (viewer: Viewer) => { accepted: boolean; votes: number; threshold: number; ready: boolean } | undefined;
-  canConfirmRollback?: (event: Extract<InboundEvent, { kind: 'chat' }>) => boolean;
   candidate?: (number: number) => Idea | undefined;
   canVote?: () => boolean;
   now?: () => number;
@@ -60,7 +60,6 @@ export class ChatPipeline {
     }
     if (!event.viewer.moderator && !event.viewer.broadcaster) return { accepted: false, command, message: 'Only a moderator or broadcaster can use that command.' };
     if (command === 'rollback') {
-      if (this.options.canConfirmRollback && !this.options.canConfirmRollback(event)) return this.respond(event, command, 'The viewer rollback vote has not reached its threshold.');
       this.store.requestRollback(event.viewer.id);
       this.options.onControl?.('rollback');
       return this.respond(event, command, 'Rollback confirmed.', true);
@@ -85,6 +84,7 @@ export class ChatPipeline {
       await this.options.reply(`@${event.viewer.login} ${message}.${refund ? ` ${refund}` : ''}`, event);
       return { accepted: false, command: 'idea', message: refund ? `${message}. ${refund}` : message, idea: updated };
     }
+    if (event.kind === 'reward') await this.options.onAcceptedReward?.(event);
     await this.options.reply(`@${event.viewer.login} idea received: ${text}`, event);
     return { accepted: true, command: 'idea', message: 'Idea received', idea: updated };
   }

@@ -26,7 +26,7 @@ Dependencies: Phaser renders the arena; Vite serves the game, watches mutation f
 - [x] `npm test` checks each example mutation — three separate five-second browser runs passed.
 - [x] Mutation API is documented — `games/arena-survivor/docs/mutation-api.md` lists metadata, hooks, payloads, actions, limits and an example.
 - [x] `engine/` imports no game code — AST-based unit boundary test covers engine modules and the Vite server plugin.
-- [x] `--game` supports another folder — copied the arena folder to a renamed path, started with `npm run dev -- --game .tmp-renamed-game`, observed its manifest entry at `/api/game` and loaded the browser game.
+- [x] `--game` supports another folder — the Phase 1 test used a temporary renamed copy of the arena folder, observed its manifest entry at `/api/game` and loaded the browser game. That temporary folder was removed after the test; use `npm run dev -- --game <folder>` with an existing manifest directory.
 - [x] Missing or invalid manifest fails with a readable error — unit tests passed.
 - [x] `docs/adding-a-game.md` describes the schema and game adapter.
 

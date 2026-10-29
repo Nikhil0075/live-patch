@@ -91,6 +91,7 @@ describe('Phase 3 runner', () => {
     await Promise.all(pending);
     expect(runs.list().filter(record => record.status === 'shipped')).toHaveLength(7);
     expect(runs.list().filter(record => record.status === 'failed')).toHaveLength(3);
+    expect(runs.list().find(record => record.error?.includes('Runtime crash'))?.failureKind).toBe('patch');
     expect(fs.readdirSync(path.join(game, 'mutations')).filter(name => name.endsWith('.js'))).toHaveLength(7);
     expect(events.some(event => event.type === 'thread' && event.threadId === 'fake-thread')).toBe(true);
     expect(events.filter(event => event.type === 'file').every(event => event.message && !path.isAbsolute(event.message))).toBe(true);
@@ -181,8 +182,19 @@ describe('Phase 3 runner', () => {
     runner.stop();
     await run;
     expect(runs.list()[0].status).toBe('failed');
+    expect(runs.list()[0].failureKind).toBe('infrastructure');
     expect(fs.readdirSync(path.join(game, 'mutations'))).toHaveLength(0);
   }));
+
+  it('classifies a Codex outage as infrastructure and a smoke rejection as a patch failure', async () => fixture(async (root, game, gameManifest, ideas, runs) => {
+    const unavailable: AgentFactory = () => ({ threadId: () => undefined, run: async () => { throw Error('Codex quota exhausted'); } });
+    const first = ideas.add('one', 'One', 'Make coins glow', 'chat');
+    await new LiveRunner(root, game, gameManifest, ideas, runs, () => {}, unavailable, async () => {}).enqueue(ideas.setStatus(first.id, 'approved')!);
+    expect(runs.list()[0].failureKind).toBe('infrastructure');
+    const second = ideas.add('two', 'Two', 'Make enemies glow', 'chat');
+    await new LiveRunner(root, game, gameManifest, ideas, runs, () => {}, fakeAgent(() => good('Glow')), async () => { throw Error('Smoke rejected patch'); }).enqueue(ideas.setStatus(second.id, 'approved')!);
+    expect(runs.list()[1].failureKind).toBe('patch');
+  }), 30_000);
 
   it('cancels an operator-stopped build and queued work without publishing', async () => fixture(async (root, game, gameManifest, ideas, runs) => {
     let notifyStarted!: () => void;
