@@ -29,6 +29,7 @@
 - [x] WebGL crowd keeps unrelated patches active in headless Chromium with its WebGL renderer — opt-in test passed three consecutive runs. A visible streaming-PC observation remains pending.
 - [ ] OBS trusts the HTTPS source, plays audio once, and a first setup plus practice round finishes within ten minutes — operator checks pending.
 - [x] Round 1 fix run: `npm test` passed 68 unit tests (4 opt-in skipped), 38 browser tests (1 opt-in skipped) and the separate real-HTTPS/HTTP2 regression; `npm run build` passed; `npm audit --audit-level=high` found 0 vulnerabilities; `git diff --check` passed.
+- [x] Public judge path after round 1: [the GitHub repository](https://github.com/Nikhil0075/live-patch) was cloned into a fresh temporary folder; `npm run setup` passed in 13 seconds and `npm run test:https` passed in 6 seconds against a real TLS server, including Practice and Go Live controls.
 
 ## Deferred
 
@@ -44,6 +45,7 @@
 - Browser-source certificate trust, live points settlement and a timed first-run remain unobserved while the studio and stream are closed.
 - This shell could not launch a visible Chromium window (`spawn UNKNOWN`); the opt-in WebGL stress case passed 3/3 with headless Chromium's WebGL renderer. A visible check remains for the operator.
 - Automatic command review rejected recursive cleanup of the temporary fresh-clone checkout. The test copy remains at `C:\Users\ROG\AppData\Local\Temp\live-patch-phase5-clone-657d281c` with its isolated data at `C:\Users\ROG\AppData\Local\Temp\live-patch-phase5-clone-data-657d281c`.
+- Automatic command review also rejected deletion of the round-1 public-clone check at `C:\Users\ROG\AppData\Local\Temp\live-patch-judge-check-95b8914`, even after a separate path check confirmed it was within the Temp folder. The operator can delete that test checkout later.
 
 ## Review responses
 
