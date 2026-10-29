@@ -1,5 +1,7 @@
 # Mutation sound and effects
 
+This is an addendum. The full mutation contract for Arena Survivor is in [its API document](../games/arena-survivor/docs/mutation-api.md).
+
 The game manifest declares which mutation actions exist. A mutation can call only those actions through its `game` handle. Arena Survivor declares `playSound(name)`, `burst(kind, x, y)`, `shake(strength)` and `flash(colour)` in addition to its earlier actions.
 
 ```js

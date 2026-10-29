@@ -366,7 +366,7 @@ test('mutation Worker cannot create nested Workers', async ({ page }) => {
 test('skipped ticks contribute to the next delivered delta', async ({ page }) => {
   await page.goto('/?mutation=__none__');
   await expect(page.locator('#status')).toContainText('LIVE');
-  await page.evaluate(() => (window as any).__livePatch.host.sync([{ name: 'delta.js', source: `export const meta = {id:'delta',title:'Delta',author:'test',description:'clock'}; let total = 0; export function onTick(game,e) { total += e.delta; if (game.state.elapsed < 1.2) { const start = Date.now(); while (Date.now()-start < 70) {} } if (game.state.elapsed > 1.4 && total < .7) throw Error('lost tick time'); }`, error: null }]));
+  await page.evaluate(() => (window as any).__livePatch.host.sync([{ name: 'delta.js', source: `export const meta = {id:'delta',title:'Delta',author:'test',description:'clock'}; let total = 0; export function onTick(game,e) { total += e.delta; if (game.state.elapsed < 1.2) { const start = Date.now(); while (Date.now()-start < 25) {} } if (game.state.elapsed > 1.4 && total < .7) throw Error('lost tick time'); }`, error: null }]));
   await expect(page.locator('#mutations')).toContainText('Delta · active');
   await page.waitForTimeout(1500);
   await expect(page.locator('#mutations')).toContainText('Delta · active');
@@ -544,6 +544,14 @@ test('saved build compares original and evolved games without changing the live 
 
 test('Practice generates three distinct pitches and one-click votes', async ({ page }) => {
   await page.goto('/?view=practice');
+  await page.evaluate(async () => {
+    const action = (name: string) => fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: name }) });
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const round = await fetch('/api/round').then(response => response.json()) as { phase: string };
+      if (round.phase === 'pitch') break;
+      await action(round.phase === 'paused' ? 'resume' : 'advance');
+    }
+  });
   for (let i = 0; i < 3; i++) {
     await page.getByRole('button', { name: 'Generate sample pitch' }).click();
     await page.locator('#send button:not([type])').click();

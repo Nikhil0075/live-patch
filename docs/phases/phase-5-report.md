@@ -14,7 +14,7 @@
 - `npm run setup`, then `npm run dev`. Open Setup, Practice, Go Live and Builds from the studio.
 - `npm test`, `npm run build`, `npm audit --audit-level=high`.
 - PowerShell headed renderer check: `$env:LIVE_PATCH_WEBGL=1; node scripts/test.mjs --browser-only --browser-grep "WebGL crowd"`.
-- Manual operator checks: elevated sandbox setup/self-test, reconnect broadcaster and bot, redeem from a second account, run a live Prediction and refund test, trust the HTTPS source in OBS, and time a first run plus practice round.
+- Manual operator checks: elevated sandbox setup/self-test, reconnect broadcaster and bot, redeem from a second account, run a live Prediction and refund test, trust the HTTPS source in OBS, time a first run plus practice round, and re-run signed-in AI triage on the preview/apply flow.
 
 ## Exit criteria
 
@@ -48,6 +48,11 @@
 - Automatic command review also rejected deletion of the round-1 public-clone check at `C:\Users\ROG\AppData\Local\Temp\live-patch-judge-check-95b8914`, even after a separate path check confirmed it was within the Temp folder. The operator can delete that test checkout later.
 
 ## Review responses
+
+- P5-R2-01 — **Fixed:** Arena Survivor's mutation API now states the 200–575 ms event-message budget and explains that long loops disable the patch; the root addendum links to the full contract.
+- P5-R2-02 — **Fixed:** architecture now says the 20-action limit applies per event batch.
+- P5-R2-03 — **Fixed:** `!rollback` replies "Nothing to roll back" when no patch has shipped, with a regression test; emergency rollback remains immediate when a patch exists.
+- Round-2 verification — the shared browser server could advance rounds while the late Practice test began, and a synthetic 70 ms tick hook could exceed the new 16-event batch budget. The Practice test now starts in a pitch phase, and the skipped-time test uses a bounded 25 ms hook. Both focused tests pass.
 
 - P5-R1-01 — **Fixed:** same-origin control requests accept HTTP/2 `:authority`; a real HTTPS server regression sends an HTTP/2 request and drives Practice and Go Live in Chromium, while a cross-origin request remains forbidden.
 - P5-R1-02 — **Fixed:** moderator and broadcaster `!rollback` is immediate with zero viewer votes; viewer ballot remains an advisory prompt, with a unit regression and updated UI/docs.

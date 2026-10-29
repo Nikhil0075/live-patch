@@ -17,6 +17,7 @@ export interface PipelineOptions {
   onRollbackVote?: (viewer: Viewer) => { accepted: boolean; votes: number; threshold: number; ready: boolean } | undefined;
   candidate?: (number: number) => Idea | undefined;
   canVote?: () => boolean;
+  canRollback?: () => boolean;
   now?: () => number;
 }
 const IDEA_MAX_LENGTH = 200;
@@ -60,6 +61,7 @@ export class ChatPipeline {
     }
     if (!event.viewer.moderator && !event.viewer.broadcaster) return { accepted: false, command, message: 'Only a moderator or broadcaster can use that command.' };
     if (command === 'rollback') {
+      if (this.options.canRollback && !this.options.canRollback()) return this.respond(event, command, 'Nothing to roll back. Ship a patch first.');
       this.store.requestRollback(event.viewer.id);
       this.options.onControl?.('rollback');
       return this.respond(event, command, 'Rollback confirmed.', true);

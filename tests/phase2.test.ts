@@ -93,6 +93,17 @@ describe('Phase 2 idea pipeline', () => {
     expect(onControl).toHaveBeenCalledWith('rollback');
     expect(store.rollbackRequests()).toHaveLength(1);
   }));
+  it('does not claim rollback when no patch has shipped', async () => tempStore(async store => {
+    const onControl = vi.fn();
+    const replies: string[] = [];
+    const pipeline = new ChatPipeline(store, { rewardId: 'reward-1', reply: async text => { replies.push(text); }, onControl, canRollback: () => false });
+    const mod = { ...viewer, id: 'mod', moderator: true };
+    const result = await pipeline.ingest({ ...inbound('empty-rollback', '!rollback'), viewer: mod });
+    expect(result).toMatchObject({ accepted: false, message: 'Nothing to roll back. Ship a patch first.' });
+    expect(replies[0]).toContain('Nothing to roll back');
+    expect(onControl).not.toHaveBeenCalled();
+    expect(store.rollbackRequests()).toHaveLength(0);
+  }));
 
   it('fulfills an accepted reward once after storing its idea', async () => tempStore(async store => {
     const onAcceptedReward = vi.fn(async () => { expect(store.list()).toHaveLength(1); });

@@ -161,6 +161,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
     },
     candidate: number => rounds.candidate(number),
     canVote: () => rounds.canVote(),
+    canRollback: () => Boolean(runs.lastShipped(gameDirectory)),
     onControl: (action, idea) => {
       if (action === 'approve' && idea) {
         if (predictions.active() && predictions.active()?.ideaId !== idea.id) void predictions.cancel().catch(error => console.error('Prediction for unselected idea could not cancel:', error));
