@@ -77,7 +77,7 @@ export class ChatPipeline {
   private async submit(event: InboundEvent, text: string, source: Idea['source'], now: number): Promise<Outcome> {
     if (!text || text.length > IDEA_MAX_LENGTH) return this.rejectIdea(event, `Ideas must be 1–${IDEA_MAX_LENGTH} characters.`);
     if (this.store.recentBy(event.viewer.id, now - IDEA_COOLDOWN_MS)) return this.rejectIdea(event, 'Please wait three minutes before another idea.');
-    const idea = this.store.add(event.viewer.id, event.viewer.name, text, source, now);
+    const idea = this.store.add(event.viewer.id, event.viewer.name, text, source, now, event.origin === 'simulator');
     this.options.onIdea?.(idea);
     const updated = this.store.list().find(item => item.id === idea.id) ?? idea;
     if (updated.status === 'rejected' || updated.status === 'merged') {

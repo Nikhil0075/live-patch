@@ -13,6 +13,7 @@ export interface Idea {
   contributors?: string[];
   mergedInto?: string;
   source: 'chat' | 'reward';
+  practice?: boolean;
   status: IdeaStatus;
   votes: string[];
   createdAt: string;
@@ -28,8 +29,8 @@ export class IdeaStore {
   }
   list() { return this.data.ideas.map(idea => ({ ...idea, votes: [...idea.votes] })); }
   rollbackRequests() { return [...this.data.rollbackRequests]; }
-  add(authorId: string, authorName: string, text: string, source: Idea['source'], now = Date.now()): Idea {
-    const idea: Idea = { id: randomUUID(), authorId, authorName, text, source, status: 'submitted', votes: [], createdAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() };
+  add(authorId: string, authorName: string, text: string, source: Idea['source'], now = Date.now(), practice = false): Idea {
+    const idea: Idea = { id: randomUUID(), authorId, authorName, text, source, practice, status: 'submitted', votes: [], createdAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() };
     this.data.ideas.push(idea); this.save(); return { ...idea, votes: [] };
   }
   recentBy(authorId: string, since: number) { return this.data.ideas.some(idea => idea.authorId === authorId && Date.parse(idea.createdAt) >= since); }

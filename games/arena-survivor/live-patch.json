@@ -19,6 +19,7 @@
   "mutationDir": "mutations/",
   "apiDocs": "docs/mutation-api.md",
   "examples": ["mutations/"],
+  "demoMutation": "demo/quick-feet.js",
   "forbidden": ["fetch", "eval", "document", "window", "import("],
   "testCommand": "npm run smoke -- --mutation {file}",
   "actions": {

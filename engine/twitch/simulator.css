@@ -1,1 +1,14 @@
+@import '../tokens.css';
 :root{font-family:Inter,Segoe UI,Arial,sans-serif;color:#e8eaf5;background:#0d1020}*{box-sizing:border-box}body{margin:0}main{max-width:1220px;margin:0 auto;padding:32px}header{display:flex;justify-content:space-between;gap:24px;align-items:start;margin-bottom:26px}h1{font-size:clamp(2rem,5vw,3.4rem);margin:0 0 8px}h2{font-size:1.12rem;margin:0 0 18px}.eyebrow{color:#8ce5d6;letter-spacing:.18em;font-size:.75rem;font-weight:800}p{color:#b7bbd3}a{color:#8ce5d6}.grid{display:grid;grid-template-columns:minmax(300px,440px) minmax(350px,1fr);gap:22px}.grid>div{display:grid;gap:22px;align-content:start}section section,form{background:#171b32;border:1px solid #343a58;border-radius:16px;padding:24px}label{display:block;color:#d7daf0;font-size:.9rem;margin:14px 0}input,select,textarea{display:block;width:100%;margin-top:7px;padding:11px;background:#0e1328;color:#fff;border:1px solid #444c70;border-radius:8px;font:inherit}button{padding:11px 20px;border:0;border-radius:8px;background:#80e7cd;color:#10251f;font-weight:800;cursor:pointer}.links{display:flex;gap:18px;flex-wrap:wrap}ol,ul{padding-left:20px}li{margin:10px 0;overflow-wrap:anywhere}.hint{font-size:.85rem;line-height:1.6}code{color:#ffdd8d}#result{min-height:20px;color:#8ce5d6}@media(max-width:800px){.grid{grid-template-columns:1fr}header{display:block}}
+.practice-banner{padding:13px 18px;margin:0 0 20px;border:1px solid #6a4d9b;background:#26193a;color:#f1e7ff;font-weight:800;letter-spacing:.03em;border-radius:4px}
+.practice-quick{display:grid;grid-template-columns:1fr 1.3fr;gap:18px;margin-bottom:20px}
+.practice-quick>section{min-height:270px;padding:22px;background:#18181b;border:1px solid #2f2f35;border-radius:4px}
+.practice-quick h2{margin:0 0 15px;font-size:21px}
+#practice-chat{height:148px;overflow:auto;background:#0e0e10;border:1px solid #36363c;border-radius:4px;padding:8px 14px;margin-bottom:14px}
+#practice-chat p{margin:8px 0;color:#d7d7df;font-size:14px}
+#practice-timeline{display:flex;gap:6px;flex-wrap:wrap;margin:16px 0}
+#practice-timeline span{background:#29292e;padding:9px 12px;border-radius:4px;color:#bcbcc8;font-weight:700;font-size:13px}
+#practice-timeline span.current{background:#9146ff;color:white}
+.practice-actions{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}
+#quick-result,#practice-stage{color:#cfcfd8}
+@media(max-width:920px){.practice-quick{grid-template-columns:1fr}}

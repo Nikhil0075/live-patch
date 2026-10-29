@@ -346,6 +346,37 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
       } catch (error) { json(res, 400, { error: String(error) }); }
       return;
     }
+    if (route === '/api/practice/demo' && req.method === 'POST') {
+      if (!simulator || !req.headers.origin || !localOrigin(req) || !String(req.headers['content-type'] ?? '').startsWith('application/json')) { json(res, 403, { error: 'Practice demo requires a same-origin JSON request' }); return; }
+      try {
+        const body = await readJson(req) as { ideaId?: string };
+        const state = rounds.snapshot();
+        const selected = state.candidates.find(idea => idea.id === body.ideaId);
+        if (state.phase !== 'approval' || !selected?.practice) throw Error('Demo patches are available only for a Practice pitch at approval');
+        if (!manifest.demoMutation || gameDirectory.startsWith(path.resolve(root, 'builds') + path.sep)) throw Error('This game has no Practice demo patch');
+        const sourcePath = path.resolve(gameDirectory, manifest.demoMutation);
+        const mutationDir = path.resolve(gameDirectory, manifest.mutationDir);
+        if (!sourcePath.startsWith(gameDirectory + path.sep) || !fs.statSync(sourcePath).isFile()) throw Error('Invalid demo patch path');
+        const source = fs.readFileSync(sourcePath, 'utf8');
+        const issue = validateMutation(source, manifest);
+        if (issue) throw Error(`Demo patch failed validation: ${issue}`);
+        const name = `demo-${randomUUID().slice(0, 8)}.js`;
+        const target = path.join(mutationDir, name);
+        const temporary = `${target}.${process.pid}.tmp`;
+        fs.writeFileSync(temporary, source, { flag: 'wx' });
+        try { fs.renameSync(temporary, target); } catch (error) { fs.rmSync(temporary, { force: true }); throw error; }
+        rounds.approved(selected);
+        store.setStatus(selected.id, 'shipped');
+        const now = new Date().toISOString();
+        const runId = randomUUID();
+        runs.upsert({ id: runId, ideaId: selected.id, gameDirectory, status: 'shipped', startedAt: now, finishedAt: now, mutationName: name, demo: true, durationMs: 0 });
+        rounds.runFinished(selected.id);
+        const event: RunnerEvent = { runId, ideaId: selected.id, type: 'shipped', at: now, message: 'Demo patch shipped' };
+        progress.push(event); server.ws.send({ type: 'custom', event: 'live-patch:runner', data: event });
+        json(res, 200, { message: 'Demo patch shipped. Open Play to see it.', name, demo: true });
+      } catch (error) { json(res, 400, { error: String(error) }); }
+      return;
+    }
     if (route === '/api/control' && req.method === 'POST') {
       if (!req.headers.origin || !localOrigin(req) || !String(req.headers['content-type'] ?? '').startsWith('application/json')) { json(res, 403, { error: 'Same-origin JSON request required' }); return; }
       try {

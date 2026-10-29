@@ -41,3 +41,6 @@ During a live build, Git and Codex MCP discovery use asynchronous child processe
 ## Phase 5.5 play shell
 
 `engine/app.ts` serves the studio at `/` and the game in a named `/play` window. `engine/play-menu.ts` owns the pause menu, full screen and persistent sound/accessibility controls. The optional manifest `controls` array supplies a read-only key map. `GameAdapter.pause/resume` freezes game time and audio, while `MutationHost.setPaused` stops event delivery; the server's chat round continues. `docs/play-layout.md` records the 1920 × 1080 play and overlay zones.
+## Phase 5.5 Practice demo
+
+Practice pitches are marked in `IdeaStore` when they arrive from the simulator. `/api/practice/demo` requires a same-origin JSON request, an approval-stage Practice candidate and a manifest-declared `demoMutation`; it validates the prepared source and atomically copies it into the active mutation folder. A demo run is labelled in `RunStore`, can be rolled back without a Git revert, and is excluded from the Twitch pitch path. The auto-round UI sends three pitches and votes through the same simulator pipeline used by manual Practice.

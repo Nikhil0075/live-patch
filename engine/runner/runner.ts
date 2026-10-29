@@ -142,7 +142,7 @@ export class LiveRunner {
   requestRollback(): Promise<void> {
     if (this.closed) return Promise.reject(Error('Runner is stopped'));
     const shipped = this.runs.lastShipped(this.gameDirectory);
-    if (!shipped?.branch || !shipped.commit || !shipped.mutationName) return Promise.reject(Error('No shipped mutation to roll back'));
+    if (!shipped?.mutationName || (!shipped.demo && (!shipped.branch || !shipped.commit))) return Promise.reject(Error('No shipped mutation to roll back'));
     this.cancellationReason = 'Cancelled by moderator rollback';
     this.rollbackEpoch++;
     this.activeAbort?.abort('Moderator requested rollback');
@@ -324,7 +324,7 @@ export class LiveRunner {
   private async rollback() {
     if (this.closed) throw Error('Runner is stopped');
     const record = this.runs.lastShipped(this.gameDirectory);
-    if (!record?.branch || !record.commit || !record.mutationName) throw Error('No shipped mutation to roll back');
+    if (!record?.mutationName || (!record.demo && (!record.branch || !record.commit))) throw Error('No shipped mutation to roll back');
     const target = path.resolve(this.gameDirectory, this.manifest.mutationDir, record.mutationName);
     const mutationDir = path.resolve(this.gameDirectory, this.manifest.mutationDir);
     if (!within(mutationDir, target)) throw Error('Rollback path escaped mutation directory');
@@ -336,12 +336,13 @@ export class LiveRunner {
     this.runs.upsert(record);
     this.ideas.setStatus(record.ideaId, 'rolled_back');
     this.emit(record, 'rolled_back', record.mutationName);
+    if (record.demo) return;
     const directory = path.join(this.runnerRoot, `rollback-${randomUUID()}`);
     if (!within(this.runnerRoot, directory)) throw Error('Rollback worktree path escaped its root');
     fs.mkdirSync(this.runnerRoot, { recursive: true });
     try {
-      await gitAsync(this.root, 'worktree', 'add', directory, record.branch);
-      await gitAsync(directory, 'revert', '--no-edit', record.commit);
+      await gitAsync(this.root, 'worktree', 'add', directory, record.branch!);
+      await gitAsync(directory, 'revert', '--no-edit', record.commit!);
     } catch (error) {
       console.error(`Runner rollback ${record.id} Git history failed after live removal:`, error);
     } finally { if (fs.existsSync(directory)) await this.cleanup(directory); }

@@ -43,7 +43,7 @@ async function summary() {
     const [game, twitch, runs, builds, library] = await Promise.all([
       fetch('/api/game').then(r => r.json()) as Promise<{ name: string }>,
       fetch('/api/twitch/status').then(r => r.json()) as Promise<{ configured: boolean; broadcaster: { login: string } | null; bot: { login: string } | null; eventsub: string }>,
-      fetch('/api/runs').then(r => r.json()) as Promise<{ runs: { status: string }[] }>,
+      fetch('/api/runs').then(r => r.json()) as Promise<{ runs: { status: string; mutationName?: string; demo?: boolean }[] }>,
       fetch('/api/builds').then(r => r.json()) as Promise<{ builds: { id: string }[] }>,
       fetch('/api/library').then(r => r.json()) as Promise<{ playOnly: boolean; returnGame?: string }>
     ]);
@@ -65,20 +65,27 @@ async function summary() {
     set('#home-twitch', twitch.broadcaster && twitch.bot ? `${twitch.broadcaster.login} + ${twitch.bot.login}` : twitch.configured ? 'Connect both accounts' : 'Set up Twitch when ready');
     set('#home-codex', runs.runs.at(-1)?.status ?? 'Check setup');
     set('#home-build', builds.builds.at(0)?.id ?? 'No saved build yet');
+    const shelf = document.querySelector('#recent-patches');
+    if (shelf) { shelf.replaceChildren(); const shipped = runs.runs.filter(item => item.status === 'shipped').slice(-3).reverse(); if (!shipped.length) { const empty = document.createElement('p'); empty.textContent = 'No patches shipped yet. Try a Practice round to see one here.'; shelf.append(empty); } for (const item of shipped) { const card = document.createElement('article'); card.className = 'studio-card'; card.textContent = `${item.demo ? 'Demo · ' : ''}${item.mutationName ?? 'Shipped patch'}`; shelf.append(card); } }
     set('#home-setup', twitch.broadcaster && twitch.bot ? 'Connected' : 'Practice mode available');
     if (view === 'home' || view === 'setup') {
       set('#home-overlay', 'Overlay ready');
       window.setTimeout(() => {
         void fetch('/api/setup').then(r => r.json()).then((setup: { checks: { id: string; state: string }[] }) => {
           const codex = setup.checks.find(item => item.id === 'codex');
-          for (const id of ['codex', 'obs']) document.querySelector(`#dot-${id}`)?.classList.toggle('ready', setup.checks.find(item => item.id === id)?.state === 'Ready');
+          document.querySelector('#dot-codex')?.classList.toggle('ready', codex?.state === 'Ready');
+          document.querySelector('#dot-obs')?.classList.toggle('ready', setup.checks.find(item => item.id === 'overlay')?.state === 'Ready');
           set('#codex-connection', codex?.state === 'Ready' ? '● Codex ready' : '○ Codex setup');
+          const ready = [Boolean(localStorage.getItem('live-patch:practice-complete')), Boolean(twitch.broadcaster && twitch.bot), codex?.state === 'Ready', setup.checks.find(item => item.id === 'overlay')?.state === 'Ready'];
+          const ring = document.querySelector<HTMLElement>('#checklist-ring');
+          if (ring) { ring.textContent = `${ready.filter(Boolean).length}/4`; ring.style.background = `conic-gradient(#9146ff ${ready.filter(Boolean).length * 25}%,#45454b 0)`; }
+          if (ready.every(Boolean)) document.querySelector('#start-checklist')?.classList.add('complete');
           set('#home-codex', codex?.state === 'Ready' ? 'Signed in' : 'Sign in to Codex');
-          const ready = twitch.broadcaster && twitch.bot && codex?.state === 'Ready' && setup.checks.find(item => item.id === 'sandbox')?.state === 'Ready';
+          const liveReady = twitch.broadcaster && twitch.bot && codex?.state === 'Ready' && setup.checks.find(item => item.id === 'sandbox')?.state === 'Ready';
           const primary = document.querySelector<HTMLAnchorElement>('#home-primary');
-          if (primary && ready) { primary.href = '/?view=go-live'; primary.textContent = 'Go live →'; }
+          if (primary && liveReady) { primary.href = '/?view=go-live'; primary.textContent = 'Go Live →'; }
         }).catch(() => set('#home-codex', 'Check setup'));
-      }, 8000);
+      }, 100);
     }
   } catch { document.querySelector('#app-connection')!.textContent = '○ Local studio'; }
 }
@@ -87,6 +94,7 @@ switch (view) {
   case 'home':
     page.innerHTML = '<div class="home-grid"><section id="start-checklist" class="studio-card"><div class="section-head"><div><p class="app-kicker">START HERE</p><h2>Your first stream starts here</h2></div><div id="checklist-ring" class="progress-ring">0/4</div></div><p>Try the loop in Practice, then connect the tools you want for a live stream.</p><ol class="journey-list"><li><a href="/?view=practice">Run a practice round</a><small>About 2 minutes</small></li><li><a href="/?view=setup#twitch">Connect Twitch</a><small>For live chat</small></li><li><a href="/?view=setup#codex">Enable Codex building</a><small>For new patches</small></li><li><a href="/?view=setup#obs">Add the OBS overlay</a><small>For viewers</small></li></ol><a id="home-primary" class="button primary" href="/?view=practice">Try Practice →</a></section><section class="studio-card active-game-card"><div><p class="app-kicker">ACTIVE GAME</p><h2 id="home-game">Loading…</h2><p>The game evolves as chat ideas become playable patches.</p><button id="home-play">Play in new window ↗</button><a href="/?view=library">Browse games →</a></div><div class="game-art" aria-hidden="true">✳</div></section></div><section class="home-shelf"><div class="section-head"><h2>Recently shipped patches</h2><a href="/?view=go-live">View activity →</a></div><div class="status-grid"><article><small>TWITCH</small><strong id="home-twitch">Checking…</strong></article><article><small>CODEX</small><strong id="home-codex">Checking…</strong></article><article><small>LAST SAVED BUILD</small><strong id="home-build">Checking…</strong><a href="/?view=builds">Open builds →</a></article></div></section>';
     document.querySelector('#home-play')!.addEventListener('click', openPlay);
+    const recent = document.createElement('div'); recent.id = 'recent-patches'; recent.className = 'recent-patches'; document.querySelector('.home-shelf .section-head')!.after(recent);
     if (!localStorage.getItem('live-patch:welcome-seen') && (!__LIVE_PATCH_TEST_SERVER__ || new URLSearchParams(location.search).has('first-run'))) {
       const welcome = document.createElement('dialog'); welcome.className = 'welcome-dialog'; welcome.setAttribute('aria-label', 'Welcome to Live Patch');
       welcome.innerHTML = '<p class="app-kicker">WELCOME TO LIVE PATCH</p><h2>Chat dreams it. Your game becomes it.</h2><p>Viewers pitch game ideas, vote, and Codex builds the winning patch while you play.</p><div class="welcome-steps"><span>① Chat pitches</span><span>→</span><span>② Chat votes</span><span>→</span><span>③ A patch ships</span></div><div class="welcome-choices"><a class="button primary" href="/?view=practice">Try it now · no accounts · about 2 minutes</a><a class="button secondary" href="/?view=setup#twitch">Connect Twitch</a><a class="button secondary" href="/?view=setup#codex">Enable AI building</a></div><a href="/?view=setup">What does Live Patch change on my PC?</a><button id="welcome-close" class="secondary">Skip</button>';

@@ -14,6 +14,7 @@ export interface RunRecord {
   branch?: string;
   commit?: string;
   mutationName?: string;
+  demo?: boolean;
   error?: string;
   failureKind?: 'patch' | 'infrastructure';
 }
@@ -29,7 +30,7 @@ export function publicFailure(error?: string): string | undefined {
 }
 
 export function publicRun(record: RunRecord) {
-  return { id: record.id, ideaId: record.ideaId, status: record.status, startedAt: record.startedAt, finishedAt: record.finishedAt, durationMs: record.durationMs, threadId: record.threadId, mutationName: record.mutationName, error: publicFailure(record.error) };
+  return { id: record.id, ideaId: record.ideaId, status: record.status, startedAt: record.startedAt, finishedAt: record.finishedAt, durationMs: record.durationMs, threadId: record.threadId, mutationName: record.mutationName, demo: record.demo, error: publicFailure(record.error) };
 }
 
 export class RunStore {

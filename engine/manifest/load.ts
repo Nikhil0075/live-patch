@@ -21,6 +21,10 @@ export function loadGame(root: string, argument: string): { directory: string; m
     if (!target.startsWith(directory + path.sep)) throw new Error(`Manifest example escapes game directory: ${example}`);
     if (!fs.existsSync(target)) throw new Error(`Manifest example does not exist: ${target}`);
   }
+  if (result.data.demoMutation) {
+    const demo = path.resolve(directory, result.data.demoMutation);
+    if (!demo.startsWith(directory + path.sep) || !fs.existsSync(demo) || !fs.statSync(demo).isFile()) throw Error('Manifest demoMutation must be a file inside the game folder');
+  }
   if (result.data.cover) {
     const cover = path.resolve(directory, result.data.cover);
     if (!cover.startsWith(directory + path.sep) || !fs.existsSync(cover) || !fs.statSync(cover).isFile() || fs.statSync(cover).size > 1_000_000) throw Error('Manifest cover must be an image inside the game folder, at most 1 MB');

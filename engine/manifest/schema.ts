@@ -24,6 +24,7 @@ export const manifestSchema = z.object({
   mutationDir: z.string().regex(/^[\w./-]+\/$/),
   apiDocs: z.string().regex(/^[\w./-]+\.md$/),
   examples: z.array(z.string().regex(/^[\w./-]+\/$/)),
+  demoMutation: z.string().regex(/^[\w./-]+\.js$/).optional(),
   forbidden: z.array(z.string()),
   testCommand: z.string().min(1),
   actions: z.record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9]*$/), z.array(argumentSchema).max(8)),

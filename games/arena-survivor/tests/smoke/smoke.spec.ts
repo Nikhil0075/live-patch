@@ -41,6 +41,21 @@ test('play window pauses frames and mutation ticks, then resumes from the same s
   await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().frame)).toBeGreaterThan(before.frame + 10);
 });
 
+test('Practice can run a round and ship a labelled demo without Codex', async ({ page }) => {
+  await page.goto('/?view=practice');
+  await page.getByRole('button', { name: 'Run a full round automatically' }).click();
+  await expect(page.locator('#practice-stage')).toContainText('approval', { timeout: 15_000 });
+  await expect(page.locator('#demo-ship')).toBeVisible();
+  await page.locator('#demo-ship').click();
+  await expect(page.locator('#quick-result')).toContainText('Done.', { timeout: 15_000 });
+  await expect(page.locator('#practice-chat')).toContainText('Demo patch shipped', { timeout: 15_000 });
+  await page.goto('/play');
+  await expect(page.locator('#mutations')).toContainText('Demo: Quick Feet · active');
+  const rollback = await page.evaluate(() => fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'rollback' }) }).then(r => r.json()));
+  expect(rollback.accepted).toBe(true);
+  await expect(page.locator('#mutations')).not.toContainText('Demo: Quick Feet · active');
+});
+
 for (const example of chosen ? [chosen] : examples) test(`game plays for five seconds with ${example}`, async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
