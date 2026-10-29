@@ -47,3 +47,6 @@ Practice pitches are marked in `IdeaStore` when they arrive from the simulator. 
 ## Phase 5.5 stream dashboard
 
 The `/play` client publishes one low-rate game canvas bitmap per second on a same-origin `BroadcastChannel`. Go Live draws it in a preview canvas and composites the separate OBS overlay document over it; no second game adapter is constructed. Dashboard panels use two persisted layout presets and browser-local collapse/order state. Their Activity feed derives entries from actual ideas, runner events, refunds, predictions and saved builds.
+## Phase 5.5 library and overlay
+
+`engine/manifest/library.ts` exposes manifest controls and whether a game was imported. Library filters and sorting use only real catalog data. The stream overlay keeps patch chips below the Play HUD, a Codex card on the right, the ballot above the bottom edge and a pitch ticker to the right of the fading key hint. Viewer text is always appended through `textContent`.

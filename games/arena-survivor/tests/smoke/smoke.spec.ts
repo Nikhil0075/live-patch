@@ -72,6 +72,22 @@ test('Go Live mirrors one Play window and persists panel layout', async ({ page 
   } finally { await play.close(); }
 });
 
+test('OBS widgets keep the 1920px HUD and toast zones clear', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto('/overlay.html');
+  const geometry = await page.evaluate(() => {
+    const rect = (selector: string) => { const r = document.querySelector(selector)!.getBoundingClientRect(); return { x:r.x, y:r.y, right:r.right, bottom:r.bottom }; };
+    return { patches: rect('.stream-shell header'), work: rect('.stream-shell aside'), ballot: rect('.stream-shell footer'), ticker: rect('#pitch-ticker'), ballotText: parseFloat(getComputedStyle(document.querySelector('.candidate strong') ?? document.querySelector('#candidates p')!).fontSize), secondary: parseFloat(getComputedStyle(document.querySelector('.candidate small') ?? document.querySelector('#candidates p')!).fontSize), clock: parseFloat(getComputedStyle(document.querySelector('#clock')!).fontSize) };
+  });
+  expect(geometry.patches.y).toBeGreaterThanOrEqual(110);
+  expect(geometry.work.y).toBeGreaterThanOrEqual(150);
+  expect(geometry.ballot.bottom).toBeLessThanOrEqual(970);
+  expect(geometry.ticker.x).toBeGreaterThanOrEqual(500);
+  expect(geometry.ballotText).toBeGreaterThanOrEqual(28);
+  expect(geometry.secondary).toBeGreaterThanOrEqual(20);
+  expect(geometry.clock).toBeGreaterThanOrEqual(42);
+});
+
 for (const example of chosen ? [chosen] : examples) test(`game plays for five seconds with ${example}`, async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -532,17 +548,24 @@ test('studio navigation, setup and build library keep viewer data plain text', a
   test.setTimeout(45_000);
   await page.goto('/');
   await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible();
-  for (const name of ['Home', 'Library', 'Go Live', 'Builds', 'Setup', 'Settings']) await expect(page.locator('#app-nav a').filter({ hasText: name })).toBeVisible();
+  for (const name of ['Home', 'Practice', 'Go Live', 'Library', 'Builds']) await expect(page.locator('#app-nav a').filter({ hasText: name })).toBeVisible();
+  await expect(page.locator('.rail-setup')).toContainText('Twitch');
+  await expect(page.locator('.rail-settings')).toBeVisible();
   await page.locator('#app-nav a').filter({ hasText: 'Library' }).click();
   await expect(page.locator('#game-cards')).toContainText('Arena Survivor');
   await expect(page.getByRole('button', { name: 'Add your game' })).toBeVisible();
   await expect(page.locator('#game-detail')).toContainText('Hooks');
   await expect(page.locator('.library-card img')).toHaveCount(1);
-  expect(await page.locator('.library-card').first().evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgb(19, 30, 48)');
+  await page.getByRole('button', { name: 'Templates' }).click();
+  await expect(page.locator('#game-cards')).toContainText('No games match this filter');
+  await page.getByRole('button', { name: 'All', exact: true }).click();
+  await expect(page.locator('#game-cards')).toContainText('Arena Survivor');
+  await page.locator('#library-sort').selectOption('shipped');
+  expect(await page.locator('.library-card').first().evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgb(24, 24, 27)');
   expect(await page.locator('.library-card img').evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
   await page.locator('#game-search').fill('no matching world');
   await expect(page.locator('#game-cards')).toContainText('No games match your search');
-  await page.locator('#app-nav a').filter({ hasText: 'Setup' }).click();
+  await page.locator('.rail-setup a').filter({ hasText: 'Codex' }).click();
   await expect(page.locator('#setup-checks')).toContainText('Codex CLI and sign-in', { timeout: 20_000 });
   await expect(page.locator('.setup-step')).toHaveCount(6);
   await page.getByRole('button', { name: '3 Sandbox' }).click();
@@ -558,19 +581,15 @@ test('studio navigation, setup and build library keep viewer data plain text', a
   await page.locator('#app-nav a').filter({ hasText: 'Builds' }).click();
   await expect(page.getByRole('heading', { name: 'Saved builds' })).toBeVisible();
   await page.locator('#app-nav a').filter({ hasText: 'Go Live' }).click();
-  await expect(page.locator('.live-columns > section')).toHaveCount(3);
+  await expect(page.locator('.dashboard-panels > section')).toHaveCount(7);
   await expect(page.locator('#runs')).toContainText('Sandbox verified');
   await expect(page.locator('#chat-strip')).toBeVisible();
-  await expect(page.locator('.game-preview iframe')).toBeHidden();
-  await page.getByRole('button', { name: 'Start preview' }).click();
-  await expect(page.locator('.game-preview iframe')).toHaveAttribute('src', '/preview.html');
-  await page.getByRole('button', { name: 'Stop preview' }).click();
-  await expect(page.locator('.game-preview iframe')).toBeHidden();
+  await expect(page.locator('.game-preview iframe')).toHaveAttribute('src', '/overlay.html');
+  await expect(page.locator('iframe[src="/preview.html"]')).toHaveCount(0);
   const firstRun = await page.context().newPage();
   try {
     await firstRun.goto('/?first-run=1');
-    await expect(firstRun).toHaveURL(/view=setup/);
-    await expect(firstRun.getByRole('heading', { name: 'Guided setup' })).toBeVisible();
+    await expect(firstRun.getByRole('dialog', { name: 'Welcome to Live Patch' })).toBeVisible();
   } finally { await firstRun.close(); }
 });
 

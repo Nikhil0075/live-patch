@@ -26,6 +26,8 @@ a{color:#bf94ff}
 .top-actions{gap:9px;flex-wrap:wrap}
 .top-actions>span{padding:7px 10px;background:#26262b;border-radius:4px;color:#d5d5db}
 .page-heading{margin:0 0 26px}.page-heading h1{font-size:32px;margin:5px 0}.page-heading>p:last-child{margin:0;color:var(--muted)}
+.page-heading #app-description{margin:0;color:var(--muted)}.page-heading #glossary-open{margin-top:10px;padding:6px 9px;font-size:12px}
+.glossary-dialog{width:min(560px,92vw);max-width:none;background:#1f1f23;color:#efeff1;border:1px solid #7043a0;border-radius:4px}.glossary-dialog::backdrop{background:#000b}.glossary-dialog form{float:right}.glossary-dialog p{padding:10px 0;border-bottom:1px solid #36363d;color:#dddde4}.glossary-dialog strong{color:#d0aaff}
 .app-content .studio-card,.status-grid article{background:#18181b;border-color:#2f2f35;border-radius:4px}
 .home-grid{display:grid;grid-template-columns:minmax(370px,1.1fr) minmax(330px,1fr);gap:20px}
 .home-grid .studio-card{min-height:430px;padding:28px}.home-grid h2{font-size:28px;margin:7px 0 12px}.home-grid p{color:var(--muted);line-height:1.5}

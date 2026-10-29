@@ -1,8 +1,9 @@
 import './stream.css';
+import './overlay-polish.css';
 import { appendText, dashboardData, roundClock } from './shared';
 
 const root = document.querySelector<HTMLDivElement>('#overlay')!;
-root.innerHTML = '<div class="stream-shell"><header><div class="brand">LIVE PATCH <span>CHAT BUILDS THE GAME</span></div><div id="patches" class="patches"></div></header><aside><div class="panel-label">CODEX AT WORK</div><div id="work"></div></aside><footer><div class="round-heading"><div><span class="panel-label">CHAT DECIDES</span><strong id="phase"></strong></div><strong id="clock"></strong></div><div id="candidates" class="candidates"></div></footer></div>';
+root.innerHTML = '<div class="stream-shell"><header><div id="patches" class="patches"></div></header><aside><div class="panel-label">CODEX AT WORK</div><div id="work"></div></aside><footer><div class="round-heading"><div><span class="panel-label">CHAT DECIDES</span><strong id="phase"></strong></div><strong id="clock"></strong></div><div id="candidates" class="candidates"></div></footer><div id="pitch-ticker" class="pitch-ticker"></div></div>';
 const shell = root.querySelector<HTMLElement>('.stream-shell')!;
 function scaleOverlay() { shell.style.transform = `scale(${Math.min(innerWidth / 1920, innerHeight / 1080)})`; }
 scaleOverlay(); window.addEventListener('resize', scaleOverlay);
@@ -20,7 +21,7 @@ async function refresh() {
       const run = runs.find(item => item.status === 'shipped' && item.mutationName === mutation.name);
       const idea = ideas.find(item => item.id === run?.ideaId);
       const credit = run ? (idea?.contributors?.map(name => `@${name}`).join(', ') ?? (idea ? `@${idea.authorName}` : 'Viewer patch')) : 'Built-in';
-      appendText(pill, 'strong', title); if (credit) appendText(pill, 'small', credit);
+      appendText(pill, 'strong', `${run?.demo ? 'DEMO · ' : ''}${title}`); if (credit) appendText(pill, 'small', credit);
       patches.append(pill);
     }
     const latest = runs.at(-1);
@@ -72,6 +73,10 @@ async function refresh() {
         candidates.append(card);
       }
     } else if (!round.candidates.length) appendText(candidates, 'p', 'Waiting for the next round');
+    const ticker = document.querySelector<HTMLElement>('#pitch-ticker')!; ticker.replaceChildren();
+    const latestPitch = ideas.filter(item => ['submitted','shortlisted','voting'].includes(item.status)).at(-1);
+    appendText(ticker, 'strong', latestPitch ? `@${latestPitch.authorName}: ${latestPitch.spec ?? latestPitch.text}` : 'Your idea could change the game.');
+    appendText(ticker, 'span', 'type !idea to pitch');
   } catch (error) { document.querySelector('#work')!.textContent = `Overlay reconnecting: ${String(error)}`; }
 }
 
