@@ -1,29 +1,49 @@
 import './control.css';
+import './dashboard.css';
 import { appendText, dashboardData, roundClock } from './shared';
 
 const root = document.querySelector<HTMLDivElement>('#control')!;
-root.innerHTML = `<main class="go-live-dashboard">
-  <div class="live-status"><strong id="round">Loading round…</strong><span id="twitch-pill">Twitch checking…</span><span id="codex-pill">Codex checking…</span><span id="overlay-pill">Overlay ready</span><span id="sound-pill">Sound checking…</span></div>
-  <div class="live-columns">
-    <section class="live-card pitch-column"><div class="live-card-heading"><h3>Pitch queue</h3><span id="pitch-count"></span></div><p class="muted">Oldest pending pitches enter the ballot first.</p><div id="pitch-queue"></div><div id="triage-preview"></div><div class="actions"><button data-action="triage" title="Shortcut T">Preview AI triage · T</button></div></section>
-    <section class="live-card centre-column"><div class="live-card-heading"><h3>Game preview · separate run</h3><button id="preview-toggle" class="secondary">Start preview</button></div><div class="game-preview"><p id="preview-placeholder">Preview is off. Start it to inspect the current patches in a separate game run.</p><iframe title="Separate game preview" tabindex="-1" hidden></iframe></div><div class="live-card-heading"><h3>Current ballot</h3><span id="ballot-total"></span></div><div id="candidates"></div><div class="actions"><button data-action="pause" title="Shortcut P">Pause · P</button><button data-action="resume" title="Shortcut R">Resume · R</button><button data-action="advance" title="Shortcut N">Next stage · N</button><button data-action="force-next" class="danger">Cancel build and next round</button></div><p id="timing-hint" class="hint"></p></section>
-    <section class="live-card run-column"><div class="live-card-heading"><h3>Codex at work</h3></div><div id="runs"></div><div class="live-card-heading"><h3>Active patches</h3><span id="patch-count"></span></div><div id="patches"></div><p id="rollback-vote" class="hint">Chat can vote with !rollbackvote after a patch ships. A moderator can use !rollback immediately.</p><div class="actions"><button data-action="rollback" class="danger">Roll back latest</button><button data-action="save">Save build and patch notes</button></div><div class="live-card-heading"><h3>Points prediction</h3></div><div id="prediction"></div><div class="live-card-heading"><h3>Reward redemptions</h3></div><div id="refunds"></div><div class="live-card-heading"><h3>Saved builds</h3></div><div id="builds"></div></section>
-  </div><section class="live-card recent-chat"><h3>Recent chat</h3><div id="chat-strip"></div></section><p id="notice" role="status"></p>
-</main>`;
-const preview = root.querySelector<HTMLIFrameElement>('.game-preview iframe')!;
-const previewPlaceholder = root.querySelector<HTMLElement>('#preview-placeholder')!;
-const previewToggle = root.querySelector<HTMLButtonElement>('#preview-toggle')!;
-function stopPreview() {
-  preview.src = 'about:blank'; preview.hidden = true; previewPlaceholder.hidden = false;
-  previewToggle.textContent = 'Start preview';
+root.innerHTML = `<main class="go-live-dashboard"><div class="live-status"><strong id="round">Loading round…</strong><span id="twitch-pill">Twitch checking…</span><span id="codex-pill">Codex checking…</span><span id="overlay-pill">Overlay ready</span><span id="sound-pill">Sound checking…</span></div><div class="layout-presets"><label>Layout <select id="layout-preset"><option value="default">Default</option><option value="chat-focus">Chat focus</option></select></label><span>Drag panels to reorder; use the controls in each panel.</span></div><div class="dashboard-panels" id="dashboard-panels">
+<section class="live-card panel-preview" data-panel="preview"><div class="live-card-heading"><h3>Stream preview</h3></div><div class="game-preview"><p id="preview-placeholder">Open Play to mirror the real game here. No second game is running.</p><canvas id="play-mirror" width="480" height="320" hidden aria-label="Mirror of the Play window"></canvas><iframe id="overlay-mirror" src="/overlay.html" title="OBS overlay preview" tabindex="-1" aria-hidden="true"></iframe></div><p class="hint">This mirrors the real Play window with the OBS overlay. It runs no second game.</p></section>
+<section class="live-card panel-round" data-panel="round"><div class="live-card-heading"><h3>Round and ballot</h3><span id="ballot-total"></span></div><p id="timing-hint" class="hint"></p><div id="candidates"></div><h4>Pitch queue <span id="pitch-count"></span></h4><p class="muted">Oldest pending pitches enter the ballot first.</p><div id="pitch-queue"></div><div id="triage-preview"></div><button data-action="triage" title="Shortcut T">Preview AI triage · T</button></section>
+<section class="live-card panel-chat" data-panel="chat"><div class="live-card-heading"><h3>Recent chat</h3></div><div id="chat-strip"></div></section>
+<section class="live-card panel-actions" data-panel="actions"><div class="live-card-heading"><h3>Quick actions</h3></div><div class="quick-tiles"><button data-action="pause" title="Shortcut P">Pause round · P</button><button data-action="resume" title="Shortcut R">Resume round · R</button><button data-action="advance" title="Shortcut N">Next stage · N</button><button data-action="rollback" class="danger">Roll back latest</button><button data-action="save">Save build</button><button data-action="bet-start">Open prediction</button><button data-action="force-next" class="danger">Cancel build</button></div><p id="rollback-vote" class="hint"></p></section>
+<section class="live-card panel-activity" data-panel="activity"><div class="live-card-heading"><h3>Activity feed</h3></div><div id="activity-feed"></div><h4>Reward redemptions</h4><div id="refunds"></div><h4>Points prediction</h4><div id="prediction"></div></section>
+<section class="live-card panel-codex" data-panel="codex"><div class="live-card-heading"><h3>Codex at work</h3></div><div id="runs"></div></section>
+<section class="live-card panel-patches" data-panel="patches"><div class="live-card-heading"><h3>Active patches</h3><span id="patch-count"></span></div><div id="patches"></div><h4>Saved builds</h4><div id="builds"></div></section>
+</div><p id="notice" role="status"></p></main>`;
+const panels = root.querySelector<HTMLElement>('#dashboard-panels')!;
+const popoutId = location.hash.slice(1);
+if (popoutId && panels.querySelector(`[data-panel="${popoutId}"]`)) { document.body.classList.add('dashboard-popout'); panels.dataset.popout = popoutId; document.title = `${popoutId} · Live Patch`; }
+const preset = root.querySelector<HTMLSelectElement>('#layout-preset')!;
+const savedPreset = localStorage.getItem('live-patch:dashboard-preset');
+if (savedPreset === 'chat-focus') preset.value = savedPreset;
+panels.dataset.preset = preset.value;
+preset.addEventListener('change', () => { panels.dataset.preset = preset.value; localStorage.setItem('live-patch:dashboard-preset', preset.value); });
+for (const panel of Array.from(panels.querySelectorAll<HTMLElement>('[data-panel]'))) {
+  const heading = panel.querySelector('.live-card-heading')!;
+  const controls = document.createElement('div'); controls.className = 'panel-controls';
+  for (const [action, symbol] of [['collapse','−'],['left','←'],['right','→'],['popout','↗']]) { const button = document.createElement('button'); button.className = 'secondary'; button.textContent = symbol; button.dataset.panelAction = action; button.setAttribute('aria-label', `${action === 'left' ? 'Move' : action === 'right' ? 'Move' : action === 'popout' ? 'Pop out' : 'Collapse'} ${panel.querySelector('h3')?.textContent ?? 'panel'}${action === 'left' ? ' left' : action === 'right' ? ' right' : ''}`); controls.append(button); }
+  heading.append(controls);
+  panel.draggable = true;
 }
-previewToggle.addEventListener('click', () => {
-  if (!preview.hidden) { stopPreview(); return; }
-  preview.src = '/preview.html'; preview.hidden = false; previewPlaceholder.hidden = true;
-  previewToggle.textContent = 'Stop preview';
-});
-document.addEventListener('visibilitychange', () => { if (document.hidden && !preview.hidden) stopPreview(); });
+function orderPanels(order: string[]) { for (const id of order) { const panel = panels.querySelector(`[data-panel="${id}"]`); if (panel) panels.append(panel); } localStorage.setItem('live-patch:dashboard-order', JSON.stringify(Array.from(panels.children).map(item => (item as HTMLElement).dataset.panel))); }
+try { const stored = JSON.parse(localStorage.getItem('live-patch:dashboard-order') ?? '[]') as string[]; if (stored.length) orderPanels(stored); } catch { /* use default */ }
+panels.addEventListener('click', event => { const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-panel-action]'); if (!button) return; const panel = button.closest<HTMLElement>('[data-panel]')!; const action = button.dataset.panelAction; if (action === 'collapse') { panel.classList.toggle('collapsed'); button.textContent = panel.classList.contains('collapsed') ? '+' : '−'; localStorage.setItem('live-patch:dashboard-collapsed', JSON.stringify(Array.from(panels.querySelectorAll<HTMLElement>('.collapsed')).map(item => item.dataset.panel))); } else if (action === 'left' && panel.previousElementSibling) panels.insertBefore(panel, panel.previousElementSibling); else if (action === 'right' && panel.nextElementSibling) panels.insertBefore(panel.nextElementSibling, panel); else if (action === 'popout') window.open(`/?view=go-live#${panel.dataset.panel}`, `live-patch-panel-${panel.dataset.panel}`, 'width=700,height=700'); orderPanels(Array.from(panels.children).map(item => (item as HTMLElement).dataset.panel!)); });
+for (const id of JSON.parse(localStorage.getItem('live-patch:dashboard-collapsed') ?? '[]') as string[]) panels.querySelector(`[data-panel="${id}"]`)?.classList.add('collapsed');
+let dragged: HTMLElement | null = null;
+panels.addEventListener('dragstart', event => { dragged = (event.target as HTMLElement).closest<HTMLElement>('[data-panel]'); });
+panels.addEventListener('dragover', event => { if ((event.target as HTMLElement).closest('[data-panel]')) event.preventDefault(); });
+panels.addEventListener('drop', event => { const target = (event.target as HTMLElement).closest<HTMLElement>('[data-panel]'); if (dragged && target && dragged !== target) { panels.insertBefore(dragged, target); orderPanels(Array.from(panels.children).map(item => (item as HTMLElement).dataset.panel!)); } dragged = null; });
+const mirror = root.querySelector<HTMLCanvasElement>('#play-mirror')!;
+const previewPlaceholder = root.querySelector<HTMLElement>('#preview-placeholder')!;
+const previewFrame = root.querySelector<HTMLIFrameElement>('#overlay-mirror')!;
+new ResizeObserver(() => { previewFrame.style.transform = `scale(${previewFrame.parentElement!.clientWidth / 1920})`; }).observe(previewFrame.parentElement!);
+const channel = new BroadcastChannel('live-patch-play-mirror');
+channel.onmessage = event => { if (event.data?.type !== 'frame' || !(event.data.bitmap instanceof ImageBitmap)) return; mirror.hidden = false; previewPlaceholder.hidden = true; mirror.getContext('2d')!.drawImage(event.data.bitmap, 0, 0, mirror.width, mirror.height); event.data.bitmap.close(); };
+window.addEventListener('beforeunload', () => channel.close());
 
+let currentCandidateId: string | undefined;
 async function action(name: string, ideaId?: string) {
   const confirmations: Record<string, string> = { rollback: 'Roll back the latest shipped patch?', 'force-next': 'Cancel the current build and start a new round?', 'triage-discard': 'Discard these AI triage suggestions?', 'bet-cancel': 'Cancel the points prediction and return all points?' };
   if (confirmations[name] && !confirm(confirmations[name])) return;
@@ -35,7 +55,7 @@ async function action(name: string, ideaId?: string) {
     setTimeout(() => item.remove(), 5000);
   };
   try {
-    const response = await fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: name, ideaId }) });
+    const response = await fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: name, ideaId: ideaId ?? (name === 'bet-start' ? currentCandidateId : undefined) }) });
     const data = await response.json() as { error?: string; message?: string; id?: string; applied?: number; preview?: unknown[] };
     notify(response.ok ? (data.message ?? (data.id ? `Saved build ${data.id}` : data.preview ? `Review ${data.preview.length} AI suggestion(s) below` : data.applied !== undefined ? `AI triage updated ${data.applied} pitch(es)` : `${name} complete`)) : (data.error ?? data.message ?? `HTTP ${response.status}`));
     await refresh();
@@ -60,11 +80,12 @@ async function refresh() {
       dashboardData(),
       fetch('/api/twitch/status').then(response => response.json()) as Promise<{ broadcaster: { login: string } | null; bot: { login: string } | null; eventsub: string; reward?: { state: string; reason: string }; refundIssue?: string }>,
       fetch('/api/chat/recent').then(response => response.json()) as Promise<{ messages: { at: string; author: string; text: string }[] }>,
-      fetch('/api/builds').then(response => response.json()) as Promise<{ builds: { id: string; patches: unknown[] }[] }>,
-      fetch('/api/twitch/refunds').then(response => response.json()) as Promise<{ refunds: { redemptionId: string; action?: 'refund' | 'fulfill'; status: string; message: string }[] }>,
+      fetch('/api/builds').then(response => response.json()) as Promise<{ builds: { id: string; patches: unknown[]; createdAt?: string }[] }>,
+      fetch('/api/twitch/refunds').then(response => response.json()) as Promise<{ refunds: { redemptionId: string; action?: 'refund' | 'fulfill'; status: string; message: string; updatedAt?: string }[] }>,
       fetch('/api/predictions').then(response => response.json()) as Promise<{ active?: { ideaId: string; status: string; error?: string } }>
     ]);
     const { round, runs, mutations, ideas, rollbackVote, events, settings } = data;
+    currentCandidateId = round.candidates[0]?.id;
     root.querySelector('#rollback-vote')!.textContent = rollbackVote
       ? `Chat rollback vote ${rollbackVote.votes}/${rollbackVote.threshold}${rollbackVote.ready ? ' · threshold met; moderator can confirm with !rollback' : ''} · moderator !rollback is always immediate · expires ${new Date(rollbackVote.expiresAt).toLocaleTimeString()}`
       : 'Chat can vote with !rollbackvote after a patch ships. A moderator can use !rollback immediately.';
@@ -116,7 +137,7 @@ async function refresh() {
 
     const runList = root.querySelector<HTMLElement>('#runs')!; runList.replaceChildren();
     const latest = runs.at(-1);
-    appendText(runList, 'p', latest ? `${latest.status.toUpperCase()} · ${latest.mutationName ?? latest.error ?? 'Codex working'}` : 'No Codex run yet. Approve an idea to begin.', latest ? 'run-summary' : 'empty-state');
+    appendText(runList, 'p', latest ? `${latest.demo ? 'DEMO · ' : ''}${latest.status.toUpperCase()} · ${latest.mutationName ?? latest.error ?? 'Codex working'}` : 'No Codex run yet. Approve an idea to begin.', latest ? 'run-summary' : 'empty-state');
     const seen = new Set(events.filter(event => event.runId === latest?.id).map(event => event.type));
     if (latest && ['shipped', 'failed', 'rolled_back'].includes(latest.status)) seen.add(latest.status);
     for (const [id, label] of [['sandbox_verified', 'Sandbox verified'], ['file', 'Writing patch'], ['testing', 'Smoke test'], [latest?.status === 'failed' ? 'failed' : latest?.status === 'rolled_back' ? 'rolled_back' : 'shipped', latest?.status === 'failed' ? 'Failed' : latest?.status === 'rolled_back' ? 'Rolled back' : 'Shipped']]) {
@@ -150,6 +171,18 @@ async function refresh() {
     const strip = root.querySelector<HTMLElement>('#chat-strip')!; strip.replaceChildren();
     if (!chat.messages.length) appendText(strip, 'p', 'Recent viewer chat appears here once a message arrives.', 'empty-state');
     for (const message of chat.messages) { const line = document.createElement('p'); appendText(line, 'strong', `${message.author}: `); appendText(line, 'span', message.text); strip.append(line); }
+    const activity: { at: string; text: string }[] = [];
+    for (const idea of ideas) {
+      if (idea.createdAt) activity.push({ at: idea.createdAt, text: `${idea.source === 'reward' ? 'Reward redemption' : 'Pitch'} · @${idea.authorName}: ${idea.text}` });
+      if (idea.votes.length && idea.updatedAt) activity.push({ at: idea.updatedAt, text: `${idea.votes.length} vote${idea.votes.length === 1 ? '' : 's'} · ${idea.spec ?? idea.text}` });
+    }
+    for (const event of events) activity.push({ at: event.at, text: `${event.type.replaceAll('_',' ')} · ${event.message ?? 'Codex run'}` });
+    for (const refund of refundData.refunds) if (refund.updatedAt) activity.push({ at: refund.updatedAt, text: `${refund.action === 'fulfill' ? 'Redemption' : 'Refund'} · ${refund.status}: ${refund.message}` });
+    for (const build of saved.builds) if (build.createdAt) activity.push({ at: build.createdAt, text: `Saved build · ${build.id}` });
+    if (betData.active) activity.push({ at: new Date().toISOString(), text: `Prediction · ${betData.active.status}` });
+    const feed = root.querySelector<HTMLElement>('#activity-feed')!; feed.replaceChildren();
+    for (const item of activity.sort((a,b) => b.at.localeCompare(a.at)).slice(0, 20)) appendText(feed, 'p', `${new Date(item.at).toLocaleTimeString()} · ${item.text}`);
+    if (!activity.length) appendText(feed, 'p', 'Activity appears here after the first pitch.');
   } catch (error) { root.querySelector('#notice')!.textContent = `Control panel reconnecting: ${String(error)}`; }
 }
 

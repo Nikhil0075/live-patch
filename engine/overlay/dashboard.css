@@ -1,0 +1,48 @@
+#control .go-live-dashboard{padding:0;max-width:none}
+#control .live-status{background:#18181b;border:1px solid #2f2f35;border-radius:4px;margin:0 0 16px}
+#control .live-status strong{color:#fff}
+#control .live-status span{background:#242429;border-color:#3a3a42;border-radius:4px;color:#d0d0d8}
+#control .layout-presets{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:12px 0 16px;color:#adadb8;font-size:13px}
+#control .layout-presets select{background:#1f1f23;border:1px solid #45454b;color:#fff;padding:8px 12px;border-radius:4px}
+#control .dashboard-panels{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px;align-items:start}
+#control .dashboard-panels>.live-card{grid-column:span 4;min-width:0;background:#18181b;border:1px solid #2f2f35;border-radius:4px;padding:18px}
+#control .dashboard-panels>.panel-preview{grid-column:span 5}
+#control .dashboard-panels>.panel-round{grid-column:span 7}
+#control .dashboard-panels>.panel-chat{grid-column:span 4}
+#control .dashboard-panels>.panel-actions{grid-column:span 4}
+#control .dashboard-panels>.panel-activity{grid-column:span 4}
+#control .dashboard-panels[data-preset=chat-focus]>.panel-chat{grid-column:span 8;grid-row:span 2}
+#control .dashboard-panels[data-preset=chat-focus]>.panel-preview{grid-column:span 4}
+#control .dashboard-panels[data-preset=chat-focus]>.panel-round{grid-column:span 4}
+#control .live-card-heading{border-bottom:1px solid #303037;padding-bottom:10px;margin-bottom:12px;gap:6px}
+#control h3{color:#efeff1;font-size:18px;margin:0}
+#control h4{margin:18px 0 9px;color:#efeff1}
+#control .live-card-heading span{background:#392554;color:#dfcaff;border-radius:4px}
+#control .panel-controls{display:flex;gap:3px;margin-left:auto}
+#control .panel-controls button{padding:3px 7px;border-radius:3px;min-width:24px;font-size:13px}
+#control .dashboard-panels>.collapsed>*:not(.live-card-heading){display:none}
+#control .dashboard-panels>.collapsed{min-height:62px}
+#control .queue-item,#control .ballot-item,#control .patch-item{background:#242429;border-color:#3b3b43;border-radius:4px}
+#control .ballot-item{border-left-color:#9146ff}
+#control .dashboard-vote-track{background:#33333b}
+#control .dashboard-vote-bar{background:#9146ff}
+#control .game-preview{position:relative;border-color:#3b3b43;border-radius:4px;background:#08090d;aspect-ratio:16/9;margin:0;overflow:hidden}
+#control .game-preview canvas{width:100%;height:100%;object-fit:contain}
+#control .game-preview iframe{position:absolute;top:0;left:0;width:1920px;height:1080px;border:0;pointer-events:none;transform:scale(.25);transform-origin:top left;opacity:.9}
+#control .game-preview [hidden]{display:none}
+#control .quick-tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+#control .quick-tiles button{min-height:72px;text-align:left;justify-content:flex-start;background:#2e2340;border:1px solid #7040a8;color:#fff}
+#control .quick-tiles button.danger{background:#481b24;border-color:#a43946}
+#control #chat-strip{display:block;max-height:350px;overflow:auto}
+#control #chat-strip p{margin:0 0 6px;background:#242429;border-radius:4px}
+#control #chat-strip strong{color:#bf94ff}
+#control .timeline-step{background:#242429;border-color:#6a478f;color:#dad3e2}
+#control .timeline-step.complete{border-color:#9146ff;color:#fff}
+#control #activity-feed{max-height:320px;overflow:auto}
+#control #activity-feed p{margin:6px 0;padding:9px;background:#242429;border-left:3px solid #9146ff;color:#dfdfe5;font-size:13px}
+.dashboard-popout .app-rail,.dashboard-popout .app-top,.dashboard-popout .page-heading,.dashboard-popout .live-status,.dashboard-popout .layout-presets{display:none!important}
+.dashboard-popout #shell{display:block}.dashboard-popout .app-content{padding:12px}
+.dashboard-popout #control .dashboard-panels>[data-panel]{display:none}
+.dashboard-popout #control .dashboard-panels[data-popout=preview]>[data-panel=preview],.dashboard-popout #control .dashboard-panels[data-popout=round]>[data-panel=round],.dashboard-popout #control .dashboard-panels[data-popout=chat]>[data-panel=chat],.dashboard-popout #control .dashboard-panels[data-popout=actions]>[data-panel=actions],.dashboard-popout #control .dashboard-panels[data-popout=activity]>[data-panel=activity],.dashboard-popout #control .dashboard-panels[data-popout=codex]>[data-panel=codex],.dashboard-popout #control .dashboard-panels[data-popout=patches]>[data-panel=patches]{display:block;grid-column:1/-1}
+@media(max-width:1200px){#control .dashboard-panels>.live-card{grid-column:span 6!important}}
+@media(max-width:740px){#control .dashboard-panels>.live-card{grid-column:1/-1!important}.layout-presets{display:block}}

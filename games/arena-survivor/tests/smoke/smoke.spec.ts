@@ -56,6 +56,22 @@ test('Practice can run a round and ship a labelled demo without Codex', async ({
   await expect(page.locator('#mutations')).not.toContainText('Demo: Quick Feet · active');
 });
 
+test('Go Live mirrors one Play window and persists panel layout', async ({ page }) => {
+  await page.goto('/?view=go-live');
+  const play = await page.context().newPage();
+  try {
+    await play.goto('/play');
+    await expect(play.locator('#status')).toContainText('LIVE');
+    await expect(page.locator('#play-mirror')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('iframe[src="/preview.html"]')).toHaveCount(0);
+    await page.locator('#layout-preset').selectOption('chat-focus');
+    await page.getByRole('button', { name: 'Collapse Recent chat' }).click();
+    await page.reload();
+    await expect(page.locator('#layout-preset')).toHaveValue('chat-focus');
+    await expect(page.locator('[data-panel="chat"]')).toHaveClass(/collapsed/);
+  } finally { await play.close(); }
+});
+
 for (const example of chosen ? [chosen] : examples) test(`game plays for five seconds with ${example}`, async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));

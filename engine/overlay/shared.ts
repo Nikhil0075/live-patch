@@ -2,10 +2,10 @@ export interface RoundView {
   number: number;
   phase: 'pitch' | 'vote' | 'approval' | 'building' | 'paused';
   remainingMs: number | null;
-  candidates: { id: string; text: string; spec?: string; authorName: string; contributors?: string[]; votes: string[]; status: string }[];
+  candidates: { id: string; text: string; spec?: string; authorName: string; contributors?: string[]; votes: string[]; status: string; source?: 'chat' | 'reward'; createdAt?: string; updatedAt?: string; practice?: boolean }[];
   triagePreview?: { id: string; decision: 'accept' | 'reject' | 'merge'; spec?: string; duplicateId?: string }[];
 }
-export interface RunView { id: string; ideaId: string; status: string; mutationName?: string; threadId?: string; durationMs?: number; error?: string }
+export interface RunView { id: string; ideaId: string; status: string; mutationName?: string; threadId?: string; durationMs?: number; error?: string; demo?: boolean; startedAt?: string; finishedAt?: string }
 export interface RunnerProgressView { runId: string; ideaId: string; type: string; message?: string; at: string }
 export interface MutationView { name: string; source: string; error?: string }
 export interface SettingsView { reduceFlashing: boolean; overlayCompact: boolean; muted: boolean; pitchSeconds: number; voteSeconds: number }

@@ -5,6 +5,7 @@
 - Studio design tokens and self-hosted Inter. The font package is included so the interface does not depend on an external font service.
 - Separate `/play` window, keyboard pause menu, manifest controls, persistent sound and accessibility settings, and game/mutation pause handling.
 - First-visit welcome and Practice quick actions. A manifest-declared, validated Demo patch ships only for a Practice pitch and can be rolled back.
+- Go Live panel grid, persisted presets/collapse/order, quick actions and activity derived from stored events. Its preview mirrors the real Play window with `BroadcastChannel` and overlays the OBS page without creating a second game.
 
 ## How to run and test
 
