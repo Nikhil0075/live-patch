@@ -2,7 +2,7 @@ import '../app.css';
 import './library-polish.css';
 import { appendText } from './shared';
 
-interface GameCard { directory: string; name: string; description: string; tags: string[]; version?: string; author?: string; valid: boolean; error?: string; examples: number; smoke?: { status: string; at: string; detail?: string }; shipped: number; cover?: string; hooks?: string[]; actions?: string[]; controls?: { action: string; keys: string[] }[]; audio?: string[]; effects?: string[]; source?: 'built-in' | 'imported' }
+interface GameCard { directory: string; name: string; description: string; tags: string[]; version?: string; author?: string; valid: boolean; error?: string; examples: number; smoke?: { status: string; at: string; detail?: string }; shipped: number; activePatches: number; cover?: string; hooks?: string[]; actions?: string[]; controls?: { action: string; keys: string[] }[]; audio?: string[]; effects?: string[]; source?: 'built-in' | 'imported' }
 const root = document.querySelector<HTMLElement>('#library')!;
 root.innerHTML = '<div class="section-head"><div><p class="app-kicker">PICK YOUR STARTING WORLD</p><h2>Game library</h2><p class="muted">Each game brings its own mutation rules and smoke test.</p></div><label class="library-search">Search games<input id="game-search" type="search" placeholder="Search games and tags"></label></div><div class="library-layout"><div id="game-cards" class="library-grid"></div><aside id="game-detail" class="studio-card library-detail"></aside></div><dialog id="add-game-dialog"><form method="dialog"><button class="secondary">Close</button></form><h2>Add your game</h2><div class="library-actions"><form id="import-game"><label>Import a local folder<input name="directory" placeholder="D:\\my-game" required></label><button>Inspect folder</button></form><form id="new-game"><label>Start from a template<input name="name" placeholder="My new game" required maxlength="80"></label><button>Create and smoke test</button></form></div><div id="import-preview" hidden><h3>Before import</h3><p id="import-details"></p><p>This folder can run local code through its smoke-test command. Import only a folder you trust.</p><button id="confirm-import">Run smoke test and import</button></div><p id="library-notice" role="status"></p></dialog><dialog id="docs-dialog"><form method="dialog"><button class="secondary">Close</button></form><h2>Mutation API</h2><pre id="docs-text"></pre></dialog>';
 root.querySelector('.section-head')!.insertAdjacentHTML('afterend','<div class="library-toolbar"><div id="library-filters" aria-label="Filter games"><button data-filter="all" aria-pressed="true">All</button><button data-filter="ready">Ready to stream</button><button data-filter="templates">Templates</button><button data-filter="imported">Imported</button></div><label>Sort <select id="library-sort"><option value="name">Name</option><option value="shipped">Most patches</option></select></label></div>');
@@ -63,7 +63,9 @@ function showDetails(game?: GameCard) {
   ]) {
     if (['Version', 'Creator'].includes(label)) continue;
     const row = document.createElement('details'); row.className = 'library-detail-row';
-    const summary = document.createElement('summary'); summary.textContent = `${label} · ${value === 'None' || value === 'Not declared' || value === 'Unspecified' ? 0 : value.split(' · ').length}  ›`;
+    const summary = document.createElement('summary');
+    appendText(summary, 'span', label);
+    appendText(summary, 'span', `${value === 'None' || value === 'Not declared' || value === 'Unspecified' ? 0 : value.split(' · ').length}`, 'library-detail-count');
     const contents = document.createElement('p'); contents.textContent = value; row.append(summary, contents); detail.append(row);
   }
   const badges = document.createElement('div'); badges.className = 'library-badges';
@@ -93,7 +95,7 @@ function render() {
     const content = document.createElement('div'); content.className = 'library-card-content';
     appendText(content, 'small', game.directory === data.active ? 'ACTIVE GAME' : game.valid ? 'READY TO PLAY' : 'NEEDS ATTENTION', 'app-kicker');
     appendText(content, 'h3', game.name);
-    appendText(content, 'strong', `${game.shipped} patch${game.shipped === 1 ? '' : 'es'} active`, 'library-patch-count');
+    appendText(content, 'strong', `${game.activePatches} patch${game.activePatches === 1 ? '' : 'es'} active`, 'library-patch-count');
     appendText(content, 'p', game.description || game.error || 'Add a description to the game manifest.');
     appendText(content, 'small', `Manifest ${game.valid ? 'valid' : 'invalid'} · Smoke ${game.smoke?.status ?? 'not run'}${game.smoke?.at ? ` (${new Date(game.smoke.at).toLocaleString()})` : ''} · ${game.examples} example${game.examples === 1 ? '' : 's'} · ${game.shipped} shipped`);
     if (game.tags.length) { const tags = document.createElement('div'); tags.className = 'library-tags'; for (const tag of game.tags) appendText(tags, 'span', tag); content.append(tags); }

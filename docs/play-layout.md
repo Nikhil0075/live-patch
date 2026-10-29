@@ -7,6 +7,7 @@ At 1920 × 1080, keep the center of the game clear.
 | Left 24–430 px, top 0–165 px | Game window | Game HUD (score, lives and time). The browser window title carries the game name. |
 | Right 1480–1896 px, top 16–100 px | Game window | Sound, full screen and menu controls; these fade after 3 seconds |
 | Center 685–1235 px, top 60–170 px | Game window | Ship, rollback and failure toast |
+| Center 685–1235 px, top 205–280 px | Arena Survivor | Temporary in-game message banner, below the ship toast |
 | Left 24–444 px, top 180–610 px | OBS overlay | Vertical live patch card and credits |
 | Left 24–1034 px, bottom 110–430 px | OBS overlay | Ballot and voting hints |
 | Right 1470–1896 px, below 160 px | OBS overlay | Codex progress |

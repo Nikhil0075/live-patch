@@ -37,7 +37,7 @@ The concept images supplied in `plans/phase-5.5/concepts/` show the intended hie
 | --- | --- | --- |
 | 01 Studio Home | [Home](phase-5.5-visual/01-home.png) | Matches: compact header, numbered checklist, progress ring, illustrated active game and separate patch shelf. Difference: the shelf shows an honest empty state and four setup steps; the concept depicts fictional shipped patches and three steps. Appendix 4 calls for real state, so no fake patches are shown. |
 | 02 Go Live | [Go Live](phase-5.5-visual/02-go-live.png) | Matches: one-viewport dashboard, preview, large round timer, vote bars, six visible action tiles, activity, Codex timeline and panel controls. Difference: active patches occupy a seventh panel, and chat is empty in the isolated capture. Appendix 4 requires no invented live chat or Twitch connection. The preview uses real Play frames. |
-| 03 Game window | [Play](phase-5.5-visual/03-game-window.png) | Matches: full 16:9 arena, clean gameplay and named demo-ship toast. Difference: the game art and HUD remain Arena Survivor’s actual code-drawn visual system; the concept depicts a more elaborate reference game. Appendix 4 protects the game identity. |
+| 03 Game window | [Play](phase-5.5-visual/03-game-window.png), [controls visible](phase-5.5-visual/10-play-tools-visible.png) | Matches: full 16:9 arena, clean gameplay, named demo-ship toast and top-right controls that clear the HUD. Difference: the game art and HUD remain Arena Survivor’s actual code-drawn visual system; the concept depicts a more elaborate reference game. Appendix 4 protects the game identity. |
 | 04 Pause menu | [Pause](phase-5.5-visual/04-pause-menu.png) | Matches: large PAUSED heading, icon sections, credited/statused patch cards and keyboard hints. The capture now opens the Patches section. Difference: the patch icons are a consistent code-drawn tile rather than unique art, because arbitrary third-party patches do not supply icons. |
 | 05 Library | [Library](phase-5.5-visual/05-library.png) | Matches: generated cover, grid card, star, tags, status footer, details cover, two actions and expandable capability counts. Difference: only one real playable game is shown, per Appendix 4; the concept’s extra games are examples. |
 | 06 Welcome | [Welcome](phase-5.5-visual/06-welcome.png) | Matches: near-full-screen welcome, exact tagline, illustrated chat/poll/patch loop, numbered steps, three choice cards and footer actions. Difference: the third code-drawn illustration uses a patch symbol rather than a puzzle-piece outline; no raster artwork is required for the onboarding flow. |
@@ -56,7 +56,7 @@ The concept images supplied in `plans/phase-5.5/concepts/` show the intended hie
 - [x] Library and stream overlay with readable type and no default HUD/toast collision — unit, browser geometry test and composite capture.
 - [x] Keyboard-only Studio navigation, named icon controls and reduce-flashing handling — browser navigation test plus existing accessibility checks.
 - [ ] Two new users reach a shipped patch unaided in under five minutes — the operator must run observations using `docs/usability-check.md`.
-- [x] HTTPS/HTTP2 flows, full suite, build and audit — `npm test` passed with 75 unit tests (4 opt-in skipped), 49 browser tests (1 opt-in WebGL skipped) and the HTTPS regression; `npm run build` passed and `npm audit --audit-level=high` found 0 vulnerabilities.
+- [x] HTTPS/HTTP2 flows, full suite, build and audit — `npm test` passed with 77 unit tests (4 opt-in skipped), 53 browser tests (1 opt-in WebGL skipped) and the HTTPS regression; `npm run build` passed and `npm audit --audit-level=high` found 0 vulnerabilities.
 
 ## Deferred
 
@@ -82,3 +82,11 @@ The concept images supplied in `plans/phase-5.5/concepts/` show the intended hie
 - **P55-R1-11 Fixed:** test reads host tick deliveries, keyboard navigation test added, and all 11 exit criteria appear above.
 - **P55-R1-12 Fixed:** shared chrome colours were moved into tokens and contrast tests extended; game art colours remain game-specific.
 - **P55-R1-13 Fixed:** action feedback uses plain words, the Codex card resolves patch titles, and prediction activity uses its stored creation time.
+- **P55-R2-01 Fixed:** right-aligned the visible Play controls, kept their right edge within the layout map and added a 1920 × 1080 browser geometry test against the HUD and toast. [Visible-controls capture](phase-5.5-visual/10-play-tools-visible.png). The round-one stream-clean wording in the spec is accepted and matches the operator's updated plan.
+- **P55-R2-02 Fixed:** the server reads the validated demo module's literal `meta.title`, stores it on the run and uses it in the event and Practice reply; the overlay reads the stored title. Unit and browser tests use a second game demo title.
+- **P55-R2-03 Fixed:** renamed the prepared module to `coin-shower.js` and reduced its start effect to 10 coin spawns, one burst and one message; the browser test checks that no actions are skipped.
+- **P55-R2-04 Fixed:** Library now counts validated `.js` mutation files separately from shipped runs; a unit test adds a file and checks the active count rises.
+- **P55-R2-05 Fixed:** detail rows use one-line flex summaries with the count on the right; the star sits within the cover. Browser geometry checks both.
+- **P55-R2-06 Fixed:** the OBS patch card orders newer shipped patches first, shows three rows and counts additional active patches in a visible `+N more` line; browser test adds two extra patches.
+- **P55-R2-07 Fixed:** moved Arena Survivor's message banner below the ship toast and added a layout bound test and layout-map entry.
+- **P55-R2-08 Deferred:** the remaining rail icon and 25 px page-height polish can be revisited after the operator's usability and OBS checks.

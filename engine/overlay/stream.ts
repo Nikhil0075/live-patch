@@ -25,7 +25,9 @@ async function refresh() {
     document.querySelector('#clock')!.textContent = roundClock(round.remainingMs);
     const patches = document.querySelector<HTMLElement>('#patches')!; patches.replaceChildren();
     appendText(patches, 'h2', 'LIVE PATCHES', 'patch-list-title');
-    for (const mutation of mutations.filter(item => !item.error).slice(-10)) {
+    const activePatches = mutations.filter(item => !item.error).map((mutation, index) => ({ mutation, index, shippedAt: [...runs].reverse().find(item => item.status === 'shipped' && item.mutationName === mutation.name)?.finishedAt ?? '' }))
+      .sort((a, b) => b.shippedAt.localeCompare(a.shippedAt) || b.index - a.index);
+    for (const { mutation } of activePatches.slice(0, 3)) {
       const pill = document.createElement('div'); pill.className = 'patch';
       const title = /title\s*:\s*['"`]([^'"`]{1,80})/.exec(mutation.source)?.[1] ?? mutation.name;
       const run = runs.find(item => item.status === 'shipped' && item.mutationName === mutation.name);
@@ -35,13 +37,15 @@ async function refresh() {
       appendText(pill, 'strong', run?.demo && !title.toLowerCase().startsWith('demo') ? `DEMO · ${title}` : title); if (credit) appendText(pill, 'small', credit);
       patches.append(pill);
     }
+    if (activePatches.length > 3) appendText(patches, 'small', `+${activePatches.length - 3} more active patch${activePatches.length - 3 === 1 ? '' : 'es'}`, 'patch-more');
     const latest = runs.at(-1);
     const work = document.querySelector<HTMLElement>('#work')!; work.replaceChildren();
     document.querySelector('.stream-shell aside .panel-label')!.textContent = latest?.demo ? 'DEMO PATCH' : 'CODEX AT WORK';
     if (latest) {
       appendText(work, 'strong', latest.status.toUpperCase(), `run-status ${latest.status}`);
       const idea = ideas.find(item => item.id === latest.ideaId);
-      appendText(work, 'p', latest.demo ? `Demo patch: Coin Shower (stands in for “${idea?.text ?? 'a Practice idea'}”)` : idea?.spec ?? idea?.text ?? latest.mutationName ?? 'Patch run');
+      const olderDemoTitle = mutations.find(item => item.name === latest.mutationName)?.source.match(/title\s*:\s*['"`]([^'"`]{1,80})/)?.[1];
+      appendText(work, 'p', latest.demo ? `${latest.mutationTitle ?? olderDemoTitle ?? latest.mutationName ?? 'Demo patch'} (stands in for “${idea?.text ?? 'a Practice idea'}”)` : idea?.spec ?? idea?.text ?? latest.mutationName ?? 'Patch run');
       if (latest.demo) appendText(work, 'small', 'by @Live Patch Demo');
       else if (idea) appendText(work, 'small', idea.contributors?.map(name => `@${name}`).join(', ') ?? `@${idea.authorName}`);
       const steps = events.filter(event => event.runId === latest.id);

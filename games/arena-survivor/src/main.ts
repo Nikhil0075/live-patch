@@ -5,6 +5,7 @@ import { defaultSettings, type StudioSettings } from '../../../engine/studio/set
 import { ArenaAudio, soundEvents, type SoundEvent } from './audio';
 import { createArenaTextures } from './art';
 import { maxParticles, ParticleBudget } from './particle-budget';
+import { bannerY } from './layout';
 
 const width = 1152, height = 648;
 type Kind = 'enemy' | 'coin' | 'bomb' | 'fire';
@@ -172,7 +173,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       this.pen = this.add.graphics();
       this.avatar = this.add.image(player.x, player.y, 'arena-player').setDepth(2).setDisplaySize(78, 78);
       this.hud = this.add.text(20, 16, '', { fontFamily: 'Arial', fontSize: `${settings.hudSize === 'large' ? 24 : settings.hudSize === 'small' ? 16 : 19}px`, color: '#edffff', fontStyle: 'bold' }).setDepth(2);
-      this.banner = this.add.text(width / 2, 65, '', { fontFamily: 'Arial', fontSize: '22px', color: '#ffe187', align: 'center' }).setOrigin(.5).setDepth(2);
+      this.banner = this.add.text(width / 2, bannerY, '', { fontFamily: 'Arial', fontSize: '22px', color: '#ffe187', align: 'center' }).setOrigin(.5).setDepth(2);
       this.keys = this.input.keyboard!.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE') as Record<string, Phaser.Input.Keyboard.Key>;
       for (let i = 0; i < 4; i++) spawn('coin', 100 + i * 225, 150 + (i % 2) * 320);
       spawn('enemy', 80, 80); spawn('enemy', 870, 555);

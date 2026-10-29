@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadGame } from './load';
 import { smoke } from '../runner/runner';
+import { validateMutation } from '../mutation/validate';
 
-export interface LibraryGame { directory: string; name: string; description: string; cover?: string; tags: string[]; version?: string; author?: string; valid: boolean; error?: string; examples: number; hooks?: string[]; actions?: string[]; controls?: { action: string; keys: string[] }[]; audio?: string[]; effects?: string[]; source?: 'built-in' | 'imported'; smoke?: { status: 'passed' | 'failed'; at: string; detail?: string }; shipped: number }
+export interface LibraryGame { directory: string; name: string; description: string; cover?: string; tags: string[]; version?: string; author?: string; valid: boolean; error?: string; examples: number; hooks?: string[]; actions?: string[]; controls?: { action: string; keys: string[] }[]; audio?: string[]; effects?: string[]; source?: 'built-in' | 'imported'; smoke?: { status: 'passed' | 'failed'; at: string; detail?: string }; shipped: number; activePatches: number }
 const safePath = (root: string, directory: string) => path.relative(root, directory).replaceAll('\\', '/');
 const readJson = <T>(file: string, fallback: T): T => fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) as T : fallback;
 function atomic(file: string, value: unknown) { fs.mkdirSync(path.dirname(file), { recursive: true }); const temp = `${file}.${process.pid}.tmp`; fs.writeFileSync(temp, JSON.stringify(value, null, 2), { mode: 0o600 }); fs.renameSync(temp, file); }
@@ -18,8 +19,10 @@ export function discoverGames(root: string, dataDir: string): LibraryGame[] {
     try {
       const { manifest } = loadGame(root, directory);
       const examples = manifest.examples.reduce((count, folder) => count + fs.readdirSync(path.join(directory, folder)).filter(name => name.endsWith('.js')).length, 0);
-      return { directory, name: manifest.name, description: manifest.description ?? manifest.hint, cover: `/api/library/cover?directory=${encodeURIComponent(directory)}`, tags: manifest.tags ?? [], version: manifest.version, author: manifest.author, valid: true, examples, hooks: Object.values(manifest.hooks), actions: Object.keys(manifest.actions), controls: manifest.controls, audio: manifest.audio, effects: manifest.effects, source: imports.includes(directory) ? 'imported' : 'built-in', smoke: smoke[directory], shipped: runs.filter(run => run.gameDirectory === directory && run.status === 'shipped').length };
-    } catch (error) { return { directory, name: path.basename(directory), description: '', tags: [], valid: false, error: String(error), examples: 0, smoke: smoke[directory], shipped: 0 }; }
+      const mutationDir = path.join(directory, manifest.mutationDir);
+      const activePatches = fs.readdirSync(mutationDir).filter(name => name.endsWith('.js') && fs.statSync(path.join(mutationDir, name)).isFile() && !validateMutation(fs.readFileSync(path.join(mutationDir, name), 'utf8'), manifest)).length;
+      return { directory, name: manifest.name, description: manifest.description ?? manifest.hint, cover: `/api/library/cover?directory=${encodeURIComponent(directory)}`, tags: manifest.tags ?? [], version: manifest.version, author: manifest.author, valid: true, examples, activePatches, hooks: Object.values(manifest.hooks), actions: Object.keys(manifest.actions), controls: manifest.controls, audio: manifest.audio, effects: manifest.effects, source: imports.includes(directory) ? 'imported' : 'built-in', smoke: smoke[directory], shipped: runs.filter(run => run.gameDirectory === directory && run.status === 'shipped').length };
+    } catch (error) { return { directory, name: path.basename(directory), description: '', tags: [], valid: false, error: String(error), examples: 0, smoke: smoke[directory], shipped: 0, activePatches: 0 }; }
   });
 }
 

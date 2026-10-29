@@ -27,6 +27,7 @@ import { setupChecks, sandboxSelfTest, runSandboxSetup, classifySandboxError, ty
 import { createManagedPitchReward, fetchPitchReward, refundRedemption, fulfillRedemption, type RewardState, type TwitchReward } from './rewards';
 import { RefundStore } from './refunds';
 import { validateMutation } from '../mutation/validate';
+import { mutationTitle } from '../mutation/metadata';
 import { RollbackVotes } from '../pipeline/rollback-votes';
 import { PatchPredictions } from './predictions';
 
@@ -362,6 +363,8 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
         const source = fs.readFileSync(sourcePath, 'utf8');
         const issue = validateMutation(source, manifest);
         if (issue) throw Error(`Demo patch failed validation: ${issue}`);
+        const demoTitle = mutationTitle(source);
+        if (!demoTitle) throw Error('Demo patch needs a literal title in exported metadata');
         const name = `demo-${randomUUID().slice(0, 8)}.js`;
         const target = path.join(mutationDir, name);
         const temporary = `${target}.${process.pid}.tmp`;
@@ -371,11 +374,11 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
         store.setStatus(selected.id, 'demo');
         const now = new Date().toISOString();
         const runId = randomUUID();
-        runs.upsert({ id: runId, ideaId: selected.id, gameDirectory, status: 'shipped', startedAt: now, finishedAt: now, mutationName: name, demo: true, durationMs: 0 });
+        runs.upsert({ id: runId, ideaId: selected.id, gameDirectory, status: 'shipped', startedAt: now, finishedAt: now, mutationName: name, mutationTitle: demoTitle, demo: true, durationMs: 0 });
         rounds.runFinished(selected.id);
-        const event: RunnerEvent = { runId, ideaId: selected.id, type: 'shipped', at: now, message: `Demo patch: Coin Shower (stands in for “${selected.text}”)` };
+        const event: RunnerEvent = { runId, ideaId: selected.id, type: 'shipped', at: now, message: `${demoTitle} (stands in for “${selected.text}”)` };
         progress.push(event); server.ws.send({ type: 'custom', event: 'live-patch:runner', data: event });
-        json(res, 200, { message: `Demo patch: Coin Shower (stands in for “${selected.text}”). Open Play to see it.`, name, demo: true });
+        json(res, 200, { message: `${demoTitle} (stands in for “${selected.text}”). Open Play to see it.`, name, demo: true });
       } catch (error) { json(res, 400, { error: String(error) }); }
       return;
     }

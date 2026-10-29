@@ -7,6 +7,7 @@
 .stream-shell .patch{position:relative;max-width:none;min-width:0;padding-left:54px;background:#27202ff2;border:1px solid #77549c;border-radius:6px;box-shadow:0 8px 24px #000a}
 .stream-shell .patch-icon{position:absolute;left:12px;top:10px;display:grid;place-items:center;width:30px;height:30px;border-radius:4px;background:#563385;color:#fff;font-size:22px}
 .stream-shell .patch small{color:#dbc4ff}
+.stream-shell .patch-more{color:#dbc4ff;font-size:18px;font-weight:800}
 .stream-shell aside{top:165px;right:24px;width:350px;background:#15121ef2;border-color:#9146ff;border-radius:6px}
 .stream-shell .panel-label{color:#d8baff}
 .stream-shell #work .work-step{display:inline-flex;align-items:center;margin:8px 4px 0 0;padding:5px 8px;border-left:0;border-bottom:3px solid #6c5b7b;font-size:15px}.stream-shell #work .work-step.complete{border-bottom-color:#9aeead}

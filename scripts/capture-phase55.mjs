@@ -60,6 +60,9 @@ try {
   await play.waitForFunction(() => document.querySelector('#mutations')?.textContent?.includes('Demo patch: Coin Shower'), null, { timeout: 10_000 });
   await play.waitForTimeout(3200);
   await play.screenshot({ path: path.join(output, '03-game-window.png') });
+  await play.mouse.move(960, 540);
+  await play.waitForFunction(() => !document.querySelector('#play-shell')?.classList.contains('stream-clean'));
+  await play.screenshot({ path: path.join(output, '10-play-tools-visible.png') });
   await play.keyboard.press('p');
   await play.locator('#play-menu').waitFor({ state: 'visible' });
   await play.locator('#menu-tabs button[data-tab="patches"]').click();
@@ -83,7 +86,7 @@ try {
   await play.frameLocator('iframe[title="OBS overlay composite"]').locator('#pitch-ticker').waitFor({ state: 'visible' });
   await play.waitForTimeout(3500);
   await play.screenshot({ path: path.join(output, '07-stream-overlay.png') });
-  console.log(`Captured eight Phase 5.5 concept screens and the overlay editor in ${output}`);
+  console.log(`Captured eight Phase 5.5 concept screens, the overlay editor and visible Play controls in ${output}`);
 } finally {
   await browser?.close(); await server?.close();
   if (!path.resolve(temporary).startsWith(path.resolve(root) + path.sep)) throw Error('Unexpected temporary visual path');

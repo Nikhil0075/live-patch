@@ -4,7 +4,7 @@ import path from 'node:path';
 
 const fallback = (JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8')) as { livePatch: { defaultGame: string } }).livePatch.defaultGame;
 const gameDirectory = process.env.LIVE_PATCH_TEST_GAME_DIR || path.resolve(process.cwd(), process.env.LIVE_PATCH_GAME || fallback);
-const manifest = JSON.parse(fs.readFileSync(path.join(gameDirectory, 'live-patch.json'), 'utf8')) as { mutationDir: string };
+const manifest = JSON.parse(fs.readFileSync(path.join(gameDirectory, 'live-patch.json'), 'utf8')) as { mutationDir: string; demoMutation?: string };
 const mutationDir = path.join(gameDirectory, manifest.mutationDir);
 const examples = fs.readdirSync(mutationDir).filter(name => name.endsWith('.js'));
 const chosen = process.env.MUTATION_FILE ? path.basename(process.env.MUTATION_FILE) : undefined;
@@ -33,6 +33,40 @@ test('Play fills a 16:9 game capture without cutting off the arena', async ({ pa
   expect(box!.y).toBeLessThan(10);
 });
 
+test('visible Play controls stay in the right corner clear of the HUD and ship toast', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto('/play');
+  await expect(page.locator('#status')).toContainText('LIVE');
+  await page.evaluate(() => { document.querySelector<HTMLElement>('#play-toast')!.textContent = 'New patch: Example — by @viewer'; });
+  await page.mouse.move(960, 540);
+  await expect(page.locator('#play-shell')).not.toHaveClass(/stream-clean/);
+  const tools = await page.locator('.play-tools').boundingBox();
+  const toast = await page.locator('#play-toast').boundingBox();
+  expect(tools).toBeTruthy(); expect(toast).toBeTruthy();
+  expect(tools!.x).toBeGreaterThanOrEqual(1480);
+  expect(tools!.x + tools!.width).toBeLessThanOrEqual(1896);
+  expect(tools!.x).toBeGreaterThan(430);
+  expect(tools!.x >= toast!.x + toast!.width || toast!.x >= tools!.x + tools!.width || tools!.y >= toast!.y + toast!.height || toast!.y >= tools!.y + tools!.height).toBe(true);
+});
+
+test('Library patch count and details rows reflect the active game', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto('/?view=library');
+  await expect(page.locator('.library-patch-count').first()).toBeVisible();
+  const expected = await page.evaluate(() => fetch('/api/library').then(response => response.json()).then(data => data.games[0].activePatches));
+  await expect(page.locator('.library-patch-count').first()).toHaveText(`${expected} patch${expected === 1 ? '' : 'es'} active`);
+  const geometry = await page.evaluate(() => {
+    const summary = document.querySelector('.library-detail-row summary')!.getBoundingClientRect();
+    const cover = document.querySelector('.library-cover')!.getBoundingClientRect();
+    const star = document.querySelector('.library-star')!.getBoundingClientRect();
+    return { summaryHeight: summary.height, cover, star };
+  });
+  expect(geometry.summaryHeight).toBeLessThan(40);
+  expect(geometry.star.left).toBeGreaterThanOrEqual(geometry.cover.left);
+  expect(geometry.star.right).toBeLessThanOrEqual(geometry.cover.right);
+  expect(geometry.star.top).toBeGreaterThanOrEqual(geometry.cover.top);
+});
+
 test('OBS widgets can be removed, added and resized across reloads', async ({ page }) => {
   await page.goto('/?view=go-live');
   await page.getByRole('link', { name: /Customize OBS overlay/ }).click();
@@ -55,6 +89,21 @@ test('OBS widgets can be removed, added and resized across reloads', async ({ pa
     finally { await overlay.close(); }
   } finally {
     await page.evaluate(widgets => fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ overlayWidgets: widgets }) }), original);
+  }
+});
+
+test('stream patch card shows newest entries and counts those that do not fit', async ({ page }) => {
+  const first = path.join(mutationDir, '98-overlay-a.js');
+  const second = path.join(mutationDir, '99-overlay-b.js');
+  try {
+    fs.writeFileSync(first, "export const meta={id:'overlay-a',title:'Overlay A',author:'test',description:'First extra patch'};");
+    fs.writeFileSync(second, "export const meta={id:'overlay-b',title:'Overlay B',author:'test',description:'Second extra patch'};");
+    await page.goto('/overlay.html');
+    await expect(page.locator('#patches .patch-more')).toContainText('+2 more active patches');
+    await expect(page.locator('#patches .patch')).toHaveCount(3);
+    await expect(page.locator('#patches .patch').first()).toContainText('Overlay B');
+  } finally {
+    fs.rmSync(first, { force: true }); fs.rmSync(second, { force: true });
   }
 });
 
@@ -157,10 +206,33 @@ test('Practice can run a round and ship a labelled demo without Codex', async ({
   await page.goto('/play');
   await expect(page.locator('#mutations')).toContainText('Demo patch: Coin Shower · active');
   await expect(page.locator('#play-toast')).toContainText('Demo patch: Coin Shower');
-  await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().coins)).toBeGreaterThan(5);
+  await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().coins)).toBeGreaterThan(8);
+  await expect(page.locator('#mutations')).not.toContainText('actions skipped');
   const rollback = await page.evaluate(() => fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'rollback' }) }).then(r => r.json()));
   expect(rollback.accepted).toBe(true);
   await expect(page.locator('#mutations')).not.toContainText('Demo patch: Coin Shower · active');
+});
+
+test('Practice announcement uses a different game demo title from module metadata', async ({ page }) => {
+  expect(manifest.demoMutation).toBeTruthy();
+  const file = path.join(gameDirectory, manifest.demoMutation!);
+  const original = fs.readFileSync(file, 'utf8');
+  try {
+    fs.writeFileSync(file, original.replace("title: 'Demo patch: Coin Shower'", "title: 'Demo patch: Fire Rain'"));
+    await page.goto('/?view=practice');
+    await page.getByRole('button', { name: 'Run a full round automatically' }).click();
+    await expect(page.locator('#demo-ship')).toBeVisible({ timeout: 15_000 });
+    await page.locator('#demo-ship').click();
+    await expect(page.locator('#practice-chat')).toContainText('Demo patch: Fire Rain', { timeout: 15_000 });
+    const data = await page.evaluate(async () => ({ runs: await fetch('/api/runs').then(r => r.json()), events: await fetch('/api/runner-events').then(r => r.json()) }));
+    const run = data.runs.runs.at(-1);
+    expect(run.mutationTitle).toBe('Demo patch: Fire Rain');
+    expect(data.events.events.some((event: any) => event.runId === run.id && event.message?.includes('Demo patch: Fire Rain'))).toBe(true);
+    await page.goto('/overlay.html');
+    await expect(page.locator('#work')).toContainText('Demo patch: Fire Rain');
+  } finally {
+    fs.writeFileSync(file, original);
+  }
 });
 
 test('Go Live can remove Practice demo patches before a stream', async ({ page }) => {

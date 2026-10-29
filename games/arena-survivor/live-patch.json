@@ -19,7 +19,7 @@
   "mutationDir": "mutations/",
   "apiDocs": "docs/mutation-api.md",
   "examples": ["mutations/"],
-  "demoMutation": "demo/quick-feet.js",
+  "demoMutation": "demo/coin-shower.js",
   "forbidden": ["fetch", "eval", "document", "window", "import("],
   "testCommand": "npm run smoke -- --mutation {file}",
   "actions": {

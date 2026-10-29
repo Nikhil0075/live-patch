@@ -5,6 +5,8 @@ import os from 'node:os';
 import { SettingsStore } from '../engine/studio/settings';
 import { generatedCover } from '../engine/manifest/cover-art';
 import { practiceDemoEligible } from '../engine/twitch/practice-demo';
+import { mutationTitle } from '../engine/mutation/metadata';
+import { bannerY } from '../games/arena-survivor/src/layout';
 
 const css = fs.readFileSync(path.resolve('engine/tokens.css'), 'utf8');
 function token(name: string) { return new RegExp(`--${name}:\\s*(#[0-9a-f]{6})`, 'i').exec(css)?.[1] ?? ''; }
@@ -77,4 +79,17 @@ describe('Practice demo boundary', () => {
     expect(practiceDemoEligible('approval', [practice, { id: 'twitch' }], practice.id, false)).toBe(false);
     expect(practiceDemoEligible('approval', [practice], practice.id, true)).toBe(false);
   });
+  it('uses each game demo module title instead of an engine-owned name', () => {
+    expect(mutationTitle("export const meta = { id: 'demo', title: 'Demo patch: Fire Rain', author: 'Studio' }; export function onStart() {}"))
+      .toBe('Demo patch: Fire Rain');
+    expect(mutationTitle("export const meta = { id: 'demo', title: 'Demo patch: Moon Gravity', author: 'Studio' };"))
+      .toBe('Demo patch: Moon Gravity');
+    expect(mutationTitle("// title: 'Spoofed'\nexport const meta = { id: 'demo', author: 'Studio' };"))
+      .toBeNull();
+  });
+});
+
+it('keeps the Arena Survivor banner below the ship toast in a 1920 × 1080 capture', () => {
+  const bannerTop = (bannerY - 11) * 1080 / 648;
+  expect(bannerTop).toBeGreaterThan(170);
 });

@@ -88,6 +88,11 @@ describe('Phase 4.5 studio', () => {
     await smokeGame(root, path.join(directory, 'data'), game, candidate.example);
     const listed = discoverGames(directory, path.join(directory, 'data'));
     expect(listed[0]).toMatchObject({ name: 'Test World', valid: true, smoke: { status: 'passed' } });
+    const before = listed[0].activePatches;
+    expect(before).toBeGreaterThan(0);
+    expect(listed[0].shipped).toBe(0);
+    fs.writeFileSync(path.join(game, candidate.manifest.mutationDir, 'extra-patch.js'), "export const meta={id:'extra',title:'Extra',author:'test',description:'Another patch'};");
+    expect(discoverGames(directory, path.join(directory, 'data'))[0].activePatches).toBe(before + 1);
     makeActive(directory, game);
     expect(defaultGame(directory)).toBe(game);
     expect(loadGame(directory, defaultGame(directory)).manifest.testCommand).toContain('{file}');
