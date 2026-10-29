@@ -15,6 +15,7 @@
     "build": "tsc --noEmit && vite build"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.3.0",
     "@openai/codex-sdk": "^0.164.0",
     "esbuild": "^0.28.2",
     "phaser": "^3.90.0",

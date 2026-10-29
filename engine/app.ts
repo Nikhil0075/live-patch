@@ -1,14 +1,30 @@
 import './app.css';
+import './studio.css';
 declare const __LIVE_PATCH_TEST_SERVER__: boolean;
 
-type View = 'home' | 'library' | 'go-live' | 'builds' | 'setup' | 'settings' | 'practice';
-const labels: Record<View, string> = { home: 'Home', library: 'Library', 'go-live': 'Go Live', builds: 'Builds', setup: 'Setup', settings: 'Settings', practice: 'Practice' };
+type View = 'home' | 'practice' | 'go-live' | 'library' | 'builds' | 'setup' | 'settings';
+const labels: Record<View, string> = { home: 'Home', practice: 'Practice', 'go-live': 'Go Live', library: 'Library', builds: 'Builds', setup: 'Setup', settings: 'Settings' };
 const icons: Record<View, string> = { home: '⌂', library: '▦', 'go-live': '◉', builds: '▤', setup: '◇', settings: '⚙', practice: '▷' };
 const desired = new URLSearchParams(location.search).get('view');
 const view: View = desired && Object.hasOwn(labels, desired) ? desired as View : 'home';
-if (view === 'home' && !localStorage.getItem('live-patch:setup-complete') && !localStorage.getItem('live-patch:setup-skipped') && (!__LIVE_PATCH_TEST_SERVER__ || new URLSearchParams(location.search).has('first-run'))) location.replace('/?view=setup');
+export function openPlay() { window.open('/play', 'live-patch-play'); }
+function toast(message: string) {
+  const layer = document.querySelector('#toast-layer'); if (!layer) return;
+  const item = document.createElement('div'); item.className = 'toast'; item.textContent = message;
+  layer.append(item); setTimeout(() => item.remove(), 5000);
+}
+if (location.pathname === '/play') {
+  document.title = 'Live Patch · Game';
+  document.querySelector<HTMLDivElement>('#shell')!.innerHTML = '<div id="app"></div>';
+  void import('./client');
+} else {
 const shell = document.querySelector<HTMLDivElement>('#shell')!;
-shell.innerHTML = '<aside class="app-rail"><div class="app-mark"><span class="mark-icon">✳</span><span>LIVE<br>PATCH</span></div><nav id="app-nav" aria-label="Main navigation"></nav><div class="rail-foot"><span class="live-dot"></span><span>LOCAL STUDIO</span></div></aside><div class="app-content"><header class="app-top"><div><p class="app-kicker">THE STREAMER STUDIO</p><h1 id="app-heading"></h1></div><div class="top-actions"><span id="app-connection">Checking connections…</span><a class="button secondary" href="/overlay.html" target="_blank" rel="noopener">Open OBS overlay ↗</a></div></header><div id="app-page"></div><div id="toast-layer" role="status" aria-live="polite"></div></div>';
+shell.innerHTML = '<aside class="app-rail"><a class="app-mark" href="/" aria-label="Live Patch Home"><span class="mark-icon">✳</span><span>LIVE<br>PATCH</span></a><button id="rail-toggle" class="secondary" aria-label="Collapse sidebar">☰</button><nav id="app-nav" aria-label="Main navigation"></nav><div class="rail-setup"><p>SETUP</p><a href="/?view=setup#codex"><span id="dot-codex" class="setup-dot"></span>Codex</a><a href="/?view=setup#twitch"><span id="dot-twitch" class="setup-dot"></span>Twitch</a><a href="/?view=setup#obs"><span id="dot-obs" class="setup-dot"></span>OBS</a></div><a class="rail-settings" href="/?view=settings">⚙ Settings</a><div class="rail-foot"><span class="live-dot"></span><span>LOCAL STUDIO</span></div></aside><div class="app-content"><header class="app-top"><label class="top-search"><span>⌕</span><input id="studio-search" type="search" placeholder="Search patches, ideas, builds, settings" aria-label="Search studio"></label><div class="top-actions"><span id="app-connection">Checking connections…</span><span id="codex-connection">Codex checking…</span><a class="button secondary" href="/overlay.html" target="_blank" rel="noopener">OBS ↗</a><span id="mode-chip">Practice</span><button id="top-play" class="secondary">Play ↗</button><a class="button primary" href="/?view=go-live">Go Live</a></div></header><div class="page-heading"><p class="app-kicker">LIVE PATCH STUDIO</p><h1 id="app-heading"></h1><p id="app-description"></p></div><div id="app-page"></div><div id="toast-layer" role="status" aria-live="polite"></div></div>';
+document.querySelector('#top-play')!.addEventListener('click', openPlay);
+const rail = document.querySelector<HTMLElement>('.app-rail')!;
+rail.classList.toggle('collapsed', localStorage.getItem('live-patch:rail-collapsed') === '1');
+document.querySelector('#rail-toggle')!.addEventListener('click', () => { rail.classList.toggle('collapsed'); localStorage.setItem('live-patch:rail-collapsed', rail.classList.contains('collapsed') ? '1' : '0'); });
+document.querySelector<HTMLInputElement>('#studio-search')!.addEventListener('keydown', event => { if (event.key !== 'Enter') return; const term = (event.currentTarget as HTMLInputElement).value.toLowerCase(); const target = term.includes('patch') || term.includes('idea') ? 'practice' : term.includes('build') ? 'builds' : term.includes('setting') ? 'settings' : term.includes('game') ? 'library' : ''; if (target) location.href = `/?view=${target}`; else toast('Search patches, ideas, builds, settings or games.'); });
 const nav = document.querySelector<HTMLElement>('#app-nav')!;
 for (const item of Object.keys(labels) as View[]) {
   const link = document.createElement('a'); link.href = item === 'home' ? '/' : `/?view=${item}`;
@@ -18,13 +34,9 @@ for (const item of Object.keys(labels) as View[]) {
   const name = document.createElement('span'); name.textContent = labels[item]; link.append(icon, name); nav.append(link);
 }
 document.querySelector('#app-heading')!.textContent = labels[view];
+document.querySelector('#app-description')!.textContent = ({home:'Your game, connections and next step at a glance.',practice:'Try a round with sample viewers. Nothing is sent to Twitch.', 'go-live':'Run your stream, follow chat and ship patches.',library:'Choose the game that chat will change.',builds:'Return to a game saved from an earlier stream.',setup:'Connect the tools you want to use.',settings:'Tune your game and studio.'} as Record<View,string>)[view];
+document.querySelector('#mode-chip')!.textContent = view === 'go-live' ? 'Live controls' : 'Practice';
 const page = document.querySelector<HTMLElement>('#app-page')!;
-
-export function toast(message: string) {
-  const item = document.createElement('div'); item.className = 'toast'; item.textContent = message;
-  document.querySelector('#toast-layer')!.append(item);
-  setTimeout(() => item.remove(), 5000);
-}
 
 async function summary() {
   try {
@@ -47,17 +59,20 @@ async function summary() {
       banner.append(label, button); page.prepend(banner);
     }
     document.querySelector('#app-connection')!.textContent = twitch.broadcaster && twitch.bot ? `● Twitch ${twitch.eventsub}` : '○ Practice ready';
+    document.querySelector('#dot-twitch')?.classList.toggle('ready', Boolean(twitch.broadcaster && twitch.bot));
     const set = (id: string, value: string) => { const element = document.querySelector(id); if (element) element.textContent = value; };
     set('#home-game', game.name);
     set('#home-twitch', twitch.broadcaster && twitch.bot ? `${twitch.broadcaster.login} + ${twitch.bot.login}` : twitch.configured ? 'Connect both accounts' : 'Set up Twitch when ready');
     set('#home-codex', runs.runs.at(-1)?.status ?? 'Check setup');
     set('#home-build', builds.builds.at(0)?.id ?? 'No saved build yet');
     set('#home-setup', twitch.broadcaster && twitch.bot ? 'Connected' : 'Practice mode available');
-    if (view === 'home') {
+    if (view === 'home' || view === 'setup') {
       set('#home-overlay', 'Overlay ready');
       window.setTimeout(() => {
         void fetch('/api/setup').then(r => r.json()).then((setup: { checks: { id: string; state: string }[] }) => {
           const codex = setup.checks.find(item => item.id === 'codex');
+          for (const id of ['codex', 'obs']) document.querySelector(`#dot-${id}`)?.classList.toggle('ready', setup.checks.find(item => item.id === id)?.state === 'Ready');
+          set('#codex-connection', codex?.state === 'Ready' ? '● Codex ready' : '○ Codex setup');
           set('#home-codex', codex?.state === 'Ready' ? 'Signed in' : 'Sign in to Codex');
           const ready = twitch.broadcaster && twitch.bot && codex?.state === 'Ready' && setup.checks.find(item => item.id === 'sandbox')?.state === 'Ready';
           const primary = document.querySelector<HTMLAnchorElement>('#home-primary');
@@ -70,18 +85,20 @@ async function summary() {
 
 switch (view) {
   case 'home':
-    page.innerHTML = '<section class="hero"><div><p class="app-kicker">CHAT DESIGNS. CODEX BUILDS. YOU PLAY.</p><h2>Your next stream starts here.</h2><p>Practice the full loop, then take your evolving game live. Keep the game running as ideas turn into playable patches.</p><div class="hero-actions"><a id="home-primary" class="button primary" href="/?view=practice">Start a practice round →</a><a class="button secondary" href="/?view=go-live">Go to stream controls</a></div></div><div class="hero-graphic"><span>✳</span><small>THE GAME CHANGES WHILE YOU PLAY</small></div></section><section class="status-grid"><article><small>ACTIVE GAME</small><strong id="home-game">Loading…</strong><a href="/?view=library">Browse games →</a></article><article><small>TWITCH</small><strong id="home-twitch">Loading…</strong><a href="/?view=setup">Connection guide →</a></article><article><small>CODEX</small><strong id="home-codex">Loading…</strong><a href="/?view=setup">Check setup →</a></article><article><small>OVERLAY</small><strong id="home-overlay">Checking…</strong><a href="/overlay.html" target="_blank" rel="noopener">Open overlay →</a></article><article><small>LAST BUILD</small><strong id="home-build">Loading…</strong><a href="/?view=builds">Open library →</a></article></section><div class="section-head"><div><p class="app-kicker">PLAY VIEW</p><h2>Live arena</h2></div><span id="home-setup" class="status-pill"></span></div><div id="app"></div>';
-    if (!localStorage.getItem('live-patch:setup-complete') && !localStorage.getItem('live-patch:setup-skipped')) {
-      const callout = document.createElement('div'); callout.className = 'first-run-callout'; callout.setAttribute('role', 'dialog'); callout.setAttribute('aria-label', 'First-time setup');
-      callout.innerHTML = '<div><strong>First-time setup · Step 1 of 6</strong><p>Check this PC, connect Codex and try a practice round.</p></div><div class="actions"><a class="button primary" href="/?view=setup">Continue setup →</a><button class="secondary" id="skip-first-run">Skip to practice</button></div>';
-      page.prepend(callout);
-      callout.querySelector('#skip-first-run')!.addEventListener('click', () => { localStorage.setItem('live-patch:setup-skipped', '1'); location.href = '/?view=practice'; });
+    page.innerHTML = '<div class="home-grid"><section id="start-checklist" class="studio-card"><div class="section-head"><div><p class="app-kicker">START HERE</p><h2>Your first stream starts here</h2></div><div id="checklist-ring" class="progress-ring">0/4</div></div><p>Try the loop in Practice, then connect the tools you want for a live stream.</p><ol class="journey-list"><li><a href="/?view=practice">Run a practice round</a><small>About 2 minutes</small></li><li><a href="/?view=setup#twitch">Connect Twitch</a><small>For live chat</small></li><li><a href="/?view=setup#codex">Enable Codex building</a><small>For new patches</small></li><li><a href="/?view=setup#obs">Add the OBS overlay</a><small>For viewers</small></li></ol><a id="home-primary" class="button primary" href="/?view=practice">Try Practice →</a></section><section class="studio-card active-game-card"><div><p class="app-kicker">ACTIVE GAME</p><h2 id="home-game">Loading…</h2><p>The game evolves as chat ideas become playable patches.</p><button id="home-play">Play in new window ↗</button><a href="/?view=library">Browse games →</a></div><div class="game-art" aria-hidden="true">✳</div></section></div><section class="home-shelf"><div class="section-head"><h2>Recently shipped patches</h2><a href="/?view=go-live">View activity →</a></div><div class="status-grid"><article><small>TWITCH</small><strong id="home-twitch">Checking…</strong></article><article><small>CODEX</small><strong id="home-codex">Checking…</strong></article><article><small>LAST SAVED BUILD</small><strong id="home-build">Checking…</strong><a href="/?view=builds">Open builds →</a></article></div></section>';
+    document.querySelector('#home-play')!.addEventListener('click', openPlay);
+    if (!localStorage.getItem('live-patch:welcome-seen') && (!__LIVE_PATCH_TEST_SERVER__ || new URLSearchParams(location.search).has('first-run'))) {
+      const welcome = document.createElement('dialog'); welcome.className = 'welcome-dialog'; welcome.setAttribute('aria-label', 'Welcome to Live Patch');
+      welcome.innerHTML = '<p class="app-kicker">WELCOME TO LIVE PATCH</p><h2>Chat dreams it. Your game becomes it.</h2><p>Viewers pitch game ideas, vote, and Codex builds the winning patch while you play.</p><div class="welcome-steps"><span>① Chat pitches</span><span>→</span><span>② Chat votes</span><span>→</span><span>③ A patch ships</span></div><div class="welcome-choices"><a class="button primary" href="/?view=practice">Try it now · no accounts · about 2 minutes</a><a class="button secondary" href="/?view=setup#twitch">Connect Twitch</a><a class="button secondary" href="/?view=setup#codex">Enable AI building</a></div><a href="/?view=setup">What does Live Patch change on my PC?</a><button id="welcome-close" class="secondary">Skip</button>';
+      document.body.append(welcome); welcome.showModal(); localStorage.setItem('live-patch:welcome-seen', '1');
+      welcome.querySelector('#welcome-close')!.addEventListener('click', () => welcome.close());
     }
-    void import('./client'); void summary(); break;
+    void summary(); break;
   case 'go-live': page.innerHTML = '<div id="control"></div>'; void import('./overlay/control'); void summary(); break;
   case 'practice': page.innerHTML = '<div id="simulator"></div>'; void import('./twitch/simulator'); void summary(); break;
   case 'library': page.innerHTML = '<div id="library"></div>'; void import('./overlay/library'); void summary(); break;
   case 'builds': page.innerHTML = '<div id="build-library"></div>'; void import('./overlay/build-library'); void summary(); break;
   case 'setup': page.innerHTML = '<div id="setup"></div>'; void import('./overlay/setup'); void summary(); break;
   case 'settings': page.innerHTML = '<div id="settings"></div>'; void import('./overlay/settings'); void summary(); break;
+}
 }

@@ -1,0 +1,27 @@
+@import '@fontsource/inter/latin-400.css';
+@import '@fontsource/inter/latin-600.css';
+@import '@fontsource/inter/latin-700.css';
+@import '@fontsource/inter/latin-800.css';
+
+:root {
+  --bg: #0e0e10;
+  --surface: #18181b;
+  --raised: #1f1f23;
+  --line: #2f2f35;
+  --text: #efeff1;
+  --muted: #adadb8;
+  --accent: #9146ff;
+  --accent-hover: #772ce8;
+  --live: #eb0400;
+  --success: #5fdba5;
+  --warning: #ffcf70;
+  --radius: 4px;
+  --space: 8px;
+  --mint: var(--accent);
+  --coral: var(--live);
+  color: var(--text);
+  background: var(--bg);
+  font-family: Inter, sans-serif;
+}
+
+*:focus-visible { outline: 3px solid #bf94ff; outline-offset: 3px; }
