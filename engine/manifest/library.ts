@@ -18,7 +18,7 @@ export function discoverGames(root: string, dataDir: string): LibraryGame[] {
     try {
       const { manifest } = loadGame(root, directory);
       const examples = manifest.examples.reduce((count, folder) => count + fs.readdirSync(path.join(directory, folder)).filter(name => name.endsWith('.js')).length, 0);
-      return { directory, name: manifest.name, description: manifest.description ?? manifest.hint, cover: manifest.cover ? `/api/library/cover?directory=${encodeURIComponent(directory)}` : undefined, tags: manifest.tags ?? [], version: manifest.version, author: manifest.author, valid: true, examples, hooks: Object.values(manifest.hooks), actions: Object.keys(manifest.actions), controls: manifest.controls, audio: manifest.audio, effects: manifest.effects, source: imports.includes(directory) ? 'imported' : 'built-in', smoke: smoke[directory], shipped: runs.filter(run => run.gameDirectory === directory && run.status === 'shipped').length };
+      return { directory, name: manifest.name, description: manifest.description ?? manifest.hint, cover: `/api/library/cover?directory=${encodeURIComponent(directory)}`, tags: manifest.tags ?? [], version: manifest.version, author: manifest.author, valid: true, examples, hooks: Object.values(manifest.hooks), actions: Object.keys(manifest.actions), controls: manifest.controls, audio: manifest.audio, effects: manifest.effects, source: imports.includes(directory) ? 'imported' : 'built-in', smoke: smoke[directory], shipped: runs.filter(run => run.gameDirectory === directory && run.status === 'shipped').length };
     } catch (error) { return { directory, name: path.basename(directory), description: '', tags: [], valid: false, error: String(error), examples: 0, smoke: smoke[directory], shipped: 0 }; }
   });
 }

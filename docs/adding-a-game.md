@@ -6,7 +6,7 @@ Create a folder containing `live-patch.json`, a TypeScript entry, API documentat
 
 - `name`: display name shown on the page.
 - Optional `description`, `tags`, `version`, and `author`: Library card metadata.
-- Optional `cover`: relative PNG, JPEG or WebP inside the game folder, at most 1 MB.
+- Optional `cover`: relative PNG, JPEG or WebP inside the game folder, at most 1 MB. The Library generates a unique abstract SVG cover from the game name if this is omitted; a game can replace it with its own artwork at any time.
 - Optional `audio` and `effects`: allow lists of names for sound and effect actions. Games should validate the action again in their adapter, and the engine enforces per-module and global rate limits.
 - `hint`: short game-specific control instructions, rendered as plain text.
 - `entry`: relative `src/*.ts` entry exporting `createGame`.

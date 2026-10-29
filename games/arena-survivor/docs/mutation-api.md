@@ -20,7 +20,7 @@ Place one `.js` module in `mutations/`. Export `meta = { id, title, author, desc
 
 Rollback removes the module, its owned entities, drawings, messages and parameter writes. Changes it made to other modules' entities (including velocity, radius, tag, position or removal) are not reversed. Score already earned remains.
 
-`game.state` is a JSON snapshot. It contains `player: {x,y,lives}`, `score`, `elapsed` (seconds since page load), `runElapsed` (seconds in current run), `frame`, `enemies`, `coins`, `floatingTexts`, `frameRate`, `maxFrameGap`, and `entities`. `entities` contains at most 100 live `{id,kind,x,y,radius,vx,vy,tag}` records. IDs are stable for an entity's lifetime. Kinds are `enemy`, `coin`, `bomb` and `fire`. Arena coordinates are 960×640.
+`game.state` is a JSON snapshot. It contains `player: {x,y,lives}`, `score`, `elapsed` (seconds since page load), `runElapsed` (seconds in current run), `frame`, `enemies`, `coins`, `floatingTexts`, `frameRate`, `maxFrameGap`, and `entities`. `entities` contains at most 100 live `{id,kind,x,y,radius,vx,vy,tag}` records. IDs are stable for an entity's lifetime. Kinds are `enemy`, `coin`, `bomb` and `fire`. Arena coordinates are 1152×648 (16:9).
 
 Events:
 

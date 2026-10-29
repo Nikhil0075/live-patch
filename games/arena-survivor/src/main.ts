@@ -6,7 +6,7 @@ import { ArenaAudio, soundEvents, type SoundEvent } from './audio';
 import { createArenaTextures } from './art';
 import { maxParticles, ParticleBudget } from './particle-budget';
 
-const width = 960, height = 640;
+const width = 1152, height = 648;
 type Kind = 'enemy' | 'coin' | 'bomb' | 'fire';
 type Parameter = 'enemySpeed' | 'coinValue' | 'playerSpeed' | 'spawnInterval' | 'gravityX' | 'gravityY';
 interface Entity { id: number; kind: Kind; x: number; y: number; radius: number; vx: number; vy: number; tag: string; owner?: string; ttl: number; alive: boolean; sprite?: Phaser.GameObjects.Image }
@@ -164,13 +164,14 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     private touching = new Set<string>();
     private playerTouching = new Set<number>();
     constructor() { super('arena'); }
+    setHudSize(size: StudioSettings['hudSize']) { this.hud?.setFontSize(size === 'large' ? 24 : size === 'small' ? 16 : 19); }
     create() {
       scene = this;
-      createArenaTextures(this);
+      createArenaTextures(this, width, height);
       this.add.image(width / 2, height / 2, 'arena-floor').setDepth(-2);
       this.pen = this.add.graphics();
       this.avatar = this.add.image(player.x, player.y, 'arena-player').setDepth(2).setDisplaySize(78, 78);
-      this.hud = this.add.text(20, 16, '', { fontFamily: 'Arial', fontSize: '19px', color: '#edffff', fontStyle: 'bold' }).setDepth(2);
+      this.hud = this.add.text(20, 16, '', { fontFamily: 'Arial', fontSize: `${settings.hudSize === 'large' ? 24 : settings.hudSize === 'small' ? 16 : 19}px`, color: '#edffff', fontStyle: 'bold' }).setDepth(2);
       this.banner = this.add.text(width / 2, 65, '', { fontFamily: 'Arial', fontSize: '22px', color: '#ffe187', align: 'center' }).setOrigin(.5).setDepth(2);
       this.keys = this.input.keyboard!.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE') as Record<string, Phaser.Input.Keyboard.Key>;
       for (let i = 0; i < 4; i++) spawn('coin', 100 + i * 225, 150 + (i % 2) * 320);
@@ -286,5 +287,19 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     }
   }
   const phaser = new Phaser.Game({ type: Phaser.AUTO, width, height, parent, backgroundColor: '#102337', scene: Arena, scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH } });
-  return { apply, removeMutation, snapshot, enableSound: () => audio.enable(), configure: value => { settings = value as StudioSettings; audio.configure(settings); }, pause: () => { scene?.scene.pause(); audio.pause(); }, resume: () => { scene?.scene.resume(); audio.resume(); }, destroy: () => { audio.destroy(); phaser.destroy(true); } };
+  const captureFrame = () => new Promise<ImageBitmap | null>(resolve => {
+    let done = false;
+    const timeout = window.setTimeout(() => { if (!done) { done = true; resolve(null); } }, 1500);
+    phaser.renderer.snapshot(async image => {
+      if (done) return;
+      done = true; clearTimeout(timeout);
+      if (!(image instanceof HTMLImageElement)) { resolve(null); return; }
+      try {
+        const small = document.createElement('canvas'); small.width = 480; small.height = 270;
+        small.getContext('2d')!.drawImage(image, 0, 0, small.width, small.height);
+        resolve(await createImageBitmap(small));
+      } catch { resolve(null); }
+    }, 'image/jpeg', .65);
+  });
+  return { apply, removeMutation, snapshot, enableSound: () => audio.enable(), configure: value => { settings = value as StudioSettings; audio.configure(settings); scene?.setHudSize(settings.hudSize); }, pause: () => { scene?.scene.pause(); audio.pause(); }, resume: () => { lastFrameAt = 0; scene?.scene.resume(); audio.resume(); }, captureFrame, destroy: () => { audio.destroy(); phaser.destroy(true); } };
 }

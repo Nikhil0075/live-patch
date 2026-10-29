@@ -21,6 +21,51 @@ test('Vite refuses the local OAuth token file', async ({ request }) => {
   expect([403, 404]).toContain(response.status());
 });
 
+test('Play fills a 16:9 game capture without cutting off the arena', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto('/play');
+  await expect(page.locator('#status')).toContainText('LIVE');
+  const box = await page.locator('#game canvas').boundingBox();
+  expect(box).toBeTruthy();
+  expect(box!.width).toBeGreaterThan(1900);
+  expect(box!.height).toBeGreaterThan(1060);
+  expect(box!.x).toBeLessThan(10);
+  expect(box!.y).toBeLessThan(10);
+});
+
+test('OBS widgets can be removed, added and resized across reloads', async ({ page }) => {
+  await page.goto('/?view=go-live');
+  const original = await page.evaluate(() => fetch('/api/settings').then(response => response.json()).then(data => data.overlayWidgets));
+  try {
+    await expect(page.locator('.overlay-edit-widget')).toHaveCount(original.length);
+    await page.getByRole('button', { name: 'Remove Chat ballot' }).click();
+    await expect(page.locator('.overlay-edit-widget')).toHaveCount(original.length - 1);
+    await page.locator('#overlay-add-select').selectOption('ballot');
+    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    await expect(page.locator('.overlay-edit-widget')).toHaveCount(original.length);
+    const width = page.getByRole('spinbutton', { name: 'Chat ballot width' });
+    await width.fill('750'); await width.blur();
+    await expect(width).toHaveValue('750');
+    await page.reload();
+    await expect(page.getByRole('spinbutton', { name: 'Chat ballot width' })).toHaveValue('750');
+    const overlay = await page.context().newPage();
+    try { await overlay.goto('/overlay.html'); await expect(overlay.locator('.stream-shell footer')).toHaveCSS('width', '750px'); }
+    finally { await overlay.close(); }
+  } finally {
+    await page.evaluate(widgets => fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ overlayWidgets: widgets }) }), original);
+  }
+});
+
+test('top-bar Practice and Live switch navigates both views', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#mode-switch a[data-mode="live"]').click();
+  await expect(page).toHaveURL(/view=go-live/);
+  await expect(page.locator('#mode-switch a[data-mode="live"]')).toHaveAttribute('aria-current', 'page');
+  await page.locator('#mode-switch a[data-mode="practice"]').click();
+  await expect(page).toHaveURL(/view=practice/);
+  await expect(page.locator('#mode-switch a[data-mode="practice"]')).toHaveAttribute('aria-current', 'page');
+});
+
 test('play window pauses frames and mutation ticks, then resumes from the same state', async ({ page }) => {
   await page.goto('/play');
   await expect(page.locator('#status')).toContainText('LIVE');
@@ -482,26 +527,29 @@ test('simulator submits ideas and chat through the live game path as plain text'
     await expect(page.locator('#mutations')).toContainText('Sim Chat · active');
     await simulator.goto('/simulator.html');
     await simulator.locator('textarea[name="text"]').fill('hello from simulator');
-    await simulator.getByRole('button', { name: 'Send' }).click();
+    await simulator.getByRole('button', { name: 'Send', exact: true }).click();
     await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().floatingTexts)).toBeGreaterThan(0);
     await simulator.locator('textarea[name="text"]').fill('!idea <img src=x onerror=alert(1)>');
-    await simulator.getByRole('button', { name: 'Send' }).click();
+    await simulator.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(simulator.locator('#ideas')).toContainText('<img src=x onerror=alert(1)>');
     await expect(simulator.locator('#ideas img')).toHaveCount(0);
     await simulator.locator('input[name="id"]').fill('viewer-2');
     await simulator.locator('input[name="login"]').fill('viewer2');
     await simulator.locator('select[name="kind"]').selectOption('reward');
     await simulator.locator('textarea[name="text"]').fill('Coins flee from the player');
-    await simulator.getByRole('button', { name: 'Send' }).click();
+    await simulator.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(simulator.locator('#ideas')).toContainText('Coins flee from the player');
-    const ideas = await simulator.request.get('/api/ideas').then(response => response.json()) as { ideas: unknown[] };
-    expect(ideas.ideas).toHaveLength(2);
+    const ideas = await simulator.request.get('/api/ideas').then(response => response.json()) as { ideas: { id: string; text: string; status: string; source: string }[] };
+    const unsafeText = ideas.ideas.find(item => item.text === '<img src=x onerror=alert(1)>');
+    const rewardIdea = ideas.ideas.find(item => item.text === 'Coins flee from the player');
+    expect(unsafeText).toBeTruthy();
+    expect(rewardIdea?.source).toBe('reward');
     await simulator.locator('select[name="kind"]').selectOption('chat');
     await simulator.locator('select[name="role"]').selectOption('broadcaster');
-    await simulator.locator('textarea[name="text"]').fill('!reject 1');
-    await simulator.getByRole('button', { name: 'Send' }).click();
-    await expect(simulator.locator('#ideas li').filter({ hasText: '<img src=x' })).not.toContainText('Vote 1');
-    await expect(simulator.locator('#ideas li').filter({ hasText: 'Coins flee from the player' })).toContainText('Vote 1');
+    await simulator.locator('textarea[name="text"]').fill(`!reject ${unsafeText!.id}`);
+    await simulator.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect.poll(async () => (await simulator.request.get('/api/ideas').then(response => response.json()) as { ideas: { id: string; status: string }[] }).ideas.find(item => item.id === unsafeText!.id)?.status).toBe('rejected');
+    expect((await simulator.request.get('/api/ideas').then(response => response.json()) as { ideas: { id: string; status: string }[] }).ideas.find(item => item.id === rewardIdea!.id)?.status).not.toBe('rejected');
   } finally { await simulator.close(); fs.rmSync(file, { force: true }); }
 });
 

@@ -20,7 +20,7 @@ if (location.pathname === '/play') {
   void import('./client');
 } else {
 const shell = document.querySelector<HTMLDivElement>('#shell')!;
-shell.innerHTML = '<aside class="app-rail"><a class="app-mark" href="/" aria-label="Live Patch Home"><span class="mark-icon">✳</span><span>LIVE<br>PATCH</span></a><button id="rail-toggle" class="secondary" aria-label="Collapse sidebar">☰</button><nav id="app-nav" aria-label="Main navigation"></nav><div class="rail-setup"><p>SETUP</p><a href="/?view=setup#codex"><span id="dot-codex" class="setup-dot"></span>Codex</a><a href="/?view=setup#twitch"><span id="dot-twitch" class="setup-dot"></span>Twitch</a><a href="/?view=setup#obs"><span id="dot-obs" class="setup-dot"></span>OBS</a></div><a class="rail-settings" href="/?view=settings">⚙ Settings</a><div class="rail-foot"><span class="live-dot"></span><span>LOCAL STUDIO</span></div></aside><div class="app-content"><header class="app-top"><label class="top-search"><span>⌕</span><input id="studio-search" type="search" placeholder="Search patches, ideas, builds, settings" aria-label="Search studio"></label><div class="top-actions"><span id="app-connection">Checking connections…</span><span id="codex-connection">Codex checking…</span><a class="button secondary" href="/overlay.html" target="_blank" rel="noopener">OBS ↗</a><span id="mode-chip">Practice</span><button id="top-play" class="secondary">Play ↗</button><a class="button primary" href="/?view=go-live">Go Live</a></div></header><div class="page-heading"><p class="app-kicker">LIVE PATCH STUDIO</p><h1 id="app-heading"></h1><p id="app-description"></p><button id="glossary-open" class="secondary" aria-label="Help with Live Patch terms" title="Help with Live Patch terms">? Words used here</button></div><div id="app-page"></div><div id="toast-layer" role="status" aria-live="polite"></div></div>';
+shell.innerHTML = '<aside class="app-rail"><a class="app-mark" href="/" aria-label="Live Patch Home"><span class="mark-icon">✳</span><span>LIVE<br>PATCH</span></a><button id="rail-toggle" class="secondary" aria-label="Collapse sidebar">☰</button><nav id="app-nav" aria-label="Main navigation"></nav><div class="rail-setup"><p>SETUP</p><a href="/?view=setup#codex"><span id="dot-codex" class="setup-dot"></span>Codex</a><a href="/?view=setup#twitch"><span id="dot-twitch" class="setup-dot"></span>Twitch</a><a href="/?view=setup#obs"><span id="dot-obs" class="setup-dot"></span>OBS</a></div><a class="rail-settings" href="/?view=settings">⚙ Settings</a><div class="rail-foot"><span class="live-dot"></span><span>LOCAL STUDIO</span></div></aside><div class="app-content"><header class="app-top"><label class="top-search"><span>⌕</span><input id="studio-search" type="search" placeholder="Search patches, ideas, builds, settings" aria-label="Search studio"></label><div class="top-actions"><span id="app-connection">Checking connections…</span><span id="codex-connection">Codex checking…</span><a class="button secondary" href="/overlay.html" target="_blank" rel="noopener">OBS ↗</a><nav id="mode-switch" aria-label="Practice or Live view"><a href="/?view=practice" data-mode="practice">Practice</a><a href="/?view=go-live" data-mode="live">Live</a></nav><button id="top-play" class="secondary">Play ↗</button><a class="button primary" href="/?view=go-live">Go Live</a></div></header><div class="page-heading"><p class="app-kicker">LIVE PATCH STUDIO</p><h1 id="app-heading"></h1><p id="app-description"></p><button id="glossary-open" class="secondary" aria-label="Help with Live Patch terms" title="Help with Live Patch terms">? Words used here</button></div><div id="app-page"></div><div id="toast-layer" role="status" aria-live="polite"></div></div>';
 const glossary = document.createElement('dialog'); glossary.className = 'glossary-dialog'; glossary.innerHTML = '<form method="dialog"><button class="secondary">Close</button></form><h2>Words used in Live Patch</h2>';
 for (const [term, definition] of Object.entries(terms)) { const row = document.createElement('p'); const label = document.createElement('strong'); label.textContent = `${term}: `; row.append(label, document.createTextNode(definition)); glossary.append(row); }
 document.body.append(glossary);
@@ -40,7 +40,7 @@ for (const item of ['home', 'practice', 'go-live', 'library', 'builds'] as View[
 }
 document.querySelector('#app-heading')!.textContent = labels[view];
 document.querySelector('#app-description')!.textContent = ({home:'Your game, connections and next step at a glance.',practice:'Try a round with sample viewers. Nothing is sent to Twitch.', 'go-live':'Run your stream, follow chat and ship patches.',library:'Choose the game that chat will change.',builds:'Return to a game saved from an earlier stream.',setup:'Connect the tools you want to use.',settings:'Tune your game and studio.'} as Record<View,string>)[view];
-document.querySelector('#mode-chip')!.textContent = view === 'go-live' ? 'Live controls' : 'Practice';
+document.querySelector<HTMLAnchorElement>(`#mode-switch [data-mode="${view === 'go-live' ? 'live' : 'practice'}"]`)?.setAttribute('aria-current', 'page');
 const page = document.querySelector<HTMLElement>('#app-page')!;
 
 async function summary() {
@@ -50,7 +50,7 @@ async function summary() {
       fetch('/api/twitch/status').then(r => r.json()) as Promise<{ configured: boolean; broadcaster: { login: string } | null; bot: { login: string } | null; eventsub: string }>,
       fetch('/api/runs').then(r => r.json()) as Promise<{ runs: { status: string; mutationName?: string; demo?: boolean }[] }>,
       fetch('/api/builds').then(r => r.json()) as Promise<{ builds: { id: string }[] }>,
-      fetch('/api/library').then(r => r.json()) as Promise<{ playOnly: boolean; returnGame?: string }>
+      fetch('/api/library').then(r => r.json()) as Promise<{ playOnly: boolean; returnGame?: string; active: string; games: { directory: string; cover?: string; name: string }[] }>
     ]);
     if (library.playOnly && library.returnGame && !document.querySelector('#play-only-banner')) {
       const banner = document.createElement('div'); banner.id = 'play-only-banner'; banner.className = 'first-run-callout';
@@ -67,6 +67,9 @@ async function summary() {
     document.querySelector('#dot-twitch')?.classList.toggle('ready', Boolean(twitch.broadcaster && twitch.bot));
     const set = (id: string, value: string) => { const element = document.querySelector(id); if (element) element.textContent = value; };
     set('#home-game', game.name);
+    const art = document.querySelector<HTMLElement>('.game-art');
+    const activeCover = (library.games.find(item => item.directory === library.active) ?? library.games.find(item => item.name === game.name))?.cover;
+    if (art && activeCover) { const image = document.createElement('img'); image.src = activeCover; image.alt = ''; art.replaceChildren(image); }
     set('#home-twitch', twitch.broadcaster && twitch.bot ? `${twitch.broadcaster.login} + ${twitch.bot.login}` : twitch.configured ? 'Connect both accounts' : 'Set up Twitch when ready');
     set('#home-codex', runs.runs.at(-1)?.status ?? 'Check setup');
     set('#home-build', builds.builds.at(0)?.id ?? 'No saved build yet');

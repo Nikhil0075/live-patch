@@ -8,7 +8,8 @@ export interface RoundView {
 export interface RunView { id: string; ideaId: string; status: string; mutationName?: string; threadId?: string; durationMs?: number; error?: string; demo?: boolean; startedAt?: string; finishedAt?: string }
 export interface RunnerProgressView { runId: string; ideaId: string; type: string; message?: string; at: string }
 export interface MutationView { name: string; source: string; error?: string }
-export interface SettingsView { reduceFlashing: boolean; overlayCompact: boolean; muted: boolean; pitchSeconds: number; voteSeconds: number }
+import type { OverlayWidget } from '../studio/settings-defaults';
+export interface SettingsView { reduceFlashing: boolean; overlayCompact: boolean; muted: boolean; pitchSeconds: number; voteSeconds: number; overlayWidgets: OverlayWidget[] }
 
 export async function dashboardData() {
   const [roundResponse, runsResponse, mutationsResponse, ideasResponse, eventsResponse, settingsResponse] = await Promise.all([

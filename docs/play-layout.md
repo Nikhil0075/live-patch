@@ -13,3 +13,5 @@ At 1920 × 1080, keep the center of the game clear.
 | Bottom 110–1896 px, 24–95 px | OBS overlay | Pitch ticker |
 
 The overlay is a separate OBS browser source composited over `/play`. The overlay never receives a game handle and must not mount another game instance.
+
+Arena Survivor uses a 1152 × 648 (16:9) canvas so it fills a 1920 × 1080 capture. Other games choose their own canvas dimensions. The positions above are the default OBS widget layout. In Go Live → OBS overlay layout, widgets can be added, removed, dragged and resized; the saved layout appears in the OBS browser source. Keep the HUD and toast regions clear when customizing it.

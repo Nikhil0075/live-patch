@@ -28,7 +28,7 @@ async function start() {
       if (capturing) return;
       const canvas = document.querySelector<HTMLCanvasElement>('#game canvas'); if (!canvas) return;
       capturing = true;
-      try { const bitmap = await createImageBitmap(canvas); mirror.postMessage({ type: 'frame', bitmap }); bitmap.close(); } catch { /* mirror is optional */ }
+      try { const bitmap = await (game.captureFrame?.() ?? createImageBitmap(canvas)); if (bitmap) { mirror.postMessage({ type: 'frame', bitmap }); bitmap.close(); } } catch { /* mirror is optional */ }
       finally { capturing = false; }
     }, 1000);
     window.addEventListener('beforeunload', () => { clearInterval(mirrorTimer); mirror.close(); });

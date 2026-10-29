@@ -5,6 +5,10 @@ import { appendText, dashboardData, roundClock } from './shared';
 const root = document.querySelector<HTMLDivElement>('#overlay')!;
 root.innerHTML = '<div class="stream-shell"><header><div id="patches" class="patches"></div></header><aside><div class="panel-label">CODEX AT WORK</div><div id="work"></div></aside><footer><div class="round-heading"><div><span class="panel-label">CHAT DECIDES</span><strong id="phase"></strong></div><strong id="clock"></strong></div><div id="candidates" class="candidates"></div></footer><div id="pitch-ticker" class="pitch-ticker"></div></div>';
 const shell = root.querySelector<HTMLElement>('.stream-shell')!;
+const widgets: Record<string, HTMLElement> = {
+  patches: shell.querySelector('header')!, codex: shell.querySelector('aside')!,
+  ballot: shell.querySelector('footer')!, ticker: shell.querySelector('#pitch-ticker')!
+};
 function scaleOverlay() { shell.style.transform = `scale(${Math.min(innerWidth / 1920, innerHeight / 1080)})`; }
 scaleOverlay(); window.addEventListener('resize', scaleOverlay);
 
@@ -12,6 +16,11 @@ async function refresh() {
   try {
     const { round, runs, mutations, ideas, events, settings } = await dashboardData();
     root.className = `${settings.reduceFlashing ? 'reduced-effects ' : ''}${settings.overlayCompact ? 'compact-overlay' : ''}`;
+    for (const [type, element] of Object.entries(widgets)) {
+      const widget = settings.overlayWidgets.find(item => item.type === type);
+      element.hidden = !widget;
+      if (widget) Object.assign(element.style, { left: `${widget.x}px`, top: `${widget.y}px`, width: `${widget.width}px`, height: `${widget.height}px`, right: 'auto', bottom: 'auto', minHeight: '0', boxSizing: 'border-box', overflow: 'hidden' });
+    }
     document.querySelector('#phase')!.textContent = `ROUND ${round.number} · ${round.phase.toUpperCase()}`;
     document.querySelector('#clock')!.textContent = roundClock(round.remainingMs);
     const patches = document.querySelector<HTMLElement>('#patches')!; patches.replaceChildren();
@@ -21,11 +30,12 @@ async function refresh() {
       const run = runs.find(item => item.status === 'shipped' && item.mutationName === mutation.name);
       const idea = ideas.find(item => item.id === run?.ideaId);
       const credit = run ? (idea?.contributors?.map(name => `@${name}`).join(', ') ?? (idea ? `@${idea.authorName}` : 'Viewer patch')) : 'Built-in';
-      appendText(pill, 'strong', `${run?.demo ? 'DEMO · ' : ''}${title}`); if (credit) appendText(pill, 'small', credit);
+      appendText(pill, 'strong', run?.demo && !title.toLowerCase().startsWith('demo') ? `DEMO · ${title}` : title); if (credit) appendText(pill, 'small', credit);
       patches.append(pill);
     }
     const latest = runs.at(-1);
     const work = document.querySelector<HTMLElement>('#work')!; work.replaceChildren();
+    document.querySelector('.stream-shell aside .panel-label')!.textContent = latest?.demo ? 'DEMO PATCH' : 'CODEX AT WORK';
     if (latest) {
       appendText(work, 'strong', latest.status.toUpperCase(), `run-status ${latest.status}`);
       const idea = ideas.find(item => item.id === latest.ideaId);
@@ -33,7 +43,10 @@ async function refresh() {
       if (idea) appendText(work, 'small', idea.contributors?.map(name => `@${name}`).join(', ') ?? `@${idea.authorName}`);
       const steps = events.filter(event => event.runId === latest.id);
       const endStage = latest.status === 'failed' ? { id: 'failed', label: 'Build failed' } : latest.status === 'rolled_back' ? { id: 'rolled_back', label: 'Rolled back' } : { id: 'shipped', label: 'Patch shipped' };
-      const stages = [
+      const stages = latest.demo ? [
+        { id: 'sandbox_verified', label: 'Prepared example' }, { id: 'file', label: 'Practice check' },
+        { id: 'testing', label: 'Practice pitch' }, { id: 'shipped', label: 'Demo shipped' }
+      ] : [
         { id: 'sandbox_verified', label: 'Sandbox checked' }, { id: 'file', label: 'Writing mutation' },
         { id: 'testing', label: 'Smoke test' }, endStage
       ];

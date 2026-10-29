@@ -1,5 +1,6 @@
 @import '../tokens.css';
 :root,body{background:transparent}
+.stream-shell [hidden]{display:none!important}
 .stream-shell header{top:120px;left:24px;right:auto;width:1080px;display:block}
 .stream-shell .patches{justify-content:flex-start;flex-wrap:wrap;gap:10px}
 .stream-shell .patch{max-width:270px;min-width:160px;background:#15121ef0;border:2px solid #9146ff;border-radius:6px;box-shadow:0 8px 24px #000a}

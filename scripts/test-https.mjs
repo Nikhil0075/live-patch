@@ -67,7 +67,17 @@ try {
     return { status: response.status, phase: (await response.json()).phase };
   });
   assert.deepEqual(result, { status: 200, phase: 'paused' }, 'Go Live control works in Chromium over HTTPS');
-  console.log('HTTPS regression passed: HTTP/2 same-origin, cross-origin denial, Practice and Go Live');
+  await page.goto(`${origin}/`);
+  if (await page.locator('#welcome-close').isVisible()) await page.locator('#welcome-close').click();
+  const opened = page.waitForEvent('popup');
+  await page.locator('#home-play').click();
+  const play = await opened;
+  await play.locator('#game canvas').waitFor({ state: 'visible', timeout: 15_000 });
+  assert.match(await play.title(), /^Live Patch · /, 'named Play window has a stable title');
+  await play.keyboard.press('p');
+  await play.locator('#play-menu').waitFor({ state: 'visible' });
+  await play.close();
+  console.log('HTTPS regression passed: HTTP/2 same-origin, cross-origin denial, Practice, Go Live and Play window');
 } finally {
   await browser?.close();
   await server?.close();

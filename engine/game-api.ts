@@ -6,6 +6,7 @@ export interface GameAdapter {
   configure?(settings: unknown): void;
   pause?(): void;
   resume?(): void;
+  captureFrame?(): Promise<ImageBitmap | null>;
   removeMutation(origin: string): void;
   snapshot(): unknown;
   destroy(): void;

@@ -17,16 +17,16 @@ npm run setup
 npm run dev
 ```
 
-Open **https://localhost:5173**. The local HTTPS certificate is self-signed; accept the browser warning once. The first visit opens the six-step Setup wizard. Skip optional Twitch and sandbox steps to try Practice. `npm run setup` installs missing packages and Chromium, then checks the local prerequisites. It does not configure Windows security or connect Twitch accounts for you.
+Open **https://localhost:5173**. The local HTTPS certificate is self-signed; accept the browser warning once. The first visit shows a welcome choice. Click **Try it now** for a two-minute rehearsal without accounts. Setup remains available from the sidebar when you want Twitch, Codex and OBS. `npm run setup` installs missing packages and Chromium, then checks local prerequisites. It does not configure Windows security or connect Twitch accounts for you.
 
 ### What to see in two minutes
 
-1. Open **Practice** and click **Generate sample pitch**, then **Send**, three times. Each sample uses a different viewer, so the cooldown does not interfere.
-2. Open **Go Live** and click **Next stage** to reach voting. Use the **Vote 1/2/3 as new viewer** shortcuts in Practice. The ballot and percentages also appear at `/overlay.html`.
-3. Open **Play**, move with WASD or arrow keys and attack with Space. Click **Enable sound** after opening the play view. Go Live shows the patch list, Codex timeline, recent chat and stream controls.
-4. To build a live patch, complete **Setup → Codex sign-in** and **Sandbox**, approve an idea, and watch the file and smoke-test gates. This step requires the Windows sandbox; Practice and the game do not.
+1. Click **Try it now** on the welcome, then **Run a full round automatically** in Practice. Sample viewers pitch and vote through the real local pipeline. The round reaches approval without typing.
+2. Click **Ship a demo patch**. It uses a prepared game patch and is labelled **Demo** in Play, Go Live and the OBS overlay. Practice sends nothing to Twitch. To build a new patch instead, complete **Setup → Codex sign-in** and **Sandbox**, then approve a pitch.
+3. Click **Play in new window** from Home or Library. Repeated Play clicks reuse the same named `/play` window. Move with WASD or arrows and attack with Space. Press **Esc** or **P** for the pause menu, **F** for full screen and **M** to mute. Resume has focus when the menu opens. In browsers that reserve Esc for leaving full screen, use P for the menu.
+4. Use the top-bar **Practice / Live** links to move between rehearsal and stream controls. Open **Go Live** to see the real Play window mirrored beneath the OBS overlay. Use the ballot, chat, quick actions and Codex timeline. Try the **Default** and **Chat focus** layouts; collapsed panels and order are saved in this browser. In **OBS overlay layout**, add or remove widgets, drag them or their corners to move and resize, or enter exact coordinates. Changes persist and appear in OBS automatically.
 
-The game-agnostic engine reads the active game's `live-patch.json`; `games/arena-survivor` is the included example. [Architecture](docs/architecture.md) and [adding a game](docs/adding-a-game.md) explain the boundary and manifest. Saved builds are playable snapshots; **Compare with original** opens two isolated views without affecting the live run.
+The game-agnostic engine reads the active game's `live-patch.json`; `games/arena-survivor` is the included example. [Architecture](docs/architecture.md) and [adding a game](docs/adding-a-game.md) explain the boundary and manifest. The Library uses original game cover artwork; a newly added game without a cover gets generated abstract artwork automatically. Saved builds are playable snapshots; **Compare with original** opens two isolated views without affecting the live run. The **? Words used here** button explains pitch, round, ballot, patch, build, rollback, practice and demo patch in plain language.
 
 ## Twitch and stream setup
 
@@ -36,7 +36,7 @@ For reward pitches, select the app-owned **Live Patch Pitch** reward in Setup. I
 
 Go Live can open an optional two-minute Channel Points Prediction for an approval-stage idea. A shipped patch resolves **Ships**; a patch rejected by its file gates or smoke test resolves **Fails**. Sandbox problems, Codex quota or timeout, operator cancellation and restart cancel the prediction so Twitch returns points. The broadcaster must reconnect after granting `channel:manage:redemptions` and `channel:manage:predictions`.
 
-For OBS, add `https://localhost:5173/overlay.html` as a Browser Source over a capture of the Play view. Verify certificate trust and that Play audio is heard once on the streaming PC. The overlay itself is silent.
+For OBS, capture the separate **Live Patch · Arena Survivor** Play window and add `https://localhost:5173/overlay.html` as a Browser Source above it. The overlay itself is silent. Play's corner controls fade after three seconds so the capture stays clean. Verify certificate trust, full-screen Esc/P behavior and Play audio on the streaming PC. The game and OBS widget zones are documented in [the layout map](docs/play-layout.md).
 
 | Chat command | Who | Effect |
 |---|---|---|

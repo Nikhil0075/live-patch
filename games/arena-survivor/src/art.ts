@@ -41,20 +41,20 @@ function texture(kind: ArtKind): HTMLCanvasElement {
   return canvas;
 }
 
-export function createArenaTextures(scene: Phaser.Scene): void {
+export function createArenaTextures(scene: Phaser.Scene, width: number, height: number): void {
   for (const kind of Object.keys(colors) as ArtKind[]) if (!scene.textures.exists(`arena-${kind}`)) scene.textures.addCanvas(`arena-${kind}`, texture(kind));
   if (!scene.textures.exists('arena-floor')) {
-    const canvas = document.createElement('canvas'); canvas.width = 960; canvas.height = 640;
+    const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
     const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = '#071524'; ctx.fillRect(0, 0, 960, 640);
-    const light = ctx.createRadialGradient(480, 320, 30, 480, 320, 440);
+    ctx.fillStyle = '#071524'; ctx.fillRect(0, 0, width, height);
+    const light = ctx.createRadialGradient(width / 2, height / 2, 30, width / 2, height / 2, width * .46);
     light.addColorStop(0, '#164e51'); light.addColorStop(.42, '#103044'); light.addColorStop(1, '#071524');
-    ctx.fillStyle = light; ctx.fillRect(0, 0, 960, 640);
+    ctx.fillStyle = light; ctx.fillRect(0, 0, width, height);
     ctx.strokeStyle = '#37707c54'; ctx.lineWidth = 1;
-    for (let x = 0; x <= 960; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 640); ctx.stroke(); }
-    for (let y = 0; y <= 640; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(960, y); ctx.stroke(); }
+    for (let x = 0; x <= width; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke(); }
+    for (let y = 0; y <= height; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke(); }
     ctx.strokeStyle = '#80e7c533'; ctx.lineWidth = 3;
-    for (const radius of [105, 180, 265]) { ctx.beginPath(); ctx.ellipse(480, 320, radius * 1.3, radius * .8, 0, 0, Math.PI * 2); ctx.stroke(); }
+    for (const radius of [105, 180, 265]) { ctx.beginPath(); ctx.ellipse(width / 2, height / 2, radius * 1.3, radius * .8, 0, 0, Math.PI * 2); ctx.stroke(); }
     scene.textures.addCanvas('arena-floor', canvas);
   }
 }

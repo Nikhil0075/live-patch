@@ -17,6 +17,7 @@ import { RoundCoordinator } from '../pipeline/rounds';
 import { saveBuild } from '../overlay/builds';
 import { CodexTriage } from '../pipeline/triage';
 import { discoverGames, validateImport, smokeGame, addImport, makeActive } from '../manifest/library';
+import { generatedCover } from '../manifest/cover-art';
 import { loadGame } from '../manifest/load';
 import { execFileSync } from 'node:child_process';
 import { SettingsStore, type StudioSettings } from '../studio/settings';
@@ -263,7 +264,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
       const item = discoverGames(root, dataDir).find(game => game.directory === url.searchParams.get('directory') && game.valid);
       if (!item) { res.statusCode = 404; res.end(); return; }
       const selected = loadGame(root, item.directory);
-      if (!selected.manifest.cover) { res.statusCode = 404; res.end(); return; }
+      if (!selected.manifest.cover) { res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); res.end(generatedCover(item.name)); return; }
       const file = path.join(item.directory, selected.manifest.cover);
       res.setHeader('Content-Type', file.endsWith('.png') ? 'image/png' : file.endsWith('.webp') ? 'image/webp' : 'image/jpeg'); res.end(fs.readFileSync(file)); return;
     }

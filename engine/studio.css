@@ -1,4 +1,5 @@
 :root{--bg:#0e0e10;--surface:#18181b;--raised:#1f1f23;--line:#2f2f35;--text:#efeff1;--muted:#adadb8;--mint:#9146ff;--coral:#eb0400;--radius:4px;color:var(--text);background:var(--bg);font-family:Inter,sans-serif}
+[hidden]{display:none!important}
 body{background:var(--bg);color:var(--text)}
 button,.button{border-radius:4px;font-family:Inter,sans-serif}
 button:not(.secondary):not(.danger),.button.primary{background:#9146ff;color:#fff}
@@ -25,6 +26,10 @@ a{color:#bf94ff}
 .top-search input{width:100%;background:none;color:var(--text);border:0;padding:10px 0;font:inherit;outline:none}
 .top-actions{gap:9px;flex-wrap:wrap}
 .top-actions>span{padding:7px 10px;background:#26262b;border-radius:4px;color:#d5d5db}
+#mode-switch{display:flex;align-items:center;border:1px solid #3e3b46;border-radius:4px;overflow:hidden;background:#26262b}
+#mode-switch a{padding:9px 12px;color:#dedee4;text-decoration:none;font-size:13px;font-weight:700}
+#mode-switch a[aria-current=page]{background:#9146ff;color:#fff}
+#mode-switch a:focus-visible{outline:2px solid #fff;outline-offset:-2px}
 .page-heading{margin:0 0 26px}.page-heading h1{font-size:32px;margin:5px 0}.page-heading>p:last-child{margin:0;color:var(--muted)}
 .page-heading #app-description{margin:0;color:var(--muted)}.page-heading #glossary-open{margin-top:10px;padding:6px 9px;font-size:12px}
 .glossary-dialog{width:min(560px,92vw);max-width:none;background:#1f1f23;color:#efeff1;border:1px solid #7043a0;border-radius:4px}.glossary-dialog::backdrop{background:#000b}.glossary-dialog form{float:right}.glossary-dialog p{padding:10px 0;border-bottom:1px solid #36363d;color:#dddde4}.glossary-dialog strong{color:#d0aaff}
@@ -33,11 +38,12 @@ a{color:#bf94ff}
 .home-grid .studio-card{min-height:430px;padding:28px}.home-grid h2{font-size:28px;margin:7px 0 12px}.home-grid p{color:var(--muted);line-height:1.5}
 .progress-ring{width:72px;height:72px;border:6px solid #9146ff;border-radius:50%;display:grid;place-items:center;font-weight:800;color:#fff}
 .journey-list{padding:0;margin:28px 0;list-style:none}.journey-list li{display:flex;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid var(--line)}.journey-list small{color:var(--muted)}
-.active-game-card{display:grid;grid-template-columns:1fr 140px;align-items:center;background:radial-gradient(circle at 85% 30%,#39265c,#18181b 70%)!important}.active-game-card button{margin:25px 16px 0 0}.active-game-card .game-art{font-size:130px;color:#9c6aff;text-shadow:0 0 55px #9146ff}
+.active-game-card{display:flex;flex-direction:column;align-items:stretch;background:#18181b!important}.active-game-card button{margin:18px 16px 0 0}.active-game-card .game-art{order:-1;width:100%;height:220px;overflow:hidden;border-radius:6px;margin-bottom:18px;box-shadow:0 12px 35px #0008}.active-game-card .game-art img{display:block;width:100%;height:100%;object-fit:cover;object-position:center 40%}
 .home-shelf{margin-top:26px}.home-shelf .status-grid{grid-template-columns:repeat(3,1fr)}
 .recent-patches{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}.recent-patches .studio-card{padding:16px 20px;min-width:180px}.recent-patches p{color:var(--muted)}
 .welcome-dialog{width:min(760px,92vw);max-width:none;padding:42px;text-align:center;background:#1f1f23;border:1px solid #615275;color:#efeff1;border-radius:8px}.welcome-dialog::backdrop{background:#050507d9}.welcome-dialog h2{font-size:40px;margin:10px 0}.welcome-dialog>p{color:var(--muted)}.welcome-steps{display:flex;justify-content:space-around;gap:10px;margin:32px 0;padding:18px;background:#18181b;border-radius:4px}.welcome-steps span:nth-child(even){color:#9146ff}.welcome-choices{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:22px 0}.welcome-choices .primary{grid-column:1/-1}.welcome-close{display:block;margin:20px auto 0}
+.welcome-dialog>a{display:block;margin-top:18px}.welcome-dialog .welcome-close{margin:16px auto 0}
 .app-rail.collapsed{width:76px}.app-rail.collapsed .app-mark span:last-child,.app-rail.collapsed #app-nav a span:last-child,.app-rail.collapsed .rail-setup,.app-rail.collapsed .rail-settings,.app-rail.collapsed .rail-foot{display:none}
 #shell:has(.app-rail.collapsed){grid-template-columns:76px minmax(0,1fr)}
-@media(max-width:1150px){.top-search{min-width:180px}.top-actions #codex-connection,.top-actions #mode-chip{display:none}.home-grid{grid-template-columns:1fr}}
+@media(max-width:1150px){.top-search{min-width:180px}.top-actions #codex-connection,.top-actions #mode-switch{display:none}.home-grid{grid-template-columns:1fr}}
 @media(max-width:720px){.app-top{display:block}.top-search{width:100%}.top-actions{margin-top:10px}.home-shelf .status-grid{grid-template-columns:1fr}.welcome-steps{font-size:12px;flex-wrap:wrap}}
