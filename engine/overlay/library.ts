@@ -51,7 +51,7 @@ function showDetails(game?: GameCard) {
   appendText(detail, 'p', game.description || game.error || 'No description supplied.');
   const actions = document.createElement('div'); actions.className = 'library-card-actions';
   const play = document.createElement('button'); play.textContent = 'Play in new window'; play.disabled = !game.valid;
-  play.addEventListener('click', () => { if (game.directory === library.active) window.open('/play', 'live-patch-play'); else void request('active', { directory: game.directory }); });
+  play.addEventListener('click', () => { if (game.directory === library.active) window.open('/play', 'live-patch-play', 'popup=yes,width=1280,height=720,resizable=yes,scrollbars=yes'); else void request('active', { directory: game.directory }); });
   const active = document.createElement('button'); active.textContent = game.directory === library.active ? 'Active game' : 'Make active for streams'; active.className = 'secondary'; active.disabled = !game.valid || game.directory === library.active;
   active.addEventListener('click', () => { void request('active', { directory: game.directory }); });
   actions.append(play, active); detail.append(actions);

@@ -196,6 +196,19 @@ describe('Phase 3 runner', () => {
     expect(runs.list()[1].failureKind).toBe('patch');
   }), 30_000);
 
+  it('retries a missing browser once, preserves the idea and reports an infrastructure failure', async () => fixture(async (root, game, gameManifest, ideas, runs) => {
+    const idea = ideas.add('viewer', 'Viewer', 'Make coins glow', 'chat');
+    const events: RunnerEvent[] = [];
+    let attempts = 0;
+    const missing = async () => { attempts++; throw Error("browserType.launch: Executable doesn't exist at C:/ms-playwright/chrome.exe"); };
+    await new LiveRunner(root, game, gameManifest, ideas, runs, event => events.push(event), fakeAgent(() => good('Glow')), missing).enqueue(ideas.setStatus(idea.id, 'approved')!);
+    expect(attempts).toBe(2);
+    expect(runs.list()[0]).toMatchObject({ status: 'failed', failureKind: 'infrastructure' });
+    expect(ideas.list().find(item => item.id === idea.id)?.status).toBe('shortlisted');
+    expect(events.some(event => event.type === 'testing')).toBe(true);
+    expect(events.find(event => event.type === 'failed')?.message).toContain("Couldn't start the test browser");
+  }), 30_000);
+
   it('cancels an operator-stopped build and queued work without publishing', async () => fixture(async (root, game, gameManifest, ideas, runs) => {
     let notifyStarted!: () => void;
     const started = new Promise<void>(resolve => { notifyStarted = resolve; });
@@ -312,7 +325,7 @@ describe('Phase 3 runner', () => {
     const publicRecord = JSON.stringify(publicRun(record));
     expect(publicRecord).not.toContain('Operator');
     expect(publicRecord).not.toContain('secret');
-    expect(publicRecord).toContain('Build failed');
+    expect(publicRecord).toContain('Patch failed its smoke test');
     expect(publicRun({ ...record, error: 'Error: Codex sandbox cannot write in its worktree' }).error).toBe('Sandbox setup failed; see README and local run record');
   });
 

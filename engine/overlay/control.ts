@@ -2,6 +2,7 @@ import './control.css';
 import './dashboard.css';
 import { appendText, dashboardData, roundClock } from './shared';
 import { createLayoutEditor } from './layout-editor';
+import { timelineState } from './timeline';
 
 const root = document.querySelector<HTMLDivElement>('#control')!;
 root.innerHTML = `<main class="go-live-dashboard"><div class="live-status"><strong id="round">Loading round…</strong><span id="twitch-pill">Twitch checking…</span><span id="codex-pill">Codex checking…</span><span id="overlay-pill">Overlay ready</span><span id="sound-pill">Sound checking…</span></div><div class="layout-presets"><label>Layout <select id="layout-preset"><option value="default">Default</option><option value="chat-focus">Chat focus</option></select></label><span>Drag panels to reorder; use the controls in each panel. <a href="#overlay-editor">Customize OBS overlay ↓</a></span></div><div class="dashboard-panels" id="dashboard-panels">
@@ -55,8 +56,9 @@ channel.onmessage = event => { if (event.data?.type !== 'frame' || !(event.data.
 window.addEventListener('beforeunload', () => channel.close());
 
 let currentCandidateId: string | undefined;
+let rewardIdeaIds = new Set<string>();
 async function action(name: string, ideaId?: string) {
-  const confirmations: Record<string, string> = { rollback: 'Roll back the latest shipped patch?', 'force-next': 'Cancel the current build and start a new round?', 'triage-discard': 'Discard these AI triage suggestions?', 'bet-cancel': 'Cancel the points prediction and return all points?', 'remove-demo': 'Remove all active Practice demo patches before going live?' };
+  const confirmations: Record<string, string> = { rollback: 'Roll back the latest shipped patch?', reject: rewardIdeaIds.has(ideaId ?? '') ? 'Reject this idea? If its channel-point redemption was already fulfilled, its points cannot be returned.' : 'Reject this idea?', 'force-next': 'Cancel the current build and start a new round?', 'triage-discard': 'Discard these AI triage suggestions?', 'bet-cancel': 'Cancel the points prediction and return all points?', 'remove-demo': 'Remove all active Practice demo patches before going live?' };
   if (confirmations[name] && !confirm(confirmations[name])) return;
   const notify = (message: string) => {
     root.querySelector('#notice')!.textContent = message;
@@ -90,13 +92,14 @@ async function refresh() {
   try {
     const [data, twitch, chat, saved, refundData, betData] = await Promise.all([
       dashboardData(),
-      fetch('/api/twitch/status').then(response => response.json()) as Promise<{ broadcaster: { login: string } | null; bot: { login: string } | null; eventsub: string; reward?: { state: string; reason: string }; refundIssue?: string }>,
+      fetch('/api/twitch/status').then(response => response.json()) as Promise<{ broadcaster: { login: string } | null; bot: { login: string } | null; eventsub: string; authIssue?: string; reward?: { state: string; reason: string }; refundIssue?: string }>,
       fetch('/api/chat/recent').then(response => response.json()) as Promise<{ messages: { at: string; author: string; text: string }[] }>,
       fetch('/api/builds').then(response => response.json()) as Promise<{ builds: { id: string; patches: unknown[]; createdAt?: string }[] }>,
       fetch('/api/twitch/refunds').then(response => response.json()) as Promise<{ refunds: { redemptionId: string; action?: 'refund' | 'fulfill'; status: string; message: string; updatedAt?: string }[] }>,
       fetch('/api/predictions').then(response => response.json()) as Promise<{ active?: { ideaId: string; status: string; error?: string; createdAt?: string } }>
     ]);
     const { round, runs, mutations, ideas, rollbackVote, events, settings } = data;
+    rewardIdeaIds = new Set(ideas.filter(idea => idea.source === 'reward').map(idea => idea.id));
     currentCandidateId = round.candidates[0]?.id;
     root.querySelector('#rollback-vote')!.textContent = rollbackVote
       ? `Chat rollback vote ${rollbackVote.votes}/${rollbackVote.threshold}${rollbackVote.ready ? ' · threshold met; moderator can confirm with !rollback' : ''} · moderator !rollback is always immediate · expires ${new Date(rollbackVote.expiresAt).toLocaleTimeString()}`
@@ -106,21 +109,24 @@ async function refresh() {
     root.querySelector<HTMLElement>('.quick-tiles [data-action="resume"]')!.hidden = round.phase !== 'paused';
     root.querySelector('#round-phase')!.textContent = round.phase.toUpperCase();
     root.querySelector('#round-timer')!.textContent = roundClock(round.remainingMs);
-    root.querySelector('#twitch-pill')!.textContent = twitch.broadcaster && twitch.bot ? `● Twitch ${twitch.eventsub}${twitch.reward && !['enabled', 'unconfigured'].includes(twitch.reward.state) ? ` · ${twitch.reward.reason}` : ''}${twitch.refundIssue ? ` · ${twitch.refundIssue}` : ''}` : '○ Practice mode';
+    root.querySelector('#twitch-pill')!.textContent = twitch.broadcaster && twitch.bot ? `● Twitch chat ${twitch.eventsub.startsWith('connected') ? 'connected' : 'disconnected'}${twitch.authIssue ? ` · ${twitch.authIssue}` : ''}${twitch.reward && !['enabled', 'unconfigured'].includes(twitch.reward.state) ? ` · ${twitch.reward.reason}` : ''}${twitch.refundIssue ? ` · ${twitch.refundIssue}` : ''}` : '○ Practice mode';
     root.querySelector('#codex-pill')!.textContent = runs.at(-1)?.status === 'building' ? '◉ Codex building' : '○ Codex standing by';
     root.querySelector('#sound-pill')!.textContent = settings.muted ? '○ Sound muted' : '● Sound on in play view';
     root.querySelector('#timing-hint')!.textContent = `Pitch ${settings.pitchSeconds}s · Vote ${settings.voteSeconds}s · Approval waits for a moderator.`;
 
     const pending = ideas.filter(idea => ['submitted', 'shortlisted'].includes(idea.status));
     root.querySelector('#pitch-count')!.textContent = String(pending.length);
-    const queue = root.querySelector<HTMLElement>('#pitch-queue')!; queue.replaceChildren();
+    const queue = root.querySelector<HTMLElement>('#pitch-queue')!;
+    const focusedQueueIdea = document.activeElement?.closest<HTMLElement>('#pitch-queue [data-idea-id]')?.dataset.ideaId;
+    queue.replaceChildren();
     if (!pending.length) appendText(queue, 'p', 'No pitches yet. Ask chat to send !idea <mechanic>.', 'empty-state');
     for (const [index, idea] of pending.slice(0, 12).entries()) {
-      const item = document.createElement('article'); item.className = 'queue-item';
+      const item = document.createElement('article'); item.className = 'queue-item'; item.dataset.ideaId = idea.id;
       appendText(item, 'strong', `${index + 1}. ${idea.spec ?? idea.text}`);
       appendText(item, 'small', `${idea.contributors?.map(name => `@${name}`).join(', ') ?? `@${idea.authorName}`} · ${idea.status}`);
-      queue.append(item);
+      const reject = document.createElement('button'); reject.className = 'secondary'; reject.textContent = 'Reject'; reject.dataset.action = 'reject'; reject.dataset.ideaId = idea.id; item.append(reject); queue.append(item);
     }
+    if (focusedQueueIdea) queue.querySelector<HTMLElement>(`[data-idea-id="${focusedQueueIdea}"] [data-action="reject"]`)?.focus();
     const preview = root.querySelector<HTMLElement>('#triage-preview')!; preview.replaceChildren();
     if (round.triagePreview?.length) {
       appendText(preview, 'h3', 'AI triage preview');
@@ -134,11 +140,15 @@ async function refresh() {
       preview.append(buttons);
     }
 
-    const candidates = root.querySelector<HTMLElement>('#candidates')!; candidates.replaceChildren();
+    const candidates = root.querySelector<HTMLElement>('#candidates')!;
+    const openMenus = new Set(Array.from(candidates.querySelectorAll<HTMLDetailsElement>('details[open]')).map(menu => menu.closest<HTMLElement>('[data-idea-id]')?.dataset.ideaId));
+    const focusedIdea = document.activeElement?.closest<HTMLElement>('[data-idea-id]')?.dataset.ideaId;
+    const focusedAction = (document.activeElement as HTMLElement | null)?.dataset.action;
+    candidates.replaceChildren();
     const total = round.candidates.reduce((sum, idea) => sum + idea.votes.length, 0);
     root.querySelector('#ballot-total')!.textContent = `${total} vote${total === 1 ? '' : 's'}`;
     for (const [index, idea] of round.candidates.entries()) {
-      const card = document.createElement('article'); card.className = 'ballot-item';
+      const card = document.createElement('article'); card.className = 'ballot-item'; card.dataset.ideaId = idea.id;
       const percent = total ? Math.round(idea.votes.length / total * 100) : 0;
       appendText(card, 'span', String(index + 1), 'ballot-number');
       appendText(card, 'strong', idea.spec ?? idea.text);
@@ -150,10 +160,13 @@ async function refresh() {
         const approve = document.createElement('button'); approve.textContent = 'Approve'; approve.dataset.action = 'approve'; approve.dataset.ideaId = idea.id; buttons.append(approve);
         const more = document.createElement('details'); more.className = 'ballot-more'; const moreLabel = document.createElement('summary'); moreLabel.textContent = 'More actions'; more.append(moreLabel);
         if (!betData.active) { const bet = document.createElement('button'); bet.textContent = 'Open points prediction'; bet.dataset.action = 'bet-start'; bet.dataset.ideaId = idea.id; more.append(bet); }
-        const reject = document.createElement('button'); reject.textContent = 'Reject'; reject.dataset.action = 'reject'; reject.dataset.ideaId = idea.id; more.append(reject); buttons.append(more);
+        const menuReject = document.createElement('button'); menuReject.textContent = 'Reject'; menuReject.dataset.action = 'reject'; menuReject.dataset.ideaId = idea.id; more.append(menuReject);
+        more.open = openMenus.has(idea.id); buttons.append(more);
       }
+      const reject = document.createElement('button'); reject.textContent = 'Reject'; reject.dataset.action = 'reject'; reject.dataset.ideaId = idea.id; buttons.append(reject);
       card.append(buttons); candidates.append(card);
     }
+    if (focusedIdea) candidates.querySelector<HTMLElement>(`[data-idea-id="${focusedIdea}"] ${focusedAction ? `[data-action="${focusedAction}"]` : 'summary'}`)?.focus();
     if (!round.candidates.length) appendText(candidates, 'p', round.phase === 'pitch' ? 'Ballot opens after the pitch window. The oldest three pending ideas will appear here.' : 'No voting candidates yet. Start the next round.', 'empty-state');
 
     const runList = root.querySelector<HTMLElement>('#runs')!; runList.replaceChildren();
@@ -163,12 +176,13 @@ async function refresh() {
     appendText(runList, 'p', latest ? `${latest.demo ? 'DEMO · ' : ''}${latest.status.toUpperCase()} · ${latestTitle ?? latest.error ?? 'Codex working'}` : 'No Codex run yet. Approve an idea to begin.', latest ? 'run-summary' : 'empty-state');
     const seen = new Set(events.filter(event => event.runId === latest?.id).map(event => event.type));
     if (latest && ['shipped', 'failed', 'rolled_back'].includes(latest.status)) seen.add(latest.status);
-    for (const [id, label] of [['sandbox_verified', 'Sandbox verified'], ['file', 'Writing patch'], ['testing', 'Smoke test'], [latest?.status === 'failed' ? 'failed' : latest?.status === 'rolled_back' ? 'rolled_back' : 'shipped', latest?.status === 'failed' ? 'Failed' : latest?.status === 'rolled_back' ? 'Rolled back' : 'Shipped']]) {
-      const step = document.createElement('p'); step.className = `timeline-step ${seen.has(id) ? 'complete' : ''}`;
-      const symbol = document.createElement('span'); symbol.textContent = seen.has(id) ? '✓' : '○'; symbol.className = 'timeline-symbol';
+    for (const [id, label] of [['sandbox_verified', 'Sandbox verified'], ['file', 'Writing patch'], ['testing', 'Smoke test'], ['shipped', 'Shipped']]) {
+      const state = timelineState(id as 'sandbox_verified' | 'file' | 'testing' | 'shipped', seen, latest?.status ?? '');
+      const step = document.createElement('p'); step.className = `timeline-step ${state === 'Done' ? 'complete' : state === 'Failed' ? 'failed' : ''}`;
+      const symbol = document.createElement('span'); symbol.textContent = state === 'Done' ? '✓' : state === 'Failed' ? '×' : '○'; symbol.className = 'timeline-symbol';
       const name = document.createElement('strong'); name.textContent = label;
-      const state = document.createElement('small'); state.textContent = seen.has(id) ? 'Done' : latest?.status === 'building' && id === 'file' ? 'In progress' : 'Pending';
-      step.append(symbol, name, state); runList.append(step);
+      const status = document.createElement('small'); status.textContent = state;
+      step.append(symbol, name, status); runList.append(step);
     }
     const patches = root.querySelector<HTMLElement>('#patches')!; patches.replaceChildren();
     const active = mutations.filter(item => !item.error); root.querySelector('#patch-count')!.textContent = String(active.length);

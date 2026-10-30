@@ -18,6 +18,7 @@ export interface PipelineOptions {
   candidate?: (number: number) => Idea | undefined;
   canVote?: () => boolean;
   canRollback?: () => boolean;
+  canApprove?: () => Promise<string | undefined>;
   now?: () => number;
 }
 const IDEA_MAX_LENGTH = 200;
@@ -69,6 +70,10 @@ export class ChatPipeline {
     const idea = /^\d+$/.test(argument) && this.options.candidate ? this.options.candidate(Number(argument)) : this.store.find(argument);
     if (!idea) return this.respond(event, command, 'Idea not found. Use its ID or current number.');
     if (!['submitted', 'shortlisted', 'voting'].includes(idea.status)) return this.respond(event, command, 'That idea is no longer pending.');
+    if (command === 'approve') {
+      const problem = await this.options.canApprove?.();
+      if (problem) return this.respond(event, command, problem);
+    }
     const updated = this.store.setStatus(idea.id, command === 'approve' ? 'approved' : 'rejected')!;
     this.options.onControl?.(command as 'approve' | 'reject', updated);
     await this.options.reply(`${command === 'approve' ? 'Approved' : 'Rejected'} idea by @${idea.authorName}: ${idea.spec ?? idea.text}`, event);

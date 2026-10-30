@@ -1,6 +1,7 @@
 import './stream.css';
 import './overlay-polish.css';
 import { appendText, dashboardData, roundClock } from './shared';
+import { timelineState } from './timeline';
 
 const root = document.querySelector<HTMLDivElement>('#overlay')!;
 root.innerHTML = '<div class="stream-shell"><header><div id="patches" class="patches"></div></header><aside><div class="panel-label">CODEX AT WORK</div><div id="work"></div></aside><footer><div class="round-heading"><div><span class="panel-label">CHAT DECIDES</span><strong id="phase"></strong></div><strong id="clock"></strong></div><div id="candidates" class="candidates"></div></footer><div id="pitch-ticker" class="pitch-ticker"></div></div>';
@@ -49,7 +50,7 @@ async function refresh() {
       if (latest.demo) appendText(work, 'small', 'by @Live Patch Demo');
       else if (idea) appendText(work, 'small', idea.contributors?.map(name => `@${name}`).join(', ') ?? `@${idea.authorName}`);
       const steps = events.filter(event => event.runId === latest.id);
-      const endStage = latest.status === 'failed' ? { id: 'failed', label: 'Build failed' } : latest.status === 'rolled_back' ? { id: 'rolled_back', label: 'Rolled back' } : { id: 'shipped', label: 'Patch shipped' };
+      const endStage = latest.status === 'rolled_back' ? { id: 'rolled_back', label: 'Rolled back' } : { id: 'shipped', label: 'Patch shipped' };
       const stages = latest.demo ? [
         { id: 'sandbox_verified', label: 'Prepared example' }, { id: 'file', label: 'Practice check' },
         { id: 'testing', label: 'Practice pitch' }, { id: 'shipped', label: 'Demo shipped' }
@@ -61,7 +62,8 @@ async function refresh() {
       if (['shipped', 'failed', 'rolled_back'].includes(latest.status)) seen.add(latest.status);
       for (const stage of stages) {
         const step = steps.find(item => item.type === stage.id);
-        appendText(work, 'small', `${seen.has(stage.id) ? '✓' : '○'} ${stage.label}${stage.id === 'file' && step?.message ? ` · ${step.message}` : ''}`, `work-step ${seen.has(stage.id) ? 'complete' : ''}`);
+        const state = latest.demo ? (seen.has(stage.id) ? 'Done' : latest.status === 'failed' && stage.id === 'testing' ? 'Failed' : 'Pending') : timelineState(stage.id as 'sandbox_verified' | 'file' | 'testing' | 'shipped', seen, latest.status);
+        appendText(work, 'small', `${state === 'Done' ? '✓' : state === 'Failed' ? '×' : '○'} ${stage.label}${state === 'Failed' ? ' · Failed' : ''}${stage.id === 'file' && step?.message ? ` · ${step.message}` : ''}`, `work-step ${state === 'Done' ? 'complete' : state === 'Failed' ? 'failed' : ''}`);
       }
       if (latest.status === 'shipped') appendText(work, 'strong', latest.demo ? '✦ DEMO PATCH ✦' : '✦ PATCH SHIPPED ✦', 'shipped-moment');
       if (latest.status === 'failed') appendText(work, 'strong', 'BUILD FAILED', 'failed-moment');

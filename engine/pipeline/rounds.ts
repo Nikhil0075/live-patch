@@ -51,6 +51,12 @@ export class RoundCoordinator {
     return id ? this.ideas.list().find(idea => idea.id === id) : undefined;
   }
   canVote() { return this.state.phase === 'vote'; }
+  rejected(ideaId: string) {
+    if (!this.state.candidateIds.includes(ideaId)) { this.publish(); return; }
+    this.state.candidateIds = this.state.candidateIds.filter(id => id !== ideaId);
+    if (!this.state.candidateIds.length && ['vote', 'approval'].includes(this.state.phase)) this.startPitch(true);
+    else this.publish();
+  }
   triage(idea: Idea): void {
     delete this.state.triagePreview;
     if (unsafeIdea(idea.text)) { this.ideas.setStatus(idea.id, 'rejected'); this.publish(); return; }

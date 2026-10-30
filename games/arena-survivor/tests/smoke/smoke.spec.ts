@@ -92,6 +92,34 @@ test('OBS widgets can be removed, added and resized across reloads', async ({ pa
   }
 });
 
+test('a 500-pixel OBS ballot stacks three readable ideas without horizontal overflow', async ({ page }) => {
+  await page.goto('/?view=practice');
+  const original = await page.evaluate(() => fetch('/api/settings').then(r => r.json()).then(data => data.overlayWidgets));
+  try {
+    await page.evaluate(async widgets => {
+      const ballot = widgets.find((widget: any) => widget.type === 'ballot');
+      ballot.width = 500; ballot.height = 640; ballot.x = 24; ballot.y = 430;
+      await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ overlayWidgets: widgets }) });
+    }, original);
+    await page.getByRole('button', { name: 'Run a full round automatically' }).click();
+    await expect(page.locator('#quick-result')).toContainText('Done.', { timeout: 15_000 });
+    await page.goto('/overlay.html');
+    await expect(page.locator('.candidate')).toHaveCount(3);
+    const layout = await page.locator('.stream-shell footer').evaluate(footer => {
+      const cards = Array.from(footer.querySelectorAll<HTMLElement>('.candidate'));
+      return { width: footer.clientWidth, scrollWidth: footer.scrollWidth, scrollHeight: footer.scrollHeight, height: footer.clientHeight, cards: cards.map(card => ({ x: card.offsetLeft, titleSize: parseFloat(getComputedStyle(card.querySelector('strong')!).fontSize), hint: card.querySelector('.vote-hint')?.textContent })) };
+    });
+    expect(layout.width).toBe(496);
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.width);
+    expect(layout.scrollHeight).toBeLessThanOrEqual(layout.height);
+    expect(layout.cards.map(card => card.x)).toEqual([layout.cards[0].x, layout.cards[0].x, layout.cards[0].x]);
+    for (const card of layout.cards) { expect(card.titleSize).toBeGreaterThanOrEqual(28); expect(card.hint).toContain('!vote'); }
+  } finally {
+    await page.evaluate(async () => { const round = await fetch('/api/round').then(r => r.json()); if (round.phase === 'approval' || round.phase === 'vote') await fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'advance' }) }); });
+    await page.evaluate(widgets => fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ overlayWidgets: widgets }) }), original);
+  }
+});
+
 test('stream patch card shows newest entries and counts those that do not fit', async ({ page }) => {
   const first = path.join(mutationDir, '98-overlay-a.js');
   const second = path.join(mutationDir, '99-overlay-b.js');
@@ -213,6 +241,33 @@ test('Practice can run a round and ship a labelled demo without Codex', async ({
   await expect(page.locator('#mutations')).not.toContainText('Demo patch: Coin Shower · active');
 });
 
+test('Play opens a reusable popup without browser tab chrome', async ({ page }) => {
+  await page.goto('/');
+  const popupEvent = page.waitForEvent('popup');
+  await page.locator('#top-play').click();
+  const popup = await popupEvent;
+  try {
+    await expect(popup.locator('#status')).toContainText('LIVE');
+    expect(await popup.opener()).toBe(page);
+    expect(await popup.evaluate(() => window.outerWidth)).toBeGreaterThan(1000);
+    await page.locator('#top-play').click();
+    await expect.poll(() => page.context().pages().filter(item => item.url().endsWith('/play')).length).toBe(1);
+  } finally { await popup.close(); }
+});
+
+test('shipping a second Practice demo replaces the first file and run', async ({ page }) => {
+  await page.goto('/?view=practice');
+  for (let index = 0; index < 2; index++) {
+    await page.getByRole('button', { name: 'Run a full round automatically' }).click();
+    await expect(page.locator('#demo-ship')).toBeVisible({ timeout: 15_000 });
+    await page.locator('#demo-ship').click();
+    await expect(page.locator('#quick-result')).toContainText('Done.', { timeout: 15_000 });
+  }
+  const state = await page.evaluate(async () => ({ runs: (await fetch('/api/runs').then(r => r.json())).runs, mutations: await fetch('/api/mutations').then(r => r.json()) })) as { runs: { demo?: boolean; status: string }[]; mutations: { name: string }[] };
+  expect(state.runs.filter(run => run.demo && run.status === 'shipped')).toHaveLength(1);
+  expect(state.mutations.filter(item => item.name.startsWith('demo-'))).toHaveLength(1);
+});
+
 test('Practice announcement uses a different game demo title from module metadata', async ({ page }) => {
   expect(manifest.demoMutation).toBeTruthy();
   const file = path.join(gameDirectory, manifest.demoMutation!);
@@ -249,6 +304,83 @@ test('Go Live can remove Practice demo patches before a stream', async ({ page }
   await expect(remove).toBeHidden({ timeout: 10_000 });
   const files = await page.evaluate(() => fetch('/api/mutations').then(r => r.json()) as Promise<{ name: string }[]>);
   expect(files.some(file => file.name.startsWith('demo-'))).toBe(false);
+});
+
+test('Go Live rejects pitches and vote candidates and keeps ballot actions open across refresh', async ({ page }) => {
+  await page.goto('/?view=go-live');
+  await page.evaluate(async () => {
+    const action = (name: string) => fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: name }) });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const round = await fetch('/api/round').then(r => r.json());
+      if (round.phase === 'pitch') break;
+      await action(round.phase === 'paused' ? 'resume' : 'advance');
+    }
+    await fetch('/api/simulator/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: crypto.randomUUID(), kind: 'chat', viewer: { id: crypto.randomUUID(), login: 'rejecter', name: 'Rejecter', moderator: false, broadcaster: false }, text: `!idea reject-in-pitch-${Date.now()}` }) });
+  });
+  const pitch = page.locator('#pitch-queue .queue-item').filter({ hasText: 'reject-in-pitch-' });
+  await expect(pitch).toBeVisible();
+  const pitchReject = pitch.getByRole('button', { name: 'Reject' });
+  await pitchReject.focus();
+  await page.waitForTimeout(2200);
+  await expect(pitchReject).toBeFocused();
+  page.once('dialog', dialog => void dialog.accept());
+  await pitchReject.click();
+  await expect(pitch).toHaveCount(0);
+  await page.evaluate(async () => {
+    for (let i = 0; i < 3; i++) await fetch('/api/simulator/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: crypto.randomUUID(), kind: 'chat', viewer: { id: crypto.randomUUID(), login: `voter${i}`, name: `Voter${i}`, moderator: false, broadcaster: false }, text: `!idea vote-reject-${i}-${Date.now()}` }) });
+    await fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'advance' }) });
+  });
+  await expect(page.locator('#round')).toContainText('VOTE');
+  const candidate = page.locator('#candidates .ballot-item').first();
+  await expect(candidate.getByRole('button', { name: 'Reject' })).toBeVisible();
+  page.once('dialog', dialog => void dialog.accept());
+  await candidate.getByRole('button', { name: 'Reject' }).click();
+  await expect.poll(() => page.locator('#candidates .ballot-item').count()).toBeLessThan(3);
+});
+
+test('top bar offers the correct one-click Twitch permission reconnect', async ({ page }) => {
+  await page.route('**/api/twitch/status', async route => {
+    const response = await route.fetch();
+    const data = await response.json();
+    await route.fulfill({ response, json: { ...data, broadcaster: { login: 'streamer' }, bot: { login: 'bot' }, eventsub: 'offline', reconnect: { role: 'broadcaster', reason: 'Broadcaster needs new permissions — reconnect' } } });
+  });
+  await page.goto('/?view=go-live');
+  const button = page.locator('.top-actions > a.button.primary');
+  await expect(button).toHaveText('Reconnect Twitch');
+  await expect(button).toHaveAttribute('href', '/api/twitch/auth/broadcaster/start');
+  await expect(page.locator('#app-connection')).toContainText('Broadcaster needs new permissions');
+  await expect(page.locator('#twitch-pill')).toContainText('Twitch chat disconnected');
+});
+
+test('Go Live fits a 1080p studio view and shows every quick-action explanation', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto('/?view=go-live');
+  await expect(page.locator('.nav-group-label')).toHaveText('STUDIO');
+  await expect(page.locator('#app-nav svg')).toHaveCount(5);
+  await expect(page.locator('#rollback-vote')).toContainText('moderator');
+  const bounds = await page.evaluate(() => {
+    const panel = document.querySelector('[data-panel="actions"]')!.getBoundingClientRect();
+    const note = document.querySelector('#rollback-vote')!.getBoundingClientRect();
+    return { page: document.documentElement.scrollHeight, viewport: innerHeight, noteBottom: note.bottom, panelBottom: panel.bottom };
+  });
+  expect(bounds.page).toBeLessThanOrEqual(bounds.viewport);
+  expect(bounds.noteBottom).toBeLessThanOrEqual(bounds.panelBottom);
+});
+
+test('failed browser launch is shown as a failed smoke step in studio and OBS', async ({ page }) => {
+  const run = { id: 'missing-browser', ideaId: 'pitch-browser', status: 'failed', error: "Couldn't start the test browser (setup problem on the streaming PC)", startedAt: new Date().toISOString() };
+  const events = ['sandbox_verified', 'file', 'testing', 'failed'].map(type => ({ runId: run.id, ideaId: run.ideaId, type, at: new Date().toISOString() }));
+  await page.route('**/api/runs', route => route.fulfill({ json: { runs: [run] } }));
+  await page.route('**/api/runner-events', route => route.fulfill({ json: { events } }));
+  await page.goto('/?view=go-live');
+  await expect(page.locator('#runs')).toContainText("Couldn't start the test browser");
+  const smoke = page.locator('#runs .timeline-step').filter({ hasText: 'Smoke test' });
+  await expect(smoke).toContainText('Failed');
+  await expect(smoke).not.toHaveClass(/complete/);
+  await page.goto('/overlay.html');
+  await expect(page.locator('#work')).toContainText("Couldn't start the test browser");
+  await expect(page.locator('#work .work-step').filter({ hasText: 'Smoke test' })).toContainText('Failed');
+  await expect(page.locator('#work .work-step').filter({ hasText: 'Patch shipped' })).not.toHaveClass(/complete/);
 });
 
 test('Go Live mirrors one Play window and persists panel layout', async ({ page }) => {
@@ -759,7 +891,10 @@ test('operator controls timed voting and the OBS overlay renders viewer text saf
   const runsBefore = await page.evaluate(async () => (await fetch('/api/runs').then(response => response.json())).runs.length as number);
   const ballot = page.locator('#candidates article').filter({ hasText: pitch });
   await ballot.locator('summary').click();
-  await ballot.getByRole('button', { name: 'Reject' }).click();
+  await page.waitForTimeout(2200);
+  await expect(ballot.locator('details')).toHaveAttribute('open', '');
+  page.once('dialog', dialog => void dialog.accept());
+  await ballot.locator('details').getByRole('button', { name: 'Reject' }).click();
   await expect(page.locator('#notice')).toContainText('rejected');
   const runsAfter = await page.evaluate(async () => (await fetch('/api/runs').then(response => response.json())).runs.length as number);
   expect(runsAfter).toBe(runsBefore);

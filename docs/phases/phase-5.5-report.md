@@ -90,3 +90,29 @@ The concept images supplied in `plans/phase-5.5/concepts/` show the intended hie
 - **P55-R2-06 Fixed:** the OBS patch card orders newer shipped patches first, shows three rows and counts additional active patches in a visible `+N more` line; browser test adds two extra patches.
 - **P55-R2-07 Fixed:** moved Arena Survivor's message banner below the ship toast and added a layout bound test and layout-map entry.
 - **P55-R2-08 Deferred:** the remaining rail icon and 25 px page-height polish can be revisited after the operator's usability and OBS checks.
+
+## Live-stream fixes
+
+- **LS-01 Fixed:** browser launch is probed at startup, approval and build start; launch failures retry once and remain infrastructure failures, cancel predictions and leave ideas pending; smoke steps complete only on `passed`, safe messages appear in chat and both timelines, and full diagnostics stay local. Unit and browser regressions cover these paths; three real HTTPS Codex builds shipped in an isolated clone.
+- **LS-02 Fixed:** Pitch, Vote and Approval offer confirmed Reject, rejected candidates leave the ballot, and open menus and focus survive refresh. The browser test waits beyond the two-second refresh and rejects at each stage; reward confirmation says fulfilled points cannot return.
+- **LS-03 Fixed:** missing stored Twitch scopes identify broadcaster or bot, change the top action to a click-only reconnect link, and label the chip “Twitch chat disconnected”; the existing callback restarts EventSub. Unit and browser tests cover the missing-scope prompt and route.
+- **LS-04 Fixed:** Home and Library Play entries request the same reusable 1280 × 720 popup. Browser test verifies the popup and reuse; README describes OBS Window Capture.
+- **LS-05 Fixed:** a new Practice demo removes the earlier demo file and rolls back its run. Browser test ships two and finds only one active.
+- **LS-06 Fixed:** narrow ballots stack three readable rows; widget-specific minimums and protected-zone placement prevent HUD and toast overlap. Browser test measures a 500 px ballot without clipping or horizontal overflow.
+- **LS-07 Fixed:** sidebar navigation uses one line-icon set with a Studio label, and Go Live fits 1920 × 1080 with the quick-action note visible. Browser geometry test checks both.
+
+### Live verification and diagnosis
+
+The original 31 October `chromium_headless_shell` “executable doesn't exist” error did not recur. Its intermittent cause remains unproven; the file was present and a later identical smoke command worked. The new child-process preflight launches Chromium rather than trusting file existence, and the local log includes the resolved missing executable path plus filesystem error if launch fails.
+
+The isolated real HTTPS run found another smoke failure: with Play, Codex and smoke running together, the built-in Danger Zone module missed the former 200 ms event deadline and was disabled. The smoke gate correctly rejected the run, but this was a scheduler false positive. Raising the finite batch deadline to 1.8–2.2 seconds let the next three builds pass, while the endless-loop and three-second-stall browser tests still disable bad modules. Local smoke diagnostics now retain the first failed attempt even if a repair follows.
+
+| Consecutive shipped run | Patch visible in Play pause menu | Runner time |
+| --- | --- | ---: |
+| 1 | Coin Pink Ring | 91 s |
+| 2 | Enemy Hit Blue Ring | 93 s |
+| 3 | Starting Coins | 166 s |
+
+The third run repaired a first smoke rejection before shipping. The isolated clone had no Twitch credentials or operator data; its elevated sandbox self-test passed. The user-visible journey took 104 seconds for run 2 and 178 seconds for run 3, including navigation and the visible Play check.
+
+Final checks: `npm test` passed 85 unit tests (4 opt-in skipped), 60 browser tests (1 opt-in WebGL skipped) and the HTTPS/HTTP2 regression. `npm run build` passed and `npm audit --audit-level=high` found 0 vulnerabilities. No dependencies were added. The operator-only OBS, Twitch and first-time usability checks remain open.

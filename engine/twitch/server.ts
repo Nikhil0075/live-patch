@@ -23,13 +23,14 @@ import { loadGame } from '../manifest/load';
 import { execFileSync } from 'node:child_process';
 import { SettingsStore, type StudioSettings } from '../studio/settings';
 import { publicCredentials, saveCredentials, type CredentialInput } from '../studio/credentials';
-import { setupChecks, sandboxSelfTest, runSandboxSetup, classifySandboxError, type SetupCheck } from '../studio/setup';
+import { setupChecks, probeBrowser, sandboxSelfTest, runSandboxSetup, classifySandboxError, type SetupCheck } from '../studio/setup';
 import { createManagedPitchReward, fetchPitchReward, refundRedemption, fulfillRedemption, type RewardState, type TwitchReward } from './rewards';
 import { RefundStore } from './refunds';
 import { validateMutation } from '../mutation/validate';
 import { mutationTitle } from '../mutation/metadata';
 import { RollbackVotes } from '../pipeline/rollback-votes';
 import { PatchPredictions } from './predictions';
+import { handleRunnerOutcome } from './runner-outcome';
 
 function loadLocalEnv(root: string) {
   const file = path.join(root, '.env');
@@ -123,8 +124,10 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
     server.ws.send({ type: 'custom', event: 'live-patch:runner', data: event });
     if (event.type === 'shipped' || event.type === 'failed') {
       rounds?.runFinished(event.ideaId);
-      const infrastructureFailure = event.type === 'failed' && runs.get(event.runId)?.failureKind !== 'patch';
-      void (infrastructureFailure ? predictions.cancel() : predictions.settle(event.ideaId, event.type === 'shipped')).catch(error => console.error(`Prediction for idea ${event.ideaId} could not settle:`, error));
+      void handleRunnerOutcome(event, runs.get(event.runId)?.failureKind, predictions, async message => {
+        replies.push({ at: new Date().toISOString(), text: message });
+        if (auth.identity('bot') && auth.identity('broadcaster')) void auth.helix('bot', 'chat/messages', { broadcaster_id: auth.identity('broadcaster')!.id, sender_id: auth.identity('bot')!.id, message }).catch(error => console.error(`Runner setup chat notice for idea ${event.ideaId} failed:`, error));
+      }).catch(error => console.error(`Runner outcome for idea ${event.ideaId} failed:`, error));
     }
   });
   rounds = new RoundCoordinator(path.join(dataDir, 'rounds.json'), store, state => server.ws.send({ type: 'custom', event: 'live-patch:round', data: state }), Date.now, settings.snapshot());
@@ -165,12 +168,20 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
     candidate: number => rounds.candidate(number),
     canVote: () => rounds.canVote(),
     canRollback: () => Boolean(runs.lastShipped(gameDirectory)),
+    canApprove: async () => {
+      const browser = await probeBrowser(root);
+      setupCache = undefined;
+      return browser.state === 'Ready' ? undefined : `${browser.reason} Open Setup, run npx playwright install chromium, then try again.`;
+    },
     onControl: (action, idea) => {
       if (action === 'approve' && idea) {
         if (predictions.active() && predictions.active()?.ideaId !== idea.id) void predictions.cancel().catch(error => console.error('Prediction for unselected idea could not cancel:', error));
         rounds.approved(idea); void runner.enqueue(idea).catch(error => console.error(`Runner idea ${idea.id} failed:`, error));
       }
-      if (action === 'reject' && idea && predictions.active()?.ideaId === idea.id) void predictions.cancel().catch(error => console.error(`Prediction for rejected idea ${idea.id} could not cancel:`, error));
+      if (action === 'reject' && idea) {
+        rounds.rejected(idea.id);
+        if (predictions.active()?.ideaId === idea.id) void predictions.cancel().catch(error => console.error(`Prediction for rejected idea ${idea.id} could not cancel:`, error));
+      }
       if (action === 'rollback') void runner.requestRollback().catch(error => console.error('Runner rollback failed:', error));
     }
   });
@@ -370,6 +381,11 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
         const temporary = `${target}.${process.pid}.tmp`;
         fs.writeFileSync(temporary, source, { flag: 'wx' });
         try { fs.renameSync(temporary, target); } catch (error) { fs.rmSync(temporary, { force: true }); throw error; }
+        for (const previous of runs.list().filter(run => run.gameDirectory === gameDirectory && run.demo && run.status === 'shipped' && /^demo-[a-f0-9]{8}\.js$/.test(run.mutationName ?? ''))) {
+          fs.rmSync(path.join(mutationDir, previous.mutationName!), { force: true });
+          runs.upsert({ ...previous, status: 'rolled_back', finishedAt: new Date().toISOString() });
+          store.setStatus(previous.ideaId, 'rolled_back');
+        }
         rounds.approved(selected);
         store.setStatus(selected.id, 'demo');
         const now = new Date().toISOString();
@@ -425,7 +441,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
     if (route === '/api/runner-events' && req.method === 'GET') { json(res, 200, { events: progress }); return; }
     if (route === '/api/predictions' && req.method === 'GET') { json(res, 200, { predictions: predictions.list(), active: predictions.active() }); return; }
     if (route === '/api/twitch/status' && req.method === 'GET') {
-      json(res, 200, { configured: auth.configured(), rewardConfigured: Boolean(config.rewardId), reward: await checkedReward(), refundIssue: refunds.list().filter(item => !['refunded', 'fulfilled'].includes(item.status)).at(-1)?.message ?? '', broadcaster: auth.identity('broadcaster'), bot: auth.identity('bot'), eventsub: eventsub.status(), authIssue: connection.status(), chatIssue, simulator }); return;
+      json(res, 200, { configured: auth.configured(), rewardConfigured: Boolean(config.rewardId), reward: await checkedReward(), refundIssue: refunds.list().filter(item => !['refunded', 'fulfilled'].includes(item.status)).at(-1)?.message ?? '', broadcaster: auth.identity('broadcaster'), bot: auth.identity('bot'), eventsub: eventsub.status(), authIssue: connection.status(), reconnect: auth.reconnectNeeded(), chatIssue, simulator }); return;
     }
     if (route === '/api/twitch/refunds' && req.method === 'GET') { json(res, 200, { refunds: refunds.list().slice(-20) }); return; }
     if (route === '/api/twitch/refunds' && req.method === 'POST') {

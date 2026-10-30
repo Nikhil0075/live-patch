@@ -25,6 +25,14 @@ export class TwitchAuth {
   connected(role: Role) { return Boolean(this.tokens[role]); }
   identity(role: Role) { const token = this.tokens[role]; return token ? { id: token.userId, login: token.login } : null; }
   hasScope(role: Role, scope: string) { return this.tokens[role]?.scopes.includes(scope) ?? false; }
+  reconnectNeeded(): { role: Role; reason: string } | undefined {
+    for (const role of ['broadcaster', 'bot'] as const) {
+      const token = this.tokens[role];
+      if (!token) continue;
+      if (!scopes[role].every(scope => token.scopes?.includes(scope))) return { role, reason: `${role === 'bot' ? 'Bot' : 'Broadcaster'} needs new permissions — reconnect` };
+    }
+    return undefined;
+  }
   async validateStored() {
     for (const role of ['broadcaster', 'bot'] as const) if (this.tokens[role]) {
       this.tokens[role]!.validatedAt = 0;

@@ -9,6 +9,7 @@ import type { GameManifest } from '../manifest/schema';
 import type { Idea, IdeaStore } from '../pipeline/ideas';
 import { buildPrompt, gateCandidateAsync, unsafeIdea } from './gates';
 import { RunStore, publicFailure, type RunRecord, type RunnerEvent } from './store';
+import { probeBrowser } from '../studio/setup';
 import { codexBinary, disabledMcpConfigAsync, runnerConfig, runnerEnvironment, verifySandbox } from './sandbox';
 
 const RUN_TIMEOUT_MS = 3 * 60_000;
@@ -109,6 +110,10 @@ export function smoke(command: string, root: string, gameDirectory: string, file
       code === 0 ? resolve() : reject(Error(`Smoke test failed (${code}): ${output.slice(-4000)}`));
     });
   });
+}
+
+export function smokeInfrastructureFailure(error: unknown): boolean {
+  return /browserType\.launch|Executable doesn't exist|playwright.*(?:missing|not found)|test.server.*(?:start|listen|launch)|EADDRINUSE|Cannot find module.*playwright/i.test(String(error));
 }
 
 export class LiveRunner {
@@ -252,6 +257,10 @@ export class LiveRunner {
       const relativeGame = path.relative(this.root, this.gameDirectory);
       if (relativeGame.split(path.sep)[0] === 'builds') throw Error('Saved builds are play-only; return to the original game to build new patches');
       if (unsafeIdea(idea.text)) throw Error('Idea asks for files, secrets or network access outside the mutation API');
+      if (this.smokeTest === smoke) {
+        const browser = await probeBrowser(this.root);
+        if (browser.state !== 'Ready') throw Error(browser.reason);
+      }
       worktree = await this.prepare(id);
       record.branch = worktree.branch; this.runs.upsert(record);
       const filename = `patch-${id.replaceAll('-', '').slice(0, 12)}.js`;
@@ -275,7 +284,13 @@ export class LiveRunner {
           const candidate = await gateCandidateAsync(worktree.directory, worktree.gameRelative, this.manifest, filename, worktree.pointer);
           source = candidate.source;
           this.emit(record, 'testing');
-          await this.smokeTest(this.manifest.testCommand, this.root, worktree.game, filename, abort.signal);
+          try { await this.smokeTest(this.manifest.testCommand, this.root, worktree.game, filename, abort.signal); }
+          catch (error) {
+            if (!smokeInfrastructureFailure(error) || abort.signal.aborted) throw error;
+            console.error(`Smoke infrastructure failure for run ${id}, retrying once:`, error);
+            try { await this.smokeTest(this.manifest.testCommand, this.root, worktree.game, filename, abort.signal); }
+            catch (retryError) { if (smokeInfrastructureFailure(retryError)) failureKind = 'infrastructure'; throw retryError; }
+          }
           const after = await gateCandidateAsync(worktree.directory, worktree.gameRelative, this.manifest, filename, worktree.pointer);
           if (after.source !== source) throw Error('Mutation changed during smoke test');
           if (abort.signal.aborted || this.closed || epoch !== this.rollbackEpoch) throw Error('Run stopped before publish');
@@ -299,7 +314,10 @@ export class LiveRunner {
           this.emit(record, 'shipped', filename);
           return;
         } catch (error) {
-          if (attempt === 1 || abort.signal.aborted) throw error;
+          record.diagnostic = [record.diagnostic, `Attempt ${attempt + 1}: ${String(error)}`].filter(Boolean).join('\n').slice(-8000);
+          this.runs.upsert(record);
+          console.error(`Runner ${id} patch attempt ${attempt + 1} failed:`, error);
+          if (failureKind === 'infrastructure' || attempt === 1 || abort.signal.aborted) throw error;
           repairReason = String(error).slice(-4000);
         }
       }
@@ -310,7 +328,7 @@ export class LiveRunner {
       record.failureKind = abort.signal.aborted ? 'infrastructure' : failureKind;
       record.finishedAt = new Date().toISOString();
       this.runs.upsert(record);
-      this.ideas.setStatus(idea.id, 'failed');
+      this.ideas.setStatus(idea.id, record.failureKind === 'infrastructure' && !abort.signal.aborted ? 'shortlisted' : 'failed');
       this.emit(record, 'failed', record.error);
     } finally {
       clearTimeout(timeout);

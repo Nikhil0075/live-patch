@@ -82,7 +82,7 @@
   #control .game-preview{margin:0;max-height:340px}
   #control .panel-preview>.hint{display:none}
   #control .quick-tiles{grid-template-columns:repeat(3,minmax(0,1fr))}
-  #control .quick-tiles button{min-height:88px;display:grid;place-items:center;text-align:center;font-size:12px}
+  #control .quick-tiles button{min-height:56px;display:flex;place-items:center;text-align:center;font-size:12px}
   #control .ballot-item{padding:8px;margin:5px 0}
   #control .round-clock-card{padding-bottom:8px;margin-bottom:8px}
   #control .round-clock-card b{font-size:48px}
@@ -91,4 +91,10 @@
   #control .panel-round #timing-hint{margin:0 0 5px}
   #control .layout-presets{margin:5px 0 10px}
   #control .live-status{margin-bottom:8px;padding:8px 12px}
+  .app-content:has(#control){padding-top:16px;padding-bottom:48px}
+  .app-content:has(#control) .app-top{margin-bottom:14px}
+  .app-content:has(#control) .page-heading{margin-bottom:8px}
+  #control .dashboard-panels>.panel-preview,#control .dashboard-panels>.panel-round,#control .dashboard-panels>.panel-chat{height:476px}
+  #control .dashboard-panels>.live-card{height:275px}
+  #control .dashboard-panels>.panel-preview,#control .dashboard-panels>.panel-round,#control .dashboard-panels>.panel-chat{height:476px}
 }

@@ -27,7 +27,9 @@ interface Loaded {
 }
 
 const LOAD_DEADLINE_MS = 1500;
-const EVENT_DEADLINE_MS = 200;
+// The frame and Worker share a busy streaming PC with Codex and a second smoke browser.
+// Keep a finite deadline, but allow scheduler stalls without disabling an innocent patch.
+const EVENT_DEADLINE_MS = 1800;
 const MAX_ACTIONS_PER_SECOND = 60;
 
 function normalizeAction(action: GameAction, manifest: GameManifest): GameAction | null {
@@ -172,7 +174,7 @@ export class MutationHost {
     const events = entry.status === 'starting' ? [entry.queue.shift()!] : entry.queue.splice(0, 16);
     this.deliveredTicks += events.filter(event => event.type === 'tick').length;
     const id = this.nextId++;
-    const deadline = Math.min(600, EVENT_DEADLINE_MS + (events.length - 1) * 25);
+    const deadline = Math.min(2200, EVENT_DEADLINE_MS + (events.length - 1) * 25);
     entry.pending = { id, eventType: events[0].type, timeout: window.setTimeout(() => this.disable(entry, 'Event deadline exceeded'), deadline) };
     entry.frame?.contentWindow?.postMessage({ type: 'event', id, events, state: this.game.snapshot(), actions: Object.keys(this.manifest.actions), hooks: this.manifest.hooks }, '*');
   }

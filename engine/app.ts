@@ -5,10 +5,10 @@ declare const __LIVE_PATCH_TEST_SERVER__: boolean;
 
 type View = 'home' | 'practice' | 'go-live' | 'library' | 'builds' | 'setup' | 'settings';
 const labels: Record<View, string> = { home: 'Home', practice: 'Practice', 'go-live': 'Go Live', library: 'Library', builds: 'Builds', setup: 'Setup', settings: 'Settings' };
-const icons: Record<View, string> = { home: '⌂', library: '▦', 'go-live': '◉', builds: '▤', setup: '◇', settings: '⚙', practice: '▷' };
+const lineIcons: Record<View, string> = { home: 'M3 10.5 12 3l9 7.5V21h-6v-7H9v7H3z', practice: 'M7 4v16l13-8z', 'go-live': 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 5v8m-4-4h8', library: 'M4 4h7v7H4zm9 0h7v7h-7zM4 13h7v7H4zm9 0h7v7h-7z', builds: 'M4 3h12l4 4v14H4zM16 3v5h4M8 12h8M8 16h8', setup: 'M12 2l9 9-9 11-9-11z' } as Record<View, string>;
 const desired = new URLSearchParams(location.search).get('view');
 const view: View = desired && Object.hasOwn(labels, desired) ? desired as View : 'home';
-export function openPlay() { window.open('/play', 'live-patch-play'); }
+export function openPlay() { window.open('/play', 'live-patch-play', 'popup=yes,width=1280,height=720,resizable=yes,scrollbars=yes'); }
 function toast(message: string) {
   const layer = document.querySelector('#toast-layer'); if (!layer) return;
   const item = document.createElement('div'); item.className = 'toast'; item.textContent = message;
@@ -32,11 +32,14 @@ document.querySelector('#rail-toggle')!.addEventListener('click', () => { rail.c
 document.querySelector<HTMLInputElement>('#studio-search')!.addEventListener('keydown', event => { if (event.key !== 'Enter') return; const term = (event.currentTarget as HTMLInputElement).value.toLowerCase(); const target = term.includes('patch') || term.includes('idea') ? 'practice' : term.includes('build') ? 'builds' : term.includes('setting') ? 'settings' : term.includes('game') ? 'library' : ''; if (target) location.href = `/?view=${target}`; else toast('Search patches, ideas, builds, settings or games.'); });
 window.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); document.querySelector<HTMLInputElement>('#studio-search')?.focus(); } });
 const nav = document.querySelector<HTMLElement>('#app-nav')!;
+const studioLabel = document.createElement('p'); studioLabel.className = 'nav-group-label'; studioLabel.textContent = 'STUDIO'; nav.before(studioLabel);
 for (const item of ['home', 'practice', 'go-live', 'library', 'builds'] as View[]) {
   const link = document.createElement('a'); link.href = item === 'home' ? '/' : `/?view=${item}`;
   link.className = item === view ? 'selected' : '';
   link.setAttribute('aria-current', item === view ? 'page' : 'false');
-  const icon = document.createElement('span'); icon.className = 'nav-icon'; icon.textContent = icons[item];
+  const icon = document.createElement('span'); icon.className = 'nav-icon';
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('width', '22'); svg.setAttribute('height', '22'); svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '1.8'); svg.setAttribute('stroke-linejoin', 'round'); svg.setAttribute('aria-hidden', 'true');
+  const shape = document.createElementNS('http://www.w3.org/2000/svg', 'path'); shape.setAttribute('d', lineIcons[item]); svg.append(shape); icon.append(svg);
   const name = document.createElement('span'); name.textContent = labels[item]; link.append(icon, name); nav.append(link);
 }
 document.querySelector('#app-heading')!.textContent = labels[view];
@@ -48,7 +51,7 @@ async function summary() {
   try {
     const [game, twitch, runs, builds, library] = await Promise.all([
       fetch('/api/game').then(r => r.json()) as Promise<{ name: string }>,
-      fetch('/api/twitch/status').then(r => r.json()) as Promise<{ configured: boolean; broadcaster: { login: string } | null; bot: { login: string } | null; eventsub: string }>,
+      fetch('/api/twitch/status').then(r => r.json()) as Promise<{ configured: boolean; broadcaster: { login: string } | null; bot: { login: string } | null; eventsub: string; reconnect?: { role: 'broadcaster' | 'bot'; reason: string }; authIssue?: string }>,
       fetch('/api/runs').then(r => r.json()) as Promise<{ runs: { status: string; mutationName?: string; demo?: boolean }[] }>,
       fetch('/api/builds').then(r => r.json()) as Promise<{ builds: { id: string }[] }>,
       fetch('/api/library').then(r => r.json()) as Promise<{ playOnly: boolean; returnGame?: string; active: string; games: { directory: string; cover?: string; name: string }[] }>
@@ -64,7 +67,10 @@ async function summary() {
       });
       banner.append(label, button); page.prepend(banner);
     }
-    document.querySelector('#app-connection')!.textContent = twitch.broadcaster && twitch.bot ? `● Twitch ${twitch.eventsub}` : '○ Practice ready';
+    document.querySelector('#app-connection')!.textContent = twitch.reconnect?.reason ?? (twitch.broadcaster && twitch.bot ? `● Twitch chat ${twitch.eventsub.startsWith('connected') ? 'connected' : 'disconnected'}` : '○ Practice ready');
+    const liveButton = document.querySelector<HTMLAnchorElement>('.top-actions > a.button.primary')!;
+    liveButton.textContent = twitch.reconnect ? 'Reconnect Twitch' : 'Go Live';
+    liveButton.href = twitch.reconnect ? `/api/twitch/auth/${twitch.reconnect.role}/start` : '/?view=go-live';
     document.querySelector('#dot-twitch')?.classList.toggle('ready', Boolean(twitch.broadcaster && twitch.bot));
     const set = (id: string, value: string) => { const element = document.querySelector(id); if (element) element.textContent = value; };
     set('#home-game', game.name);

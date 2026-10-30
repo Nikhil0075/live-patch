@@ -14,6 +14,16 @@ export const command = (binary: string, args: string[], timeout = 4000): Promise
   execFile(binary, args, { encoding: 'utf8', timeout, windowsHide: true }, (error, stdout, stderr) => resolve(error ? '' : `${stdout}\n${stderr}`.trim()));
 });
 export const codexSignedIn = (output: string): boolean => /^(?:logged in\b|authenticated\b)/im.test(output);
+export async function probeBrowser(root: string): Promise<SetupCheck> {
+  const executable = chromium.executablePath();
+  const result = await new Promise<{ error: Error | null; stdout: string; stderr: string }>(resolve =>
+    execFile(process.execPath, [path.join(root, 'scripts', 'probe-browser.mjs')], { cwd: root, env: { ...process.env, LIVE_PATCH_TEST_SERVER: '1' }, encoding: 'utf8', timeout: 15000, windowsHide: true }, (error, stdout, stderr) => resolve({ error, stdout, stderr })));
+  if (result.error) {
+    console.error(`Playwright browser preflight failed at ${executable}: ${result.error}; ${result.stderr}`);
+    return check('browser', 'Playwright browser', 'Needs action', "Couldn't start the test browser on this PC.", 'Run npx playwright install chromium, then check Windows Security if it still fails.');
+  }
+  return check('browser', 'Playwright browser', 'Ready', 'Chromium launched from the smoke-test environment.');
+}
 
 export function classifySandboxError(raw: string): SetupCheck {
   const text = raw.toLowerCase();
@@ -42,14 +52,14 @@ export async function setupChecks(root: string, config: TwitchConfig, identities
   const git = await command('git', ['--version']);
   let codex = ''; try { codex = codexBinary(); } catch { /* unavailable */ }
   const signedIn = codex ? codexSignedIn(await command(codex, ['login', 'status'], 6000)) : false;
-  const browser = fs.existsSync(chromium.executablePath());
+  const browser = await probeBrowser(root);
   const synced = /onedrive|dropbox|sharepoint/i.test(root);
   let writable = true; try { fs.accessSync(root, fs.constants.W_OK); } catch { writable = false; }
   const checks: SetupCheck[] = [
     check('node', 'Node.js 20+', nodeMajor >= 20 ? 'Ready' : 'Needs action', nodeMajor >= 20 ? `Node ${process.versions.node}` : 'Install Node.js 20 or newer.'),
     check('git', 'Git', git ? 'Ready' : 'Needs action', git || 'Git was not found on PATH.'),
     check('dependencies', 'Dependencies', fs.existsSync(path.join(root, 'node_modules', 'vite')) ? 'Ready' : 'Needs action', fs.existsSync(path.join(root, 'node_modules', 'vite')) ? 'Installed' : 'Run npm install.'),
-    check('browser', 'Playwright browser', browser ? 'Ready' : 'Needs action', browser ? 'Chromium installed' : 'Run npx playwright install chromium.'),
+    browser,
     check('codex', 'Codex CLI and sign-in', codex && signedIn ? 'Ready' : 'Needs action', !codex ? 'Codex CLI was not found.' : signedIn ? 'Signed in' : 'Open Codex and sign in with ChatGPT.'),
     sandbox ?? check('sandbox', 'Codex elevated sandbox', 'Needs action', 'Run the sandbox self-test to verify worktree isolation.'),
     check('project', 'Project location', !synced && writable ? 'Ready' : 'Needs action', synced ? 'This project is in a synced folder; sandbox writes may be blocked.' : writable ? 'Writable local folder' : 'This account cannot write to the project folder.'),

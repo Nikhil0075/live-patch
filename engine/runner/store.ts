@@ -17,6 +17,7 @@ export interface RunRecord {
   mutationTitle?: string;
   demo?: boolean;
   error?: string;
+  diagnostic?: string;
   failureKind?: 'patch' | 'infrastructure';
 }
 export interface RunnerEvent { runId: string; ideaId: string; type: 'started' | 'sandbox_verified' | 'thread' | 'file' | 'testing' | 'passed' | 'failed' | 'shipped' | 'rolled_back'; at: string; message?: string; threadId?: string }
@@ -27,6 +28,8 @@ export function publicFailure(error?: string): string | undefined {
   if (error.startsWith('Error: Saved builds are play-only')) return 'Saved builds are play-only; return to the original game to build new patches';
   if (/Codex sandbox cannot write in its worktree|Codex sandbox can write outside its worktree|Sandbox probe path already exists/.test(error))
     return 'Sandbox setup failed; see README and local run record';
+  if (/browserType\.launch|Executable doesn't exist|Couldn't start the test browser|playwright.*(?:missing|not found)|test.server.*(?:start|listen|launch)/i.test(error)) return "Couldn't start the test browser (setup problem on the streaming PC)";
+  if (/Smoke test failed/i.test(error)) return 'Patch failed its smoke test';
   return 'Build failed; see local run record';
 }
 
