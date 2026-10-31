@@ -40,30 +40,47 @@ if (smoke && !fs.existsSync(path.join(directory, manifest.mutationDir, path.base
 
 if (!smoke && !browserOnly && await run('node_modules/vitest/vitest.mjs', ['run', '--config', 'vitest.config.ts'], { ...process.env, LIVE_PATCH_GAME: directory })) process.exit(1);
 
-const temp = fs.mkdtempSync(path.join(root, '.live-patch-test-'));
-process.env.LIVE_PATCH_DATA_DIR = path.join(temp, 'data');
-process.env.LIVE_PATCH_BUILDS_DIR = path.join(temp, 'builds');
-fs.mkdirSync(process.env.LIVE_PATCH_DATA_DIR, { recursive: true });
-fs.writeFileSync(path.join(process.env.LIVE_PATCH_DATA_DIR, 'tokens.json'), '{}');
-fs.writeFileSync(path.join(process.env.LIVE_PATCH_DATA_DIR, 'public-probe.txt'), 'safe fixture');
-const isolatedGame = path.join(temp, 'game');
-copyTestGame(root, directory, isolatedGame, manifest.mutationDir, selected, smoke);
-process.env.LIVE_PATCH_GAME = isolatedGame;
-process.env.LIVE_PATCH_HTTP_PORT = String(await freePort());
-process.env.LIVE_PATCH_TEST_SERVER = '1';
-let server;
-try {
-  server = await createServer({ server: { host: '127.0.0.1' } });
-  await server.listen();
-  const address = server.httpServer.address();
-  if (!address || typeof address === 'string') throw new Error('No test server address');
-  const env = { ...process.env, LIVE_PATCH_TEST_SERVER: '1', LIVE_PATCH_BASE_URL: `http://127.0.0.1:${address.port}`, LIVE_PATCH_TEST_GAME_DIR: isolatedGame, LIVE_PATCH_TEST_DATA_DIR: process.env.LIVE_PATCH_DATA_DIR, ...(selected ? { MUTATION_FILE: path.basename(selected) } : {}) };
-  const code = await run('node_modules/@playwright/test/cli.js', ['test', ...(smoke ? ['--grep', 'game plays'] : browserGrep ? ['--grep', browserGrep] : [])], env);
-  process.exitCode = code;
-} finally {
-  await server?.close();
-  fs.rmSync(temp, { recursive: true, force: true });
+async function runBrowserSuite(source, suite, mutation) {
+  const gameManifest = JSON.parse(fs.readFileSync(path.join(source, 'live-patch.json'), 'utf8'));
+  const temp = fs.mkdtempSync(path.join(root, '.live-patch-test-'));
+  const dataDir = path.join(temp, 'data');
+  const isolatedGame = path.join(temp, 'game');
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(path.join(dataDir, 'tokens.json'), '{}');
+  fs.writeFileSync(path.join(dataDir, 'public-probe.txt'), 'safe fixture');
+  copyTestGame(root, source, isolatedGame, gameManifest.mutationDir, mutation, Boolean(mutation));
+  const testDir = suite === 'studio' ? path.join(root, 'tests/browser') : path.join(isolatedGame, 'tests/smoke');
+  const originalEnv = Object.fromEntries(['LIVE_PATCH_GAME', 'LIVE_PATCH_DATA_DIR', 'LIVE_PATCH_BUILDS_DIR', 'LIVE_PATCH_HTTP_PORT', 'LIVE_PATCH_TEST_SERVER'].map(key => [key, process.env[key]]));
+  Object.assign(process.env, { LIVE_PATCH_GAME: isolatedGame, LIVE_PATCH_DATA_DIR: dataDir, LIVE_PATCH_BUILDS_DIR: path.join(temp, 'builds'), LIVE_PATCH_HTTP_PORT: String(await freePort()), LIVE_PATCH_TEST_SERVER: '1' });
+  let server;
+  try {
+    server = await createServer({ server: { host: '127.0.0.1' } });
+    await server.listen();
+    const address = server.httpServer.address();
+    if (!address || typeof address === 'string') throw new Error('No test server address');
+    console.log(`Browser suite: ${suite} · ${gameManifest.name}`);
+    const env = { ...process.env, LIVE_PATCH_BASE_URL: `http://127.0.0.1:${address.port}`, LIVE_PATCH_TEST_DIR: testDir, LIVE_PATCH_TEST_GAME_DIR: isolatedGame, LIVE_PATCH_TEST_DATA_DIR: dataDir, ...(mutation ? { MUTATION_FILE: path.basename(mutation) } : {}) };
+    return await run('node_modules/@playwright/test/cli.js', ['test', ...(mutation ? ['--grep', 'game plays'] : browserGrep ? ['--grep', browserGrep] : [])], env);
+  } finally {
+    await server?.close();
+    for (const [key, value] of Object.entries(originalEnv)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+    if (!path.resolve(temp).startsWith(path.resolve(root) + path.sep)) throw Error('Unexpected temporary test path');
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
 }
-if (!smoke && !browserOnly && process.exitCode === 0) process.exitCode = await run('scripts/test-https.mjs', []);
+
+if (smoke) process.exitCode = await runBrowserSuite(directory, 'game', selected);
+else if (browserOnly) process.exitCode = await runBrowserSuite(directory, args.includes('--game-suite') ? 'game' : 'studio');
+else {
+  process.exitCode = await runBrowserSuite(directory, 'studio');
+  const games = fs.readdirSync(path.join(root, 'games'), { withFileTypes: true })
+    .filter(item => item.isDirectory() && fs.existsSync(path.join(root, 'games', item.name, 'live-patch.json')))
+    .map(item => path.join(root, 'games', item.name));
+  for (const game of games) {
+    if (process.exitCode !== 0) break;
+    process.exitCode = await runBrowserSuite(game, 'game');
+  }
+  if (process.exitCode === 0) process.exitCode = await run('scripts/test-https.mjs', []);
+}
 const buildsAfter = fs.existsSync(path.join(root, 'builds')) ? fs.readdirSync(path.join(root, 'builds')).sort() : [];
 if (JSON.stringify(buildsAfter) !== JSON.stringify(buildsBefore)) throw Error('npm test changed the repository builds/ folder');

@@ -5,7 +5,7 @@ const root = process.cwd();
 const fallback = (JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as { livePatch: { defaultGame: string } }).livePatch.defaultGame;
 const gameDirectory = process.env.LIVE_PATCH_TEST_GAME_DIR || path.resolve(root, process.env.LIVE_PATCH_GAME || fallback);
 export default defineConfig({
-  testDir: path.join(gameDirectory, 'tests/smoke'), testMatch: '**/*.spec.ts',
+  testDir: process.env.LIVE_PATCH_TEST_DIR || path.join(gameDirectory, 'tests/smoke'), testMatch: '**/*.spec.ts',
   timeout: 30_000,
   expect: { timeout: 10_000 },
   use: { baseURL: process.env.LIVE_PATCH_BASE_URL || 'http://127.0.0.1:5173', headless: process.env.LIVE_PATCH_WEBGL !== '1' || process.env.LIVE_PATCH_HEADLESS === '1' },
