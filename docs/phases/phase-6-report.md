@@ -12,13 +12,20 @@ Phase 6 starts from `b3a4de0` (`phase 5.5: fixes for round 6`). The operator's r
 - Kept Arena Survivor play, mutation, fault isolation and saved-build checks in its own smoke suite.
 - `npm test` now runs the studio suite once, then every built-in game suite in a separate copy. `npm run smoke` stays scoped to the active game's mutation gate.
 
+### Step 2 — manifest-driven studio behavior
+
+- The manifest accepts optional sample pitches and OBS keep-clear zones and widget defaults. Arena Survivor's exact existing pitches, HUD zone and layout moved into its manifest. The engine retains only the patch-toast zone and a generic fallback layout.
+- Studio settings keep layouts by game key. On first load, the legacy single layout is copied to the package default game's key, preserving the operator's saved positions even if another game is selected first.
+- Practice reads the active manifest's sample pitches, the overlay editor and server use its zones and layout, and AI triage receives its name, description and hint as data. Adapter `systemEvent` cues and optional methods are documented; the new-game template shows the fields.
+
 ## How to run and test
 
 - Step 1: `npm test` — 92 unit tests passed (4 opt-in skipped); studio suite 28 passed; Arena Survivor suite 35 passed (1 opt-in WebGL skipped); HTTPS/HTTP2 regression passed. `npx tsc --noEmit` passed.
+- Step 2: `npm test` — 94 unit tests passed (4 skipped), 29 studio browser tests passed, 35 Arena Survivor browser tests passed (1 WebGL skipped), HTTPS/HTTP2 regression passed. `npm run build` passed; `npm audit --audit-level=high` found 0 vulnerabilities.
 
 ## Exit criteria
 
-- [ ] 1. Engine stays game-agnostic — platform manifest work is pending.
+- [ ] 1. Engine stays game-agnostic — manifest work and Arena regression pass; Lantern Run and final search evidence remain.
 - [ ] 2. Tests are per game — studio suite is split; second game is pending.
 - [ ] 3–12. Lantern Run, integration, visual and clean-clone criteria — later steps.
 

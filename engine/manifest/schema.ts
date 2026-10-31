@@ -8,6 +8,15 @@ const argumentSchema = z.object({
   values: z.array(z.string()).optional(),
   optional: z.boolean().optional()
 });
+const overlayWidgetSchema = z.object({
+  type: z.enum(['patches', 'codex', 'ballot', 'ticker']),
+  x: z.number().finite().min(0).max(1920), y: z.number().finite().min(0).max(1080),
+  width: z.number().finite().positive().max(1920), height: z.number().finite().positive().max(1080)
+});
+const overlayZoneSchema = z.object({
+  label: z.string().min(1).max(60), x: z.number().finite().min(0).max(1920), y: z.number().finite().min(0).max(1080),
+  width: z.number().finite().positive().max(1920), height: z.number().finite().positive().max(1080)
+});
 
 export const manifestSchema = z.object({
   name: z.string().min(1),
@@ -20,6 +29,8 @@ export const manifestSchema = z.object({
   audio: z.array(z.string().regex(/^[a-zA-Z][\w-]*$/)).max(32).optional(),
   effects: z.array(z.string().regex(/^[a-zA-Z][\w-]*$/)).max(32).optional(),
   controls: z.array(z.object({ action: z.string().min(1).max(60), keys: z.array(z.string().min(1).max(30)).min(1).max(8) })).max(24).optional(),
+  samplePitches: z.array(z.string().min(1).max(120)).min(3).max(6).optional(),
+  overlay: z.object({ keepClear: z.array(overlayZoneSchema).max(6).optional(), defaultLayout: z.array(overlayWidgetSchema).max(4).optional() }).optional(),
   entry: z.string().regex(/^src\/[\w./-]+\.ts$/),
   mutationDir: z.string().regex(/^[\w./-]+\/$/),
   apiDocs: z.string().regex(/^[\w./-]+\.md$/),

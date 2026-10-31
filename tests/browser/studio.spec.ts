@@ -4,7 +4,7 @@ import path from 'node:path';
 
 const fallback = (JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8')) as { livePatch: { defaultGame: string } }).livePatch.defaultGame;
 const gameDirectory = process.env.LIVE_PATCH_TEST_GAME_DIR || path.resolve(process.cwd(), process.env.LIVE_PATCH_GAME || fallback);
-const manifest = JSON.parse(fs.readFileSync(path.join(gameDirectory, 'live-patch.json'), 'utf8')) as { name: string; mutationDir: string; demoMutation?: string };
+const manifest = JSON.parse(fs.readFileSync(path.join(gameDirectory, 'live-patch.json'), 'utf8')) as { name: string; mutationDir: string; demoMutation?: string; samplePitches?: string[]; overlay?: { keepClear?: { label: string }[] } };
 const mutationDir = path.join(gameDirectory, manifest.mutationDir);
 const examples = fs.readdirSync(mutationDir).filter(name => name.endsWith('.js'));
 const demoSource = manifest.demoMutation ? fs.readFileSync(path.join(gameDirectory, manifest.demoMutation), 'utf8') : '';
@@ -143,6 +143,15 @@ test('top-bar Practice and Live switch navigates both views', async ({ page }) =
   await page.locator('#mode-switch a[data-mode="practice"]').click();
   await expect(page).toHaveURL(/view=practice/);
   await expect(page.locator('#mode-switch a[data-mode="practice"]')).toHaveAttribute('aria-current', 'page');
+});
+
+test('Practice uses the active game manifest for sample pitches', async ({ page }) => {
+  await page.goto('/?view=practice');
+  const expected = manifest.samplePitches?.[0] ?? 'The player can jump twice';
+  await expect(page.locator('textarea[name="text"]')).toHaveAttribute('placeholder', `!idea ${expected}`);
+  await page.locator('.practice-advanced summary').click();
+  await page.getByRole('button', { name: 'Generate sample pitch' }).click();
+  await expect(page.locator('textarea[name="text"]')).toHaveValue(`!idea ${expected}`);
 });
 
 test('studio navigation works with Tab and Enter and shows focus', async ({ page }) => {

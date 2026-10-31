@@ -59,7 +59,11 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
   const config: TwitchConfig = { clientId: process.env.TWITCH_CLIENT_ID ?? '', clientSecret: process.env.TWITCH_CLIENT_SECRET ?? '', redirectUri: process.env.TWITCH_REDIRECT_URI ?? defaultTwitchRedirectUri, rewardId: process.env.TWITCH_PITCH_REWARD_ID ?? '' };
   const dataDir = path.resolve(process.env.LIVE_PATCH_DATA_DIR ?? path.join(root, '.live-patch'));
   const buildsDir = path.resolve(process.env.LIVE_PATCH_BUILDS_DIR || path.join(root, 'builds'));
-  const settings = new SettingsStore(path.join(dataDir, 'settings.json'));
+  const defaultGame = (JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as { livePatch: { defaultGame: string } }).livePatch.defaultGame;
+  const settings = new SettingsStore(path.join(dataDir, 'settings.json'), {
+    gameKey: path.relative(root, gameDirectory).replaceAll('\\', '/'), migrationGameKey: defaultGame.replaceAll('\\', '/'),
+    defaultLayout: manifest.overlay?.defaultLayout, keepClear: manifest.overlay?.keepClear
+  });
   let lastSandbox: SetupCheck | undefined;
   let diagnostics = '';
   let setupCache: Promise<SetupCheck[]> | undefined;
@@ -413,7 +417,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
         if (body.action === 'pause') rounds.pause();
         else if (body.action === 'resume') rounds.resume();
         else if (body.action === 'advance') rounds.advance();
-        else if (body.action === 'triage') { const preview = await rounds.aiTriage(new CodexTriage()); json(res, 200, { preview, round: rounds.snapshot() }); return; }
+        else if (body.action === 'triage') { const preview = await rounds.aiTriage(new CodexTriage({ name: manifest.name, description: manifest.description ?? '', hint: manifest.hint })); json(res, 200, { preview, round: rounds.snapshot() }); return; }
         else if (body.action === 'triage-apply') { const applied = rounds.applyTriagePreview(); json(res, 200, { applied, round: rounds.snapshot() }); return; }
         else if (body.action === 'triage-discard') rounds.discardTriagePreview();
         else if (body.action === 'force-next') { rounds.forceNext(); runner.cancelBuild(); if (predictions.active()) void predictions.cancel().catch(error => console.error('Prediction cancel after force-next failed:', error)); }

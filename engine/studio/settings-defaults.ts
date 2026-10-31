@@ -1,9 +1,9 @@
 export type OverlayWidgetType = 'patches' | 'codex' | 'ballot' | 'ticker';
 export interface OverlayWidget { type: OverlayWidgetType; x: number; y: number; width: number; height: number }
 export const defaultOverlayWidgets: OverlayWidget[] = [
-  { type: 'patches', x: 24, y: 180, width: 420, height: 430 },
-  { type: 'codex', x: 1546, y: 165, width: 350, height: 590 },
-  { type: 'ballot', x: 24, y: 650, width: 1010, height: 320 },
+  { type: 'patches', x: 24, y: 180, width: 380, height: 300 },
+  { type: 'codex', x: 1516, y: 180, width: 380, height: 300 },
+  { type: 'ballot', x: 560, y: 650, width: 800, height: 320 },
   { type: 'ticker', x: 560, y: 998, width: 1336, height: 58 }
 ];
 export interface StudioSettings {

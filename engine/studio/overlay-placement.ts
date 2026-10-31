@@ -6,16 +6,16 @@ export const minimumWidgetSize: Record<OverlayWidgetType, readonly [number, numb
 export function minimumWidgetHeight(type: OverlayWidgetType, width: number): number {
   return type === 'ballot' && width < 800 ? 700 : minimumWidgetSize[type][1];
 }
+export interface KeepClearZone { label: string; x: number; y: number; width: number; height: number }
 export const keepClearZones = [
-  { label: 'Game HUD', x: 0, y: 0, width: 430, height: 165 },
   { label: 'Patch toast', x: 685, y: 60, width: 550, height: 110 }
 ] as const;
 export function overlaps(a: OverlayWidget, b: { x: number; y: number; width: number; height: number }): boolean {
   return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
 }
-export function clearPlacement(widget: OverlayWidget): OverlayWidget {
+export function clearPlacement(widget: OverlayWidget, zones: readonly KeepClearZone[] = keepClearZones): OverlayWidget {
   const result = { ...widget };
-  for (const zone of keepClearZones) {
+  for (const zone of zones) {
     if (!overlaps(result, zone)) continue;
     const below = zone.y + zone.height;
     const right = zone.x + zone.width;
@@ -26,8 +26,8 @@ export function clearPlacement(widget: OverlayWidget): OverlayWidget {
   return result;
 }
 
-export function placeWidget(widget: OverlayWidget, placed: OverlayWidget[]): OverlayWidget {
-  const blocked = [...keepClearZones, ...placed];
+export function placeWidget(widget: OverlayWidget, placed: OverlayWidget[], zones: readonly KeepClearZone[] = keepClearZones): OverlayWidget {
+  const blocked = [...zones, ...placed];
   const find = (size: OverlayWidget): OverlayWidget | undefined => {
   const maxX = 1920 - size.width, maxY = 1080 - size.height;
   const xs = new Set([Math.min(size.x, maxX), 0, maxX]);

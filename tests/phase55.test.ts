@@ -17,6 +17,9 @@ import { ChatPipeline } from '../engine/pipeline/commands';
 import { handleRunnerOutcome } from '../engine/twitch/runner-outcome';
 
 const css = fs.readFileSync(path.resolve('engine/tokens.css'), 'utf8');
+const arenaOverlay = (JSON.parse(fs.readFileSync(path.resolve('games/arena-survivor/live-patch.json'), 'utf8')) as { overlay: { keepClear: { label: string; x: number; y: number; width: number; height: number }[]; defaultLayout: { type: 'patches' | 'codex' | 'ballot' | 'ticker'; x: number; y: number; width: number; height: number }[] } }).overlay;
+const arenaZones = [...keepClearZones, ...arenaOverlay.keepClear];
+const arenaSettings = { defaultLayout: arenaOverlay.defaultLayout, keepClear: arenaOverlay.keepClear };
 it('documents the actual mutation load deadline for live Codex', () => {
   const host = fs.readFileSync(path.resolve('engine/mutation/host.ts'), 'utf8');
   const api = fs.readFileSync(path.resolve('games/arena-survivor/docs/mutation-api.md'), 'utf8');
@@ -56,10 +59,10 @@ describe('user-configurable overlay and generated game art', () => {
     const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'live-patch-layout-'));
     try {
       const file = path.join(folder, 'settings.json');
-      const store = new SettingsStore(file);
+      const store = new SettingsStore(file, arenaSettings);
       expect(store.snapshot().overlayWidgets).toHaveLength(4);
       store.update({ overlayWidgets: [{ type: 'ballot', x: 1900, y: 1070, width: 800, height: 300 }] });
-      const saved = new SettingsStore(file).snapshot().overlayWidgets;
+      const saved = new SettingsStore(file, arenaSettings).snapshot().overlayWidgets;
       expect(saved).toEqual([{ type: 'ballot', x: 1120, y: 760, width: 800, height: 320 }]);
     } finally { fs.rmSync(folder, { recursive: true, force: true }); }
   });
@@ -73,7 +76,7 @@ describe('user-configurable overlay and generated game art', () => {
         { type: 'ballot', x: 24, y: 725, width: 1010, height: 235 },
         { type: 'ticker', x: 560, y: 998, width: 1336, height: 58 }
       ] }));
-      const widgets = new SettingsStore(file).snapshot().overlayWidgets;
+      const widgets = new SettingsStore(file, arenaSettings).snapshot().overlayWidgets;
       expect(widgets.find(item => item.type === 'patches')).toMatchObject({ x: 24, y: 180, width: 420, height: 430 });
     } finally { fs.rmSync(folder, { recursive: true, force: true }); }
   });
@@ -102,11 +105,11 @@ describe('first live-stream regressions', () => {
     expect(publicFailure('Smoke test failed (1): mutation crashed')).toBe('Patch failed its smoke test');
   });
   it('moves a narrow ballot and a misplaced patch clear of protected game regions', () => {
-    const patch = clearPlacement({ type: 'patches', x: 0, y: 2, width: 420, height: 430 });
-    expect(keepClearZones.every(zone => !overlaps(patch, zone))).toBe(true);
+    const patch = clearPlacement({ type: 'patches', x: 0, y: 2, width: 420, height: 430 }, arenaZones);
+    expect(arenaZones.every(zone => !overlaps(patch, zone))).toBe(true);
     const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'live-patch-narrow-layout-'));
     try {
-      const store = new SettingsStore(path.join(folder, 'settings.json'));
+      const store = new SettingsStore(path.join(folder, 'settings.json'), arenaSettings);
       const layout = store.update({ overlayWidgets: [{ type: 'ballot', x: 24, y: 500, width: 501, height: 320 }] }).overlayWidgets[0];
       expect(layout).toMatchObject({ width: 501, height: 700 });
     } finally { fs.rmSync(folder, { recursive: true, force: true }); }
@@ -114,14 +117,14 @@ describe('first live-stream regressions', () => {
   it('keeps a migrated narrow ballot clear of the patch card', () => {
     const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'live-patch-overlap-'));
     try {
-      const store = new SettingsStore(path.join(folder, 'settings.json'));
+      const store = new SettingsStore(path.join(folder, 'settings.json'), arenaSettings);
       const widgets = store.update({ overlayWidgets: [
         { type: 'patches', x: 0, y: 2, width: 420, height: 352 },
         { type: 'ballot', x: 24, y: 380, width: 501, height: 320 }
       ] }).overlayWidgets;
       expect(widgets[1].height).toBe(700);
       expect(overlaps(widgets[0], widgets[1])).toBe(false);
-      expect(widgets.every(widget => keepClearZones.every(zone => !overlaps(widget, zone)))).toBe(true);
+      expect(widgets.every(widget => arenaZones.every(zone => !overlaps(widget, zone)))).toBe(true);
     } finally { fs.rmSync(folder, { recursive: true, force: true }); }
   });
   it('keeps all four operator widgets clear when the narrow ballot needs three rows', () => {
@@ -134,11 +137,11 @@ describe('first live-stream regressions', () => {
         { type: 'ballot', x: 24, y: 380, width: 501, height: 320 },
         { type: 'ticker', x: 560, y: 998, width: 1336, height: 58 }
       ] }));
-      const widgets = new SettingsStore(file).snapshot().overlayWidgets;
+      const widgets = new SettingsStore(file, arenaSettings).snapshot().overlayWidgets;
       expect(widgets.find(widget => widget.type === 'ballot')?.height).toBe(700);
       for (const [index, widget] of widgets.entries()) {
         expect(widget.width).toBeGreaterThanOrEqual(minimumWidgetSize[widget.type][0]);
-        expect(keepClearZones.some(zone => overlaps(widget, zone))).toBe(false);
+        expect(arenaZones.some(zone => overlaps(widget, zone))).toBe(false);
         expect(widgets.slice(index + 1).some(other => overlaps(widget, other))).toBe(false);
       }
     } finally { fs.rmSync(folder, { recursive: true, force: true }); }

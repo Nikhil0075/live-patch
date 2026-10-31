@@ -13,6 +13,13 @@ export function createTemplate(root, name) {
     for (const folder of ['src', 'docs', 'mutations', 'tests/smoke']) fs.mkdirSync(path.join(game, folder), { recursive: true });
     const manifest = {
       name: title, hint: 'Move with arrow keys or WASD', description: 'A new game ready for live patches.', tags: ['Template'], version: '0.1.0', author: 'Live Patch',
+      samplePitches: ['Give the player a temporary speed boost', 'Make a pickup leave a sparkling trail', 'Add a new obstacle pattern'],
+      overlay: { keepClear: [{ label: 'Game HUD', x: 0, y: 0, width: 430, height: 165 }], defaultLayout: [
+        { type: 'patches', x: 24, y: 180, width: 420, height: 430 },
+        { type: 'codex', x: 1546, y: 165, width: 350, height: 590 },
+        { type: 'ballot', x: 24, y: 650, width: 1010, height: 320 },
+        { type: 'ticker', x: 560, y: 998, width: 1336, height: 58 }
+      ] },
       entry: 'src/main.ts', mutationDir: 'mutations/', apiDocs: 'docs/mutation-api.md', examples: ['mutations/'], forbidden: ['fetch', 'eval', 'document', 'window', 'import('],
       testCommand: 'npm run smoke -- --mutation {file}',
       actions: { showMessage: [{ type: 'string', maxLength: 100 }] }, hooks: { start: 'onStart', tick: 'onTick' },

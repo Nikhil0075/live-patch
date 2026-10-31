@@ -1,11 +1,13 @@
 import type { OverlayWidget, OverlayWidgetType, StudioSettings } from '../studio/settings-defaults';
 import { clearPlacement, keepClearZones, minimumWidgetHeight, minimumWidgetSize, overlaps } from '../studio/overlay-placement';
+import type { GameManifest } from '../manifest/schema';
 
 const labels: Record<OverlayWidgetType, string> = { patches: 'Patch credits', codex: 'Codex progress', ballot: 'Chat ballot', ticker: 'Pitch ticker' };
 const sizes: Record<OverlayWidgetType, [number, number]> = { patches: [420, 430], codex: [350, 590], ballot: [1010, 320], ticker: [1336, 58] };
-const keepClear = keepClearZones;
 
 export async function createLayoutEditor(parent: HTMLElement): Promise<void> {
+  const game = await fetch('/api/game').then(response => response.json()) as GameManifest;
+  const keepClear = [...keepClearZones, ...(game.overlay?.keepClear ?? [])];
   const root = document.createElement('section'); root.className = 'live-card overlay-editor';
   root.innerHTML = '<div class="live-card-heading"><h3>OBS overlay layout</h3><a href="/overlay.html" target="_blank" rel="noopener">Open overlay ↗</a></div><p class="hint">Add or remove widgets. Drag to move; drag a corner to resize. Use the fields for precise placement. Changes appear in OBS automatically.</p><div class="overlay-edit-stage" aria-label="Overlay layout preview"></div><div class="overlay-edit-toolbar"><label>Add widget <select id="overlay-add-select"></select></label><button id="overlay-add">Add</button><button id="overlay-reset" class="secondary">Reset layout</button><span id="overlay-edit-status" role="status"></span></div><div class="overlay-edit-list"></div>';
   parent.append(root);
@@ -56,7 +58,7 @@ export async function createLayoutEditor(parent: HTMLElement): Promise<void> {
           const scaleX = 1920 / stage.getBoundingClientRect().width, scaleY = 1080 / stage.getBoundingClientRect().height;
           if (resize) { widget.width = clamp(initial.width + (next.clientX - startX) * scaleX, minimumWidgetSize[widget.type][0], 1920 - widget.x); widget.height = clamp(initial.height + (next.clientY - startY) * scaleY, minimumWidgetHeight(widget.type, widget.width), 1080 - widget.y); }
           else { widget.x = clamp(initial.x + (next.clientX - startX) * scaleX, 0, 1920 - widget.width); widget.y = clamp(initial.y + (next.clientY - startY) * scaleY, 0, 1080 - widget.height); }
-          Object.assign(widget, clearPlacement(widget));
+          Object.assign(widget, clearPlacement(widget, keepClear));
           box.style.left = `${widget.x / 1920 * 100}%`; box.style.top = `${widget.y / 1080 * 100}%`;
           box.style.width = `${widget.width / 1920 * 100}%`; box.style.height = `${widget.height / 1080 * 100}%`;
         };
@@ -68,14 +70,14 @@ export async function createLayoutEditor(parent: HTMLElement): Promise<void> {
       for (const [key, max] of [['x', 1920 - widget.width], ['y', 1080 - widget.height], ['width', 1920 - widget.x], ['height', 1080 - widget.y]] as const) {
         const label = document.createElement('label'); label.textContent = key === 'width' ? 'W' : key === 'height' ? 'H' : key.toUpperCase();
         const input = document.createElement('input'); input.type = 'number'; input.value = String(widget[key]); input.min = String(key === 'width' ? minimumWidgetSize[widget.type][0] : key === 'height' ? minimumWidgetHeight(widget.type, widget.width) : 0); input.max = String(max); input.setAttribute('aria-label', `${labels[widget.type]} ${key}`);
-        input.addEventListener('change', () => { widget[key] = clamp(Number(input.value), Number(input.min), Number(input.max)); if (key === 'width') widget.x = Math.min(widget.x, 1920 - widget.width); if (key === 'height') widget.y = Math.min(widget.y, 1080 - widget.height); Object.assign(widget, clearPlacement(widget)); void save(); });
+        input.addEventListener('change', () => { widget[key] = clamp(Number(input.value), Number(input.min), Number(input.max)); if (key === 'width') widget.x = Math.min(widget.x, 1920 - widget.width); if (key === 'height') widget.y = Math.min(widget.y, 1080 - widget.height); Object.assign(widget, clearPlacement(widget, keepClear)); void save(); });
         label.append(input); row.append(label);
       }
       const remove = document.createElement('button'); remove.className = 'secondary'; remove.textContent = 'Remove'; remove.setAttribute('aria-label', `Remove ${labels[widget.type]}`);
       remove.addEventListener('click', () => { widgets = widgets.filter(item => item !== widget); void save(); }); row.append(remove); list.append(row);
     }
   }
-  root.querySelector('#overlay-add')!.addEventListener('click', () => { const type = select.value as OverlayWidgetType; if (!type || widgets.some(item => item.type === type)) return; const [width, height] = sizes[type]; widgets.push(clearPlacement({ type, x: Math.max(0, 960 - width / 2), y: Math.max(0, 540 - height / 2), width, height })); void save(); });
-  root.querySelector('#overlay-reset')!.addEventListener('click', async () => { const { defaultOverlayWidgets } = await import('../studio/settings-defaults'); widgets = defaultOverlayWidgets.map(item => ({ ...item })); void save(); });
+  root.querySelector('#overlay-add')!.addEventListener('click', () => { const type = select.value as OverlayWidgetType; if (!type || widgets.some(item => item.type === type)) return; const [width, height] = sizes[type]; widgets.push(clearPlacement({ type, x: Math.max(0, 960 - width / 2), y: Math.max(0, 540 - height / 2), width, height }, keepClear)); void save(); });
+  root.querySelector('#overlay-reset')!.addEventListener('click', async () => { const { defaultOverlayWidgets } = await import('../studio/settings-defaults'); widgets = (game.overlay?.defaultLayout ?? defaultOverlayWidgets).map(item => ({ ...item })); void save(); });
   render();
 }

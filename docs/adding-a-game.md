@@ -9,6 +9,8 @@ Create a folder containing `live-patch.json`, a TypeScript entry, API documentat
 - Optional `cover`: relative PNG, JPEG or WebP inside the game folder, at most 1 MB. The Library generates a unique abstract SVG cover from the game name if this is omitted; a game can replace it with its own artwork at any time.
 - Optional `audio` and `effects`: allow lists of names for sound and effect actions. Games should validate the action again in their adapter, and the engine enforces per-module and global rate limits.
 - `hint`: short game-specific control instructions, rendered as plain text.
+- Optional `samplePitches`: three to six plain-text idea examples, each at most 120 characters. Practice uses these for the placeholder and sample-pitch buttons; a generic list appears when absent.
+- Optional `overlay`: `keepClear` contains up to six labelled rectangles in 1920×1080 stream coordinates, and `defaultLayout` places up to four widgets (`patches`, `codex`, `ballot`, `ticker`). The engine also reserves its patch-toast zone. Saved widget layouts belong to the selected game; older layouts migrate to the default game without being discarded.
 - `entry`: relative `src/*.ts` entry exporting `createGame`.
 - `mutationDir`: relative folder containing `.js` mutation modules.
 - `apiDocs`: relative mutation API reference.
@@ -30,6 +32,11 @@ The entry exports `createGame(parent, emit)`. `parent` is the game's container; 
 - `removeMutation(origin)`: remove effects, entities and parameter writes owned by the removed or failed module without replaying unrelated modules.
 - `snapshot()`: return a JSON-serializable state with only finite numbers and bounded lists.
 - `destroy()`: free game resources.
+- Optional `pause()` and `resume()` freeze and resume game time, physics and mutation delivery from the Play menu.
+- Optional `configure(settings)` applies sound volume, mute, effects intensity, reduced flashing and shake, and HUD size from Studio Settings.
+- Optional `enableSound()` unlocks synthesized audio after a user gesture; `captureFrame()` supplies the Go Live mirror.
+
+The engine also calls `apply({type: 'systemEvent', args: [name]}, 'system')` for `round-start`, `vote-tick`, `shipped`, `failed` and `rolled_back`. A game may use these for its own sound cues or effects; unknown events are ignored. The game adapter must validate this action like any other and never treat event text as HTML.
 
 The engine adds `origin` to actions and skips a module's own spawned events when sending that event back to it. Keep entity creation bounded; refuse new spawns at a cap instead of silently deleting old entities. Render all game and viewer text as plain text. The game-specific smoke suite must run for five seconds with a chosen module and fail on errors, disabled modules, frame stalls, excessive slowdown or invalid state.
 
