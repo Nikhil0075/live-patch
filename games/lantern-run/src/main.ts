@@ -2,7 +2,9 @@ import Phaser from 'phaser';
 import type { GameAction, GameAdapter, GameEvent } from '../../../engine/game-api';
 import type { GameManifest } from '../../../engine/manifest/schema';
 import { defaultSettings, type StudioSettings } from '../../../engine/studio/settings-defaults';
-import { createLanternArt } from './art';
+import { createLanternParts } from './art-parts';
+import { createWorldArt } from './art-world';
+import { FireflyRig, FoxRig, OwlRig } from './rig';
 import { LanternAudio, sounds, type SoundName } from './audio';
 import { generateStretch, owlFlightHeight, owlFlightY, type Stretch } from './generator';
 import { advanceFoxFlight } from './physics';
@@ -17,7 +19,7 @@ const caps: Record<Kind, number> = { log: 12, thorns: 12, boulder: 12, owl: 6, p
 const parameterBounds: Record<Parameter, [number, number]> = { runSpeed: [120, 600], speedRamp: [0, 3], gravity: [300, 2400], jumpPower: [300, 1100], maxJumps: [1, 3], spawnRate: [.3, 3], fireflyValue: [1, 10], maxHearts: [3, 5] };
 const powerUps: PowerUp[] = ['shield', 'glider', 'magnet'];
 const weathers: Weather[] = ['clear', 'rain', 'wind', 'fog'];
-interface Entity { id: number; kind: Kind; worldX: number; y: number; size: number; vx: number; vy: number; tag: string; owner?: string; alive: boolean; sprite?: Phaser.GameObjects.Image; flightY?: number; flightPhase?: number }
+interface Entity { id: number; kind: Kind; worldX: number; y: number; size: number; vx: number; vy: number; tag: string; owner?: string; alive: boolean; sprite?: Phaser.GameObjects.Image | Phaser.GameObjects.Container; owlRig?: OwlRig; fireflyRig?: FireflyRig; flightY?: number; flightPhase?: number; dropUntil?: number; kickUntil?: number }
 interface GroundSpan { from: number; to: number; stretch?: Stretch }
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
@@ -37,13 +39,15 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
   let elapsed = 0, runElapsed = 0, frame = 0, distancePx = 0, maxFrameGap = 0, lastFrameAt = 0;
   let invulnerable = 3, runOver = 0, jumpHeld = false, jumpLift = 0, nextId = 1, seed = Math.floor(Math.random() * 1_000_000);
   let fallTarget: number | undefined, lastMilestone = 0;
+  let jumpAge = 10, landingAge = 10, hurtAge = 10, recoveryAge = 10, jumpIndex = 0;
   const recentFrames: number[] = [];
   const spans: GroundSpan[] = [{ from: 0, to: 1200 }];
   const entities: Entity[] = [];
   const drawings: { x: number; y: number; radius: number; color: number; life: number; owner?: string }[] = [];
   const labels: { text: Phaser.GameObjects.Text; life: number; owner?: string }[] = [];
-  const particles: { x: number; y: number; vx: number; vy: number; color: number; life: number; owner?: string }[] = [];
+  const particles: { x: number; y: number; vx: number; vy: number; color: number; kind: string; life: number; owner?: string }[] = [];
   let flashLife = 0, flashColor = 0xffffff;
+  let countPulse = 0, heartPulse = 0;
   let scene: LanternScene | undefined;
   let message = '', messageLife = 0, messageOwner = '';
   const screenX = (worldX: number) => worldX - distancePx;
@@ -56,7 +60,12 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     if (alive.length >= 80 || alive.filter(item => category(item.kind) === category(kind)).length >= categoryCap) return;
     if (['log', 'thorns', 'boulder', 'owl', 'pinecone'].includes(kind) && Math.abs(screenX(at) - FOX_X) < 150) at = worldX(FOX_X + 150);
     const item: Entity = { id: nextId++, kind, worldX: at, y, size, vx: 0, vy: 0, tag: '', owner, alive: true };
-    if (scene) item.sprite = scene.add.image(screenX(at), y, `lantern-${kind}`).setDepth(3).setScale(size);
+    if (scene) {
+      if (kind === 'owl') { item.owlRig = new OwlRig(scene, screenX(at), y, size, item.id * .7); item.sprite = item.owlRig.container; }
+      else if (kind === 'firefly') { item.fireflyRig = new FireflyRig(scene, screenX(at), y, size, item.id * .7); item.sprite = item.fireflyRig.container; }
+      else item.sprite = scene.add.image(screenX(at), y, `lantern-world-${kind === 'log' && item.id % 4 === 0 ? 'log-stack' : kind}`).setDepth(3).setDisplaySize(96 * size, 96 * size);
+    }
+    if (kind === 'pinecone') for (const owl of entities) if (owl.alive && owl.kind === 'owl' && Math.abs(owl.worldX - at) < 90 && owl.y < y) owl.dropUntil = elapsed + .45;
     entities.push(item);
     emit({ type: 'spawn', id: item.id, kind, x: screenX(at), y, origin: owner });
     return item;
@@ -82,11 +91,14 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     if (runOver > 0) { startRun(); return; }
     if (player.jumpsLeft <= 0) return;
     player.vy = -parameters.jumpPower; player.grounded = false; player.jumpsLeft--; jumpLift = 0;
+    jumpIndex = parameters.maxJumps - player.jumpsLeft; jumpAge = 0;
+    burst('splash', player.x, player.y + 37);
     audio.play('jump'); emit({ type: 'jump', jumpIndex: parameters.maxJumps - player.jumpsLeft, x: player.x, y: player.y });
   }
   function startRun() {
     run.number++; run.distance = 0; run.fireflies = 0; run.speed = parameters.runSpeed;
     runElapsed = 0; distancePx = 0; runOver = 0; invulnerable = 3; seed++; fallTarget = undefined; lastMilestone = 0;
+    jumpAge = landingAge = hurtAge = recoveryAge = 10; jumpIndex = 0;
     Object.assign(player, { y: GROUND - 38, vy: 0, grounded: true, jumpsLeft: parameters.maxJumps, hearts: parameters.maxHearts });
     for (const item of entities) item.sprite?.destroy(); entities.length = 0;
     granted.clear(); player.powerUps = [];
@@ -98,6 +110,8 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     const shield = [...granted].find(([, power]) => power.kind === 'shield');
     if (shield) { granted.delete(shield[0]); player.powerUps = [...granted.values()].map(power => power.kind); invulnerable = .7; audio.play('power-up'); return; }
     player.hearts = Math.max(0, player.hearts - 1); invulnerable = 1;
+    hurtAge = 0;
+    heartPulse = .45; burst('hurt', player.x, player.y);
     audio.play(kind === 'pit' ? 'fall' : 'hurt');
     emit(kind === 'pit' ? { type: 'fall', hearts: player.hearts } : { type: 'hit', id, kind, hearts: player.hearts });
     if (player.hearts === 0) {
@@ -139,10 +153,10 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     if (messageOwner === origin) { message = ''; messageLife = 0; messageOwner = ''; }
   }
   function burst(kind: string, x: number, y: number, owner?: string) {
-    const colors: Record<string, number> = { sparks: 0xffd56b, leaves: 0x8fbd46, splash: 0x9cc6e8, celebration: 0xffa96a };
+    const colors: Record<string, number> = { sparks: 0xffd56b, leaves: 0x8fbd46, splash: 0x9cc6e8, celebration: 0xffa96a, hurt: 0xff7e85 };
     if (!Object.hasOwn(colors, kind)) return;
     for (let i = 0; i < 8 && particles.length < 64; i++) {
-      const angle = i * Math.PI / 4; particles.push({ x, y, vx: Math.cos(angle) * 85, vy: Math.sin(angle) * 85, color: colors[kind], life: .5, owner });
+      const angle = i * Math.PI / 4; particles.push({ x, y, vx: Math.cos(angle) * 85, vy: Math.sin(angle) * 85, color: colors[kind], kind, life: .5, owner });
     }
   }
   function apply(action: GameAction, origin: string) {
@@ -159,7 +173,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       if (action.type === 'removeEntity') { item.alive = false; item.sprite?.destroy(); }
       else if (action.type === 'moveEntity' && finite(second) && finite(third)) { item.worldX = worldX(clamp(second, 0, 1400)); item.y = clamp(third, 0, HEIGHT); if (item.flightY !== undefined) item.flightY = item.y; }
       else if (action.type === 'setVelocity' && finite(second) && finite(third)) { item.vx = clamp(second, -300, 300); item.vy = clamp(third, -300, 300); }
-      else if (action.type === 'setSize' && finite(second)) { item.size = clamp(second, .5, 2.5); item.sprite?.setScale(item.size); }
+      else if (action.type === 'setSize' && finite(second)) { item.size = clamp(second, .5, 2.5); if (item.sprite instanceof Phaser.GameObjects.Image) item.sprite.setDisplaySize(96 * item.size, 96 * item.size); else item.sprite?.setScale(item.size * (item.kind === 'owl' ? .85 : 1)); }
       else if (action.type === 'setTag' && typeof second === 'string') item.tag = second.slice(0, 24);
     } else if (action.type === 'setParameter' && typeof name === 'string' && Object.hasOwn(parameterBounds, name) && finite(second)) {
       const key = name as Parameter, [min, max] = parameterBounds[key];
@@ -187,36 +201,50 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     private pen!: Phaser.GameObjects.Graphics;
     private sky!: Phaser.GameObjects.Image;
     private layers!: Phaser.GameObjects.TileSprite[];
-    private fox!: Phaser.GameObjects.Image;
+    private foreground!: Phaser.GameObjects.TileSprite;
+    private clouds!: Phaser.GameObjects.TileSprite;
+    private stars: Phaser.GameObjects.Arc[] = [];
+    private fox!: FoxRig;
     private hudCount!: Phaser.GameObjects.Text;
     private hudDistance!: Phaser.GameObjects.Text;
-    private hudHearts!: Phaser.GameObjects.Text;
+    private hudHearts!: Phaser.GameObjects.Image[];
+    private hudFirefly!: Phaser.GameObjects.Image;
     private banner!: Phaser.GameObjects.Text;
+    private bannerBack!: Phaser.GameObjects.Graphics;
     private card!: Phaser.GameObjects.Container;
     constructor() { super('lantern-run'); }
     create() {
       scene = this;
-      createLanternArt(this);
-      this.sky = this.add.image(WIDTH / 2, HEIGHT / 2, 'lantern-sky').setDepth(-10);
-      this.layers = [
-        this.add.tileSprite(WIDTH / 2, 450 - 128, WIDTH, 256, 'lantern-far').setDepth(-8),
-        this.add.tileSprite(WIDTH / 2, 490 - 128, WIDTH, 256, 'lantern-middle').setDepth(-7),
-        this.add.tileSprite(WIDTH / 2, 540 - 128, WIDTH, 256, 'lantern-near').setDepth(-6)
-      ];
+      createLanternParts(this);
+      createWorldArt(this);
+      this.sky = this.add.image(WIDTH / 2, HEIGHT / 2, 'lantern-world-sky').setDisplaySize(WIDTH, HEIGHT).setDepth(-10);
+      this.clouds = this.add.tileSprite(WIDTH / 2, 210, WIDTH, 200, 'lantern-world-clouds').setDepth(-9).setAlpha(.6);
+      this.stars = Array.from({ length: 20 }, (_, index) => this.add.circle((index * 227 + 45) % WIDTH, (index * 71 + 33) % 280, index % 4 ? 1 : 2, 0xffecc2, .4).setDepth(-9));
+      this.layers = Array.from({ length: 5 }, (_, index) => this.add.tileSprite(WIDTH / 2, 362 + index * 8, WIDTH, 330, `lantern-world-layer-${index}`)
+        .setDepth(index === 4 ? 2 : -8 + index).setAlpha(index === 4 ? .45 : 1));
+      this.foreground = this.add.tileSprite(WIDTH / 2, 563, WIDTH, 190, 'lantern-world-foreground').setDepth(6).setAlpha(.52);
       this.pen = this.add.graphics().setDepth(1);
-      this.fox = this.add.image(FOX_X, player.y, 'lantern-fox-run').setDepth(4).setDisplaySize(116, 103);
+      this.fox = new FoxRig(this, FOX_X, player.y, GROUND);
       const style = { fontFamily: 'Inter, Arial', fontSize: '27px', color: '#f4f1ff', fontStyle: 'bold', stroke: '#192039', strokeThickness: 5 };
-      this.hudCount = this.add.text(26, 18, '', style).setDepth(10);
-      this.hudDistance = this.add.text(120, 18, '', style).setDepth(10);
-      this.hudHearts = this.add.text(245, 18, '', { ...style, color: '#ff5a6e' }).setDepth(10);
+      this.hudFirefly = this.add.image(39, 37, 'lantern-rig-firefly-body').setDisplaySize(31, 31).setDepth(10);
+      this.hudCount = this.add.text(61, 18, '', style).setDepth(10);
+      this.hudDistance = this.add.text(130, 18, '', style).setDepth(10);
+      this.hudHearts = Array.from({ length: 5 }, (_, index) => this.add.image(270 + index * 26, 37, 'lantern-rig-hud-heart').setDisplaySize(23, 23).setDepth(10));
       this.applyHudSize();
-      this.banner = this.add.text(WIDTH / 2, 186, '', { ...style, fontSize: '25px', color: '#ffe1a7' }).setOrigin(.5).setDepth(10);
-      const backing = this.add.rectangle(0, 0, 440, 210, 0x141a32, .94).setStrokeStyle(3, 0xf2a25a);
-      const title = this.add.text(0, -72, 'RUN OVER', { ...style, fontSize: '38px', color: '#ffb45c' }).setOrigin(.5);
-      const result = this.add.text(0, -15, '', { ...style, fontSize: '25px' }).setOrigin(.5);
-      const best = this.add.text(0, 30, '', { ...style, fontSize: '21px', color: '#b9b4c8' }).setOrigin(.5);
-      const next = this.add.text(0, 75, 'Next run in 2 s · Space to start now', { ...style, fontSize: '17px' }).setOrigin(.5);
-      this.card = this.add.container(WIDTH / 2, HEIGHT / 2, [backing, title, result, best, next]).setDepth(20).setVisible(false);
+      this.bannerBack = this.add.graphics().setDepth(9).setVisible(false);
+      this.banner = this.add.text(WIDTH / 2, 196, '', { ...style, fontSize: '23px', color: '#ffe6ad' }).setOrigin(.5).setDepth(10);
+      const backing = this.add.graphics();
+      backing.fillStyle(0x121b2e, .96).fillRoundedRect(-236, -121, 472, 242, 24);
+      backing.lineStyle(3, 0xe8ad63).strokeRoundedRect(-236, -121, 472, 242, 24);
+      backing.fillStyle(0x74935d).fillTriangle(-228, -95, -204, -118, -199, -89).fillTriangle(228, -95, 204, -118, 199, -89);
+      backing.lineStyle(2, 0x8f906c, .65).lineBetween(-192, 26, 192, 26);
+      const title = this.add.text(0, -81, 'RUN OVER', { ...style, fontSize: '37px', color: '#ffca79' }).setOrigin(.5);
+      const result = this.add.text(0, -29, '', { ...style, fontSize: '24px' }).setOrigin(.5);
+      const best = this.add.text(0, 53, '', { ...style, fontSize: '20px', color: '#d7cfbd' }).setOrigin(.5);
+      const keycap = this.add.graphics().fillStyle(0x334650).fillRoundedRect(-190, 82, 70, 30, 6).lineStyle(1, 0xa9bf9d).strokeRoundedRect(-190, 82, 70, 30, 6);
+      const keyLabel = this.add.text(-155, 97, 'SPACE', { ...style, fontSize: '15px', color: '#f6e6bc' }).setOrigin(.5);
+      const next = this.add.text(12, 96, 'Next run in 2 s', { ...style, fontSize: '17px' }).setOrigin(.5);
+      this.card = this.add.container(WIDTH / 2, HEIGHT / 2, [backing, title, result, best, keycap, keyLabel, next]).setDepth(20).setVisible(false);
       this.card.setData('result', result); this.card.setData('best', best); this.card.setData('next', next);
       this.input.keyboard?.on('keydown', (event: KeyboardEvent) => { if (['Space', 'ArrowUp', 'KeyW'].includes(event.code) && !event.repeat) { jumpHeld = true; jump(); event.preventDefault(); } });
       this.input.keyboard?.on('keyup', (event: KeyboardEvent) => { if (['Space', 'ArrowUp', 'KeyW'].includes(event.code)) jumpHeld = false; });
@@ -230,8 +258,10 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       lastFrameAt = now; recentFrames.push(now); while (recentFrames.length && recentFrames[0] < now - 2000) recentFrames.shift();
       const dt = Math.min(actualDelta / 1000, .1);
       frame++; elapsed += dt;
+      jumpAge += dt; landingAge += dt; hurtAge += dt; recoveryAge += dt;
       if (runOver > 0) { runOver = Math.max(0, runOver - dt); if (runOver === 0) startRun(); this.draw(); emit({ type: 'tick', delta: dt, distance: run.distance }); return; }
       runElapsed += dt; invulnerable = Math.max(0, invulnerable - dt); messageLife = Math.max(0, messageLife - dt);
+      countPulse = Math.max(0, countPulse - dt); heartPulse = Math.max(0, heartPulse - dt);
       flashLife = Math.max(0, flashLife - dt);
       for (const [key, power] of granted) if (runElapsed >= power.until) granted.delete(key);
       player.powerUps = [...granted.values()].map(power => power.kind);
@@ -254,7 +284,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       const landing = landingLedge ? landingLedge.y - 16 : ground ? GROUND : undefined;
       if (landing !== undefined && previousFeet <= landing + 8 && player.y + 38 >= landing && player.vy >= 0) {
         const wasGrounded = player.grounded; player.y = landing - 38; player.vy = 0; player.grounded = true; player.jumpsLeft = parameters.maxJumps;
-        if (!wasGrounded) { audio.play('land'); emit({ type: 'land', x: player.x, y: player.y, on: landingLedge ? 'ledge' : 'ground' }); }
+        if (!wasGrounded) { landingAge = 0; burst('splash', player.x, landing - 4); audio.play('land'); emit({ type: 'land', x: player.x, y: player.y, on: landingLedge ? 'ledge' : 'ground' }); }
         if (ground) fallTarget = undefined;
       } else player.grounded = false;
       if (!ground && fallTarget === undefined && player.y + 38 >= GROUND) fallTarget = spans.find(span => span.from > at)?.from;
@@ -266,87 +296,144 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
         while (lastMilestone + 100 <= run.distance) { lastMilestone += 100; emit({ type: 'milestone', meters: lastMilestone }); }
         fallTarget = undefined;
         player.y = GROUND - 80; player.vy = 0; player.grounded = false; invulnerable = Math.max(invulnerable, 1.2);
+        recoveryAge = 0;
       }
+      let trails = 0;
       for (const item of entities) {
         if (!item.alive) continue;
         item.worldX += item.vx * dt;
         if (item.flightY !== undefined) { item.flightY += item.vy * dt; item.y = owlFlightY(item.flightY, elapsed, item.flightPhase ?? 0); }
         else item.y += item.vy * dt;
         const x = screenX(item.worldX);
+        if (item.kind === 'firefly' && frame % 8 === 0 && trails < 2 && particles.length < 64 && settings.effectsIntensity > 0) {
+          particles.push({ x: x - 8, y: item.y + 5, vx: -17, vy: 8, color: 0xe8ff94, kind: 'sparks', life: .28, owner: item.owner }); trails++;
+        }
         if (item.kind === 'pinecone' && item.vy === 0) item.vy = 220;
         if (player.powerUps.includes('magnet') && item.kind === 'firefly' && Math.abs(x - FOX_X) < 180) item.worldX -= Math.sign(x - FOX_X) * 300 * dt;
         if (x < -140 || x > WIDTH + 300) { item.alive = false; item.sprite?.destroy(); continue; }
         if (Math.abs(x - FOX_X) > 49 || Math.abs(item.y - player.y) > (item.kind === 'owl' ? 55 : 48)) continue;
         if (item.kind === 'firefly' || item.kind === 'acorn') {
           item.alive = false; item.sprite?.destroy(); const value = item.kind === 'acorn' ? 5 : parameters.fireflyValue;
-          run.fireflies += value; audio.play(item.kind); emit({ type: 'collect', id: item.id, kind: item.kind, value });
+          run.fireflies += value; countPulse = .28; burst(item.kind === 'acorn' ? 'celebration' : 'sparks', x, item.y);
+          audio.play(item.kind); emit({ type: 'collect', id: item.id, kind: item.kind, value });
         } else if (powerUps.includes(item.kind as PowerUp)) {
           item.alive = false; item.sprite?.destroy(); apply({ type: 'grantPowerUp', args: [item.kind, 8] }, item.owner ?? 'world');
         } else if (['log', 'thorns', 'boulder', 'owl', 'pinecone'].includes(item.kind) && invulnerable === 0) {
           hurt(item.kind, item.id); item.alive = false; item.sprite?.destroy();
         } else if (item.kind === 'spring' && player.vy >= 0) {
-          player.vy = -Math.max(900, parameters.jumpPower); player.grounded = false; audio.play('spring'); emit({ type: 'land', x: player.x, y: player.y, on: 'spring' });
+          player.vy = -Math.max(900, parameters.jumpPower); player.grounded = false; item.kickUntil = elapsed + .3;
+          audio.play('spring'); emit({ type: 'land', x: player.x, y: player.y, on: 'spring' });
         }
       }
       for (let i = entities.length - 1; i >= 0; i--) if (!entities[i].alive) entities.splice(i, 1);
       this.draw(); emit({ type: 'tick', delta: dt, distance: run.distance });
     }
     private draw() {
-      this.layers[0].tilePositionX = distancePx * .08;
-      this.layers[1].tilePositionX = distancePx * .17;
-      this.layers[2].tilePositionX = distancePx * .32;
+      this.layers.forEach((layer, index) => { layer.tilePositionX = distancePx * [.06, .12, .22, .36, .53][index]; });
+      this.foreground.tilePositionX = distancePx * .68;
+      this.clouds.tilePositionX = elapsed * 5;
+      this.stars.forEach((star, index) => star.setAlpha(.25 + .25 * (1 + Math.sin(elapsed * (1.2 + index % 3 * .35) + index))));
+      this.layers[3].setAlpha(.92 + .08 * Math.sin(elapsed * 2));
       const g = this.pen; g.clear();
       g.fillStyle(0x1b1f33); g.fillRect(0, GROUND, WIDTH, HEIGHT - GROUND);
       for (const span of spans) {
         const left = screenX(span.from), right = screenX(span.to);
         if (right < 0 || left > WIDTH) continue;
-        g.fillStyle(0x5a3a24); g.fillRect(left, GROUND + 13, right - left, HEIGHT - GROUND);
-        g.fillStyle(0x69442b); g.fillRect(left, GROUND + 26, right - left, 22);
-        g.fillStyle(0x432f29); g.fillRect(left, GROUND + 91, right - left, HEIGHT - GROUND - 91);
-        g.fillStyle(0x7fae3a); g.fillRect(left, GROUND, right - left, 17);
-        g.fillStyle(0xa1c45a); g.fillRect(left, GROUND, right - left, 5);
+        g.fillStyle(0x5a3f30); g.fillRect(left, GROUND + 10, right - left, HEIGHT - GROUND);
+        g.fillStyle(0x76543a); g.fillRect(left, GROUND + 20, right - left, 34);
+        g.fillStyle(0x392f30); g.fillRect(left, GROUND + 82, right - left, HEIGHT - GROUND - 82);
+        g.fillStyle(0x5f8746); g.fillRect(left, GROUND, right - left, 17);
+        g.fillStyle(0xb2c76e); g.fillRect(left, GROUND, right - left, 5);
+        g.lineStyle(3, 0x9abb65, .85); g.lineBetween(left, GROUND + 6, right, GROUND + 6);
+        for (const edge of [left, right]) if (edge > -12 && edge < WIDTH + 12) {
+          g.fillStyle(0x252a35); g.fillRect(edge - 4, GROUND + 18, 8, HEIGHT - GROUND);
+          g.fillStyle(0x7a9e58); g.fillTriangle(edge - 7, GROUND + 7, edge + 7, GROUND + 7, edge, GROUND + 25);
+          for (let j = 0; j < 3; j++) { g.lineStyle(2, 0x7ea05b); g.lineBetween(edge + j * 8, GROUND + 11, edge + j * 8 + 5, GROUND + 24 + j * 5); }
+        }
         for (let world = Math.ceil(span.from / 95) * 95; world < span.to; world += 95) {
           const x = screenX(world); if (x < -20 || x > WIDTH + 20) continue;
-          g.fillStyle(0x98bc4c); g.fillTriangle(x - 9, GROUND, x - 3, GROUND - 11, x + 1, GROUND);
-          g.fillTriangle(x + 2, GROUND, x + 8, GROUND - 9, x + 13, GROUND);
-          g.fillStyle(0x8b6140); g.fillCircle(x + 28, GROUND + 47 + world % 23, 5);
+          const sway = Math.sin(elapsed * 2.6 + world * .09) * 3;
+          g.fillStyle(0x91b95c); g.fillTriangle(x - 9, GROUND, x - 3 + sway, GROUND - 13, x + 1, GROUND);
+          g.fillTriangle(x + 2, GROUND, x + 8 + sway, GROUND - 10, x + 13, GROUND);
+          g.fillStyle(0xa7c477); g.fillCircle(x + 18, GROUND + 2, 3);
+          if (world % 3 === 0) { g.fillStyle(0xe2b57c); g.fillCircle(x + 17 + sway, GROUND - 7, 3); g.fillStyle(0xffeed0); g.fillCircle(x + 17 + sway, GROUND - 7, 1); }
+          g.fillStyle(0xa17b55); g.fillCircle(x + 28, GROUND + 47 + world % 23, 5);
           g.fillStyle(0x2d3035); g.fillCircle(x - 17, GROUND + 88 + world % 17, 3);
         }
       }
       for (const item of entities) if (item.alive) {
-        item.sprite?.setPosition(screenX(item.worldX), item.y);
-        if (item.kind === 'firefly') { g.fillStyle(0xd9ff5a, .18 * settings.effectsIntensity); g.fillCircle(screenX(item.worldX), item.y, 25); }
+        if (item.owlRig) item.owlRig.update(screenX(item.worldX), item.y, elapsed, (item.dropUntil ?? 0) > elapsed);
+        else if (item.fireflyRig) item.fireflyRig.update(screenX(item.worldX), item.y, elapsed, settings.effectsIntensity);
+        else item.sprite?.setPosition(screenX(item.worldX), item.y);
+        if (item.sprite instanceof Phaser.GameObjects.Image) {
+          if (item.kind === 'spring') item.sprite.setScale(item.size * .5, item.size * .5 * ((item.kickUntil ?? 0) > elapsed ? .55 + (item.kickUntil! - elapsed) * .9 : .9 + .1 * Math.sin(elapsed * 5 + item.id)));
+          else if (item.kind === 'acorn') item.sprite.setAngle(Math.sin(elapsed * 4 + item.id) * 20);
+          else if (['shield', 'glider', 'magnet', 'ledge', 'thorns'].includes(item.kind)) item.sprite.setAngle(Math.sin(elapsed * 2 + item.id) * (item.kind === 'ledge' ? 2 : 6));
+          else if (item.kind === 'pinecone') item.sprite.setAngle(elapsed * 110);
+        }
       }
       if (player.powerUps.includes('shield')) { g.lineStyle(4, 0xffb84a, .8); g.strokeCircle(FOX_X, player.y, 68); }
       if (weather !== 'clear') {
         const count = Math.max(0, Math.min(32, 64 - particles.length, Math.round(20 * settings.effectsIntensity)));
         for (let i = 0; i < count; i++) {
-          const x = (i * 97 + frame * (weather === 'wind' ? 5 : 2)) % WIDTH;
-          const y = (i * 149 + frame * 7) % HEIGHT;
-          g.fillStyle(weather === 'rain' ? 0xaed8ed : weather === 'fog' ? 0xc7c1d4 : 0xa4c481, .5);
-          g.fillRect(x, y, weather === 'fog' ? 16 : 3, weather === 'rain' ? 14 : 3);
+          const x = (i * 97 + elapsed * (weather === 'wind' ? 90 : 30)) % WIDTH;
+          const y = (i * 149 + elapsed * 115) % HEIGHT;
+          if (weather === 'rain') {
+            g.lineStyle(2, 0xaed8ed, .5).lineBetween(x, y, x - 5, y + 18);
+            if (y > GROUND - 25) { g.lineStyle(1, 0xc8e2e6, .45).strokeEllipse(x, GROUND + 3, 10, 3); }
+          } else if (weather === 'wind') {
+            g.lineStyle(2, 0xa4c481, .6).lineBetween(x - 9, y, x + 8, y - 4);
+            g.fillStyle(0x8eb067, .55).fillTriangle(x, y, x + 7, y - 9, x + 12, y + 1);
+          } else { g.fillStyle(0xb6bfca, .045).fillEllipse(x, y, 180, 25); }
         }
       }
       for (const drawing of drawings) { g.lineStyle(3, drawing.color, Math.min(1, drawing.life)); g.strokeCircle(drawing.x, drawing.y, drawing.radius); }
-      for (const particle of particles) { g.fillStyle(particle.color, Math.min(1, particle.life * 2)); g.fillCircle(particle.x, particle.y, 3); }
+      for (const particle of particles) {
+        const alpha = Math.min(1, particle.life * 2) * settings.effectsIntensity;
+        g.fillStyle(particle.color, alpha);
+        if (particle.kind === 'leaves') g.fillTriangle(particle.x - 3, particle.y + 2, particle.x + 5, particle.y - 5, particle.x + 7, particle.y + 4);
+        else if (particle.kind === 'splash') g.fillEllipse(particle.x, particle.y, 9, 3);
+        else if (particle.kind === 'celebration' || particle.kind === 'hurt') { g.fillTriangle(particle.x, particle.y - 5, particle.x + 4, particle.y, particle.x, particle.y + 5); g.fillTriangle(particle.x, particle.y - 5, particle.x - 4, particle.y, particle.x, particle.y + 5); }
+        else g.fillCircle(particle.x, particle.y, 3);
+      }
+      if (hurtAge < .35 && settings.effectsIntensity > 0) { g.lineStyle(3, 0xffcb88, (1 - hurtAge / .35) * settings.effectsIntensity).strokeCircle(FOX_X, player.y, 30 + hurtAge * 100); }
+      if (jumpIndex > 1 && jumpAge < .4 && !player.grounded && settings.effectsIntensity > 0) { g.lineStyle(2, 0xffd770, (1 - jumpAge / .4) * settings.effectsIntensity).strokeEllipse(FOX_X, player.y, 98, 46); }
       if (flashLife > 0) { g.fillStyle(flashColor, flashLife * .8); g.fillRect(0, 0, WIDTH, HEIGHT); }
-      const pose = runOver > 0 || invulnerable > 0 && player.hearts < player.maxHearts && frame % 8 < 4 ? 'hurt' : player.grounded ? 'run' : player.vy < 0 ? 'jump' : 'fall';
-      this.fox.setTexture(`lantern-fox-${pose}`).setPosition(FOX_X, player.y + (pose === 'run' ? Math.sin(elapsed * 13) * 2 : 0));
-      this.hudCount.setText(`✦ ${run.fireflies}`); this.hudDistance.setText(`${run.distance} m`);
-      this.hudHearts.setText(`${'♥'.repeat(clamp(player.hearts, 0, player.maxHearts))}${'♡'.repeat(Math.max(0, player.maxHearts - player.hearts))}`);
+      this.fox.update({ x: FOX_X, y: player.y, ground: GROUND, distancePx, elapsed, dt: Math.min(1 / 30, Math.max(1 / 120, recentFrames.length > 1 ? (recentFrames.at(-1)! - recentFrames.at(-2)!) / 1000 : 1 / 60)), vy: player.vy, grounded: player.grounded,
+        invulnerable, hearts: player.hearts, maxHearts: player.maxHearts, runOver: runOver > 0, jumpIndex, jumpAge, landingAge, hurtAge, recoveryAge,
+        glider: player.powerUps.includes('glider'), shield: player.powerUps.includes('shield'), intensity: settings.effectsIntensity });
+      this.hudCount.setText(String(run.fireflies)); this.hudDistance.setText(`${run.distance} m`);
+      this.hudCount.setScale(1 + countPulse * .7);
+      this.hudFirefly.setScale((settings.hudSize === 'large' ? 35 : settings.hudSize === 'small' ? 27 : 31) / 96 * (1 + countPulse * .6));
+      this.hudHearts.forEach((icon, index) => icon.setVisible(index < player.maxHearts).setTexture(index < player.hearts ? 'lantern-rig-hud-heart' : 'lantern-rig-hud-heart-empty'));
+      this.hudHearts.forEach(icon => icon.setScale((settings.hudSize === 'large' ? 25 : settings.hudSize === 'small' ? 19 : 23) / 80 * (1 + heartPulse * .35)));
       this.banner.setText(messageLife > 0 ? message : '');
+      this.bannerBack.clear().setVisible(messageLife > 0);
+      if (messageLife > 0) {
+        const w = Math.min(760, Math.max(260, this.banner.width + 66)), slide = Math.min(1, (2 - messageLife) * 5);
+        this.banner.setPosition(WIDTH / 2, 195 + (1 - slide) * 22).setAlpha(Math.min(1, messageLife * 3, slide));
+        this.bannerBack.fillStyle(0x1b2c39, .88).fillRoundedRect(WIDTH / 2 - w / 2, this.banner.y - 22, w, 44, 18)
+          .lineStyle(2, 0xd1aa6a, .85).strokeRoundedRect(WIDTH / 2 - w / 2, this.banner.y - 22, w, 44, 18)
+          .fillStyle(0x8aa466).fillTriangle(WIDTH / 2 - w / 2 + 12, this.banner.y, WIDTH / 2 - w / 2 + 31, this.banner.y - 8, WIDTH / 2 - w / 2 + 28, this.banner.y + 8)
+          .fillTriangle(WIDTH / 2 + w / 2 - 12, this.banner.y, WIDTH / 2 + w / 2 - 31, this.banner.y - 8, WIDTH / 2 + w / 2 - 28, this.banner.y + 8);
+        this.bannerBack.setAlpha(this.banner.alpha);
+      }
       this.card.setVisible(runOver > 0);
       if (runOver > 0) {
+        this.card.setY(HEIGHT / 2 + Math.max(0, 1 - (2 - runOver) * 5) * 35);
         (this.card.getData('result') as Phaser.GameObjects.Text).setText(`${run.distance} m with ${run.fireflies} fireflies`);
         (this.card.getData('best') as Phaser.GameObjects.Text).setText(`Best ${run.best} m`);
-        (this.card.getData('next') as Phaser.GameObjects.Text).setText(`Next run in ${Math.ceil(runOver)} s · Space to start now`);
+        (this.card.getData('next') as Phaser.GameObjects.Text).setText(`Next run in ${Math.ceil(runOver)} s`);
       }
     }
     applyHudSize() {
       const size = settings.hudSize === 'large' ? 34 : settings.hudSize === 'small' ? 22 : 27;
-      for (const label of [this.hudCount, this.hudDistance, this.hudHearts]) label.setFontSize(size);
+      for (const label of [this.hudCount, this.hudDistance]) label.setFontSize(size);
+      const iconSize = settings.hudSize === 'large' ? 25 : settings.hudSize === 'small' ? 19 : 23;
+      this.hudHearts.forEach((icon, index) => icon.setDisplaySize(iconSize, iconSize).setPosition(270 + index * (iconSize + 1), 19 + size * .68));
+      this.hudFirefly.setDisplaySize(iconSize + 5, iconSize + 5).setPosition(38, 19 + size * .68);
     }
-    hudBounds() { return [this.hudCount, this.hudDistance, this.hudHearts].map(label => { const { x, y, width, height } = label.getBounds(); return { x, y, width, height }; }); }
+    hudBounds() { return [this.hudCount, this.hudDistance, this.hudFirefly, ...this.hudHearts.filter(icon => icon.visible)].map(label => { const { x, y, width, height } = label.getBounds(); return { x, y, width, height }; }); }
   }
 
   const phaser = new Phaser.Game({ type: Phaser.AUTO, width: WIDTH, height: HEIGHT, parent, backgroundColor: '#1f2b5c', scene: LanternScene, scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH } });

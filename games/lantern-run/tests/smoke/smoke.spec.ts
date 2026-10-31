@@ -10,6 +10,23 @@ async function load(page: import('@playwright/test').Page, name: string, source:
   await page.evaluate(({ name, source }) => (window as any).__livePatch.host.sync([{ name, source, error: null }]), { name, source });
   await expect(page.locator('#mutations')).toContainText('active');
 }
+async function crop(page: import('@playwright/test').Page, x: number, y: number, width: number, height: number): Promise<Buffer> {
+  const bounds = await page.locator('#game canvas').boundingBox();
+  if (!bounds) throw Error('Game canvas missing');
+  return page.screenshot({ clip: { x: bounds.x + (x - width / 2) * bounds.width / 1152, y: bounds.y + (y - height / 2) * bounds.height / 648,
+    width: width * bounds.width / 1152, height: height * bounds.height / 648 } });
+}
+async function changedPixels(page: import('@playwright/test').Page, a: Buffer, b: Buffer): Promise<number> {
+  return page.evaluate(async ([first, second]) => {
+    const decode = async (base64: string) => createImageBitmap(await (await fetch(`data:image/png;base64,${base64}`)).blob());
+    const images = await Promise.all([decode(first), decode(second)]);
+    const canvas = document.createElement('canvas'); canvas.width = images[0].width; canvas.height = images[0].height;
+    const c = canvas.getContext('2d')!; c.drawImage(images[0], 0, 0); const p = c.getImageData(0, 0, canvas.width, canvas.height).data;
+    c.clearRect(0, 0, canvas.width, canvas.height); c.drawImage(images[1], 0, 0); const q = c.getImageData(0, 0, canvas.width, canvas.height).data;
+    let count = 0; for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - q[i]) + Math.abs(p[i + 1] - q[i + 1]) + Math.abs(p[i + 2] - q[i + 2]) > 45) count++;
+    images.forEach(image => image.close()); return count;
+  }, [a.toString('base64'), b.toString('base64')]);
+}
 
 test('Lantern Run starts and advances', async ({ page }) => {
   await page.goto('/play');
@@ -44,6 +61,41 @@ test('Space, W, Up and canvas click all jump and pause freezes time', async ({ p
   const before = await page.evaluate(() => (window as any).__livePatch.game.snapshot().frame);
   await page.waitForTimeout(300);
   expect(await page.evaluate(() => (window as any).__livePatch.game.snapshot().frame)).toBe(before);
+});
+
+test('fox, owl and firefly visibly animate, jump responds immediately, and pause freezes the picture', async ({ page }) => {
+  await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
+  const firstFox = await crop(page, 346, 468, 170, 125);
+  await page.waitForTimeout(125);
+  const nextFox = await crop(page, 346, 468, 170, 125);
+  expect(await changedPixels(page, firstFox, nextFox)).toBeGreaterThan(150);
+  const ids = await page.evaluate(() => {
+    const game = (window as any).__livePatch.game;
+    game.apply({ type: 'setParameter', args: ['runSpeed', 120] }, 'animation-probe');
+    game.apply({ type: 'spawn', args: ['owl', 960, 325] }, 'animation-probe');
+    const owl = game.snapshot().entities.filter((entity: any) => entity.kind === 'owl').at(-1)?.id;
+    game.apply({ type: 'spawn', args: ['firefly', 820, 345] }, 'animation-probe');
+    const firefly = game.snapshot().entities.filter((entity: any) => entity.kind === 'firefly').at(-1)?.id;
+    return { owl, firefly };
+  });
+  const entityCrop = async (id: number) => {
+    const item = await page.evaluate(id => (window as any).__livePatch.game.snapshot().entities.find((entity: any) => entity.id === id), id);
+    if (!item) throw Error(`Animation entity ${id} despawned`);
+    return crop(page, item.x, item.y, 140, 110);
+  };
+  const owlA = await entityCrop(ids.owl), flyA = await entityCrop(ids.firefly);
+  await page.waitForTimeout(125);
+  const owlB = await entityCrop(ids.owl), flyB = await entityCrop(ids.firefly);
+  expect(await changedPixels(page, owlA, owlB)).toBeGreaterThan(120);
+  expect(await changedPixels(page, flyA, flyB)).toBeGreaterThan(45);
+  await page.keyboard.down('Space');
+  expect(await page.evaluate(() => (window as any).__livePatch.game.snapshot().player.grounded)).toBe(false);
+  await page.keyboard.up('Space');
+  await page.keyboard.press('Escape'); await expect(page.locator('#play-menu')).toBeVisible();
+  const frozenA = await page.locator('#game canvas').screenshot();
+  await page.waitForTimeout(180);
+  const frozenB = await page.locator('#game canvas').screenshot();
+  expect(frozenA.equals(frozenB)).toBe(true);
 });
 
 test('rollback removes a patch’s weather, power-up, parameter and entities but keeps run progress', async ({ page }) => {
