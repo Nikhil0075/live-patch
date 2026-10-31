@@ -1,5 +1,9 @@
 # Lantern Run mutation API
 
+Each load has a 3 second deadline. A module that does not load in time is disabled; the game keeps running.
+
+Generated owls fly toward the fox at one of three seeded heights, with a gentle vertical wave. Mutation-spawned owls can be moved with `setVelocity` and `moveEntity`.
+
 Put one `.js` module in `mutations/`. Export `meta` with nonempty `id`, `title`, `author`, and `description` strings under 120 characters, plus any of the hooks below. Modules have no imports, DOM, network, storage, timers or browser globals. The sandboxed Worker runs `onStart` once when that file is added or changed. Other module reloads do not restart it. An error, unhandled rejection or 1.8–2.2 second event deadline disables only that module. A full dev-server restart resets the run.
 
 ```js

@@ -12,6 +12,9 @@ export function jumpReach(ability: RunningAbility): number {
   return ability.speed * 2 * ability.jumpPower / ability.gravity;
 }
 
+export function owlFlightHeight(seed: number, index: number): number { return 518 - [93, 120, 148][Math.abs(seed + index) % 3]; }
+export function owlFlightY(base: number, seconds: number, phase: number): number { return base + Math.sin(seconds * 2.4 + phase) * 11; }
+
 export function generateStretch(seed: number, index: number, ability: RunningAbility): Stretch {
   const roll = random(seed + index * 7919);
   const reach = jumpReach(ability);

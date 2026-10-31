@@ -10,6 +10,21 @@ const manifest = manifestSchema.parse(JSON.parse(fs.readFileSync(path.join(game,
 const docs = fs.readFileSync(path.join(game, 'docs/mutation-api.md'), 'utf8');
 
 describe('Lantern Run manifest and API documentation', () => {
+  it('does not migrate Lantern settings into Arena after a fresh Lantern save', () => {
+    const folder = fs.mkdtempSync(path.join(process.cwd(), '.phase6-layout-test-'));
+    const file = path.join(folder, 'settings.json');
+    try {
+      const lantern = new SettingsStore(file, { gameKey: 'games/lantern-run', migrationGameKey: 'games/arena-survivor', defaultLayout: manifest.overlay!.defaultLayout, keepClear: manifest.overlay!.keepClear });
+      lantern.update({ muted: true });
+      const saved = JSON.parse(fs.readFileSync(file, 'utf8')) as { overlayWidgets?: unknown; overlayLayouts: Record<string, unknown> };
+      expect(saved.overlayWidgets).toBeUndefined();
+      expect(saved.overlayLayouts['games/arena-survivor']).toBeUndefined();
+      const arenaManifest = manifestSchema.parse(JSON.parse(fs.readFileSync(path.resolve('games/arena-survivor/live-patch.json'), 'utf8')));
+      const arena = new SettingsStore(file, { gameKey: 'games/arena-survivor', migrationGameKey: 'games/arena-survivor', defaultLayout: arenaManifest.overlay!.defaultLayout, keepClear: arenaManifest.overlay!.keepClear });
+      expect(arena.snapshot().overlayWidgets).toEqual(arenaManifest.overlay!.defaultLayout);
+    } finally { fs.rmSync(folder, { recursive: true, force: true }); }
+  });
+
   it('documents exactly the declared mutation actions and hooks', () => {
     const actions = [...docs.matchAll(/^\| `([a-zA-Z]+)\([^`]*\)` \|/gm)].map(match => match[1]).sort();
     const hooks = [...docs.matchAll(/^\| `([a-zA-Z]+)` \| `(on[A-Za-z]+)` \|/gm)].map(match => [match[1], match[2]]);

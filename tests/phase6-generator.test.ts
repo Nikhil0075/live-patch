@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { generateStretch, jumpReach, stretchIsClearable } from '../games/lantern-run/src/generator';
+import { generateStretch, jumpReach, owlFlightHeight, owlFlightY, stretchIsClearable } from '../games/lantern-run/src/generator';
+import { advanceFoxFlight } from '../games/lantern-run/src/physics';
 
 describe('Lantern Run generator fairness', () => {
   it('makes every stretch clearable across 250 seeds at default parameters', () => {
@@ -18,6 +19,35 @@ describe('Lantern Run generator fairness', () => {
     for (let seed = 0; seed < 250; seed++) {
       const stretch = generateStretch(seed, 10, limited);
       expect(stretchIsClearable(stretch, limited)).toBe(true);
+    }
+  });
+  it('glides generated owls at seeded safe heights', () => {
+    const heights = new Set<number>();
+    for (let seed = 0; seed < 250; seed++) {
+      const base = owlFlightHeight(seed, 5);
+      heights.add(base);
+      for (const seconds of [0, .4, .8, 1.2]) expect(owlFlightY(base, seconds, seed % 19)).toBeGreaterThanOrEqual(355);
+      expect(owlFlightY(base, 0, 0)).not.toBe(owlFlightY(base, 1, 0));
+    }
+    expect(heights.size).toBe(3);
+  });
+  it('a held jump clears generated gaps and reaches the generated ledge across 250 seeds', () => {
+    const dt = 1 / 60;
+    for (let seed = 0; seed < 250; seed++) for (let index = 2; index < 30; index++) {
+      const stretch = generateStretch(seed, index, { speed: 260, jumpPower: 720, gravity: 1600 });
+      let state = { y: 518 - 38, vy: -720, jumpLift: 0 };
+      let crossedGap = false, reachedLedge = false;
+      let x = 0;
+      for (let step = 0; step < 90; step++) {
+        const previous = state;
+        state = advanceFoxFlight(state, dt, 1600, step * dt < .16, false);
+        x += 260 * dt;
+        if (x >= stretch.gap && state.y + 38 <= 518) crossedGap = true;
+        if (previous.y + 38 <= 347 && state.y + 38 >= 347 && state.vy >= 0) reachedLedge = true;
+      }
+      expect(crossedGap, `seed ${seed}, stretch ${index}, gap ${stretch.gap}`).toBe(true);
+      if (stretch.ledge) expect(reachedLedge, `seed ${seed}, stretch ${index} ledge`).toBe(true);
+      expect(stretch.groundLength - 220).toBeGreaterThan(260 * .8);
     }
   });
 });

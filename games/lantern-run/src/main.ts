@@ -4,7 +4,8 @@ import type { GameManifest } from '../../../engine/manifest/schema';
 import { defaultSettings, type StudioSettings } from '../../../engine/studio/settings-defaults';
 import { createLanternArt } from './art';
 import { LanternAudio, sounds, type SoundName } from './audio';
-import { generateStretch, type Stretch } from './generator';
+import { generateStretch, owlFlightHeight, owlFlightY, type Stretch } from './generator';
+import { advanceFoxFlight } from './physics';
 
 const WIDTH = 1152, HEIGHT = 648, GROUND = 518, FOX_X = 346;
 type Kind = 'log' | 'thorns' | 'boulder' | 'owl' | 'pinecone' | 'firefly' | 'acorn' | 'ledge' | 'spring' | 'shield' | 'glider' | 'magnet';
@@ -16,7 +17,7 @@ const caps: Record<Kind, number> = { log: 12, thorns: 12, boulder: 12, owl: 6, p
 const parameterBounds: Record<Parameter, [number, number]> = { runSpeed: [120, 600], speedRamp: [0, 3], gravity: [300, 2400], jumpPower: [300, 1100], maxJumps: [1, 3], spawnRate: [.3, 3], fireflyValue: [1, 10], maxHearts: [3, 5] };
 const powerUps: PowerUp[] = ['shield', 'glider', 'magnet'];
 const weathers: Weather[] = ['clear', 'rain', 'wind', 'fog'];
-interface Entity { id: number; kind: Kind; worldX: number; y: number; size: number; vx: number; vy: number; tag: string; owner?: string; alive: boolean; sprite?: Phaser.GameObjects.Image }
+interface Entity { id: number; kind: Kind; worldX: number; y: number; size: number; vx: number; vy: number; tag: string; owner?: string; alive: boolean; sprite?: Phaser.GameObjects.Image; flightY?: number; flightPhase?: number }
 interface GroundSpan { from: number; to: number; stretch?: Stretch }
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
@@ -35,6 +36,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
   let writeOrder = 0, weather: Weather = 'clear';
   let elapsed = 0, runElapsed = 0, frame = 0, distancePx = 0, maxFrameGap = 0, lastFrameAt = 0;
   let invulnerable = 3, runOver = 0, jumpHeld = false, jumpLift = 0, nextId = 1, seed = Math.floor(Math.random() * 1_000_000);
+  let fallTarget: number | undefined, lastMilestone = 0;
   const recentFrames: number[] = [];
   const spans: GroundSpan[] = [{ from: 0, to: 1200 }];
   const entities: Entity[] = [];
@@ -65,8 +67,11 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       const stretch = generateStretch(seed, index, { speed: Math.max(120, run.speed), jumpPower: parameters.jumpPower, gravity: parameters.gravity });
       const from = spans.at(-1)!.to + stretch.gap;
       spans.push({ from, to: from + stretch.groundLength, stretch });
-      if (stretch.hazard !== 'none' && (index * 47 + seed * 13) % 100 < Math.min(100, parameters.spawnRate * 70))
-        addEntity(stretch.hazard, from + 220, stretch.hazard === 'owl' ? GROUND - 125 : GROUND - 32);
+      if (stretch.hazard !== 'none' && (index * 47 + seed * 13) % 100 < Math.min(100, parameters.spawnRate * 70)) {
+        const height = owlFlightHeight(seed, index);
+        const item = addEntity(stretch.hazard, from + 220, stretch.hazard === 'owl' ? height : GROUND - 32);
+        if (item && stretch.hazard === 'owl') { item.vx = -24; item.flightY = height; item.flightPhase = (seed + index * 7) % 19; }
+      }
       const collectible = stretch.pickup;
       for (let i = 0; i < 3; i++) addEntity(collectible === 'acorn' && i === 1 ? 'acorn' : 'firefly', from + 110 + i * 58, GROUND - 125 - Math.sin(i / 2) * 35);
       if (stretch.ledge) addEntity('ledge', from + 350, GROUND - 155, 1.3);
@@ -81,7 +86,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
   }
   function startRun() {
     run.number++; run.distance = 0; run.fireflies = 0; run.speed = parameters.runSpeed;
-    runElapsed = 0; distancePx = 0; runOver = 0; invulnerable = 3; seed++;
+    runElapsed = 0; distancePx = 0; runOver = 0; invulnerable = 3; seed++; fallTarget = undefined; lastMilestone = 0;
     Object.assign(player, { y: GROUND - 38, vy: 0, grounded: true, jumpsLeft: parameters.maxJumps, hearts: parameters.maxHearts });
     for (const item of entities) item.sprite?.destroy(); entities.length = 0;
     granted.clear(); player.powerUps = [];
@@ -106,6 +111,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       frameRate: recentFrames.length > 1 ? (recentFrames.length - 1) * 1000 / (recentFrames.at(-1)! - recentFrames[0]) : 60,
       renderer: phaser.renderer?.type === Phaser.WEBGL ? 'webgl' : 'canvas', runOver: runOver > 0, restartIn: runOver,
       weather, parameters: { ...parameters }, particles: particles.length, drawings: drawings.length,
+      hudBounds: scene?.hudBounds() ?? [], groundUnderFox: spans.some(span => distancePx + FOX_X >= span.from && distancePx + FOX_X <= span.to),
       entities: entities.filter(item => item.alive).slice(0, 100).map(item => ({ id: item.id, kind: item.kind, x: screenX(item.worldX), y: item.y, size: item.size, vx: item.vx, vy: item.vy, tag: item.tag })),
       activeEntities: entities.filter(item => item.alive).length, measuredAt: now };
   }
@@ -113,7 +119,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     let latest: { value: number; order: number } | undefined;
     for (const writes of parameterWrites.values()) { const write = writes.get(key); if (write && (!latest || write.order > latest.order)) latest = write; }
     parameters[key] = latest?.value ?? defaults[key];
-    player.maxHearts = parameters.maxHearts;
+    if (key === 'maxHearts') { player.maxHearts = parameters.maxHearts; player.hearts = clamp(player.hearts, 0, player.maxHearts); }
   }
   function recomputeWeather() {
     const latest = [...weatherWrites.values()].sort((a, b) => b.order - a.order)[0];
@@ -151,7 +157,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       const item = entities.find(entity => entity.alive && entity.id === name);
       if (!item) return;
       if (action.type === 'removeEntity') { item.alive = false; item.sprite?.destroy(); }
-      else if (action.type === 'moveEntity' && finite(second) && finite(third)) { item.worldX = worldX(clamp(second, 0, 1400)); item.y = clamp(third, 0, HEIGHT); }
+      else if (action.type === 'moveEntity' && finite(second) && finite(third)) { item.worldX = worldX(clamp(second, 0, 1400)); item.y = clamp(third, 0, HEIGHT); if (item.flightY !== undefined) item.flightY = item.y; }
       else if (action.type === 'setVelocity' && finite(second) && finite(third)) { item.vx = clamp(second, -300, 300); item.vy = clamp(third, -300, 300); }
       else if (action.type === 'setSize' && finite(second)) { item.size = clamp(second, .5, 2.5); item.sprite?.setScale(item.size); }
       else if (action.type === 'setTag' && typeof second === 'string') item.tag = second.slice(0, 24);
@@ -201,8 +207,8 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       this.fox = this.add.image(FOX_X, player.y, 'lantern-fox-run').setDepth(4).setDisplaySize(116, 103);
       const style = { fontFamily: 'Inter, Arial', fontSize: '27px', color: '#f4f1ff', fontStyle: 'bold', stroke: '#192039', strokeThickness: 5 };
       this.hudCount = this.add.text(26, 18, '', style).setDepth(10);
-      this.hudDistance = this.add.text(168, 18, '', style).setDepth(10);
-      this.hudHearts = this.add.text(340, 18, '', { ...style, color: '#ff5a6e' }).setDepth(10);
+      this.hudDistance = this.add.text(120, 18, '', style).setDepth(10);
+      this.hudHearts = this.add.text(245, 18, '', { ...style, color: '#ff5a6e' }).setDepth(10);
       this.applyHudSize();
       this.banner = this.add.text(WIDTH / 2, 186, '', { ...style, fontSize: '25px', color: '#ffe1a7' }).setOrigin(.5).setDepth(10);
       const backing = this.add.rectangle(0, 0, 440, 210, 0x141a32, .94).setStrokeStyle(3, 0xf2a25a);
@@ -237,13 +243,11 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       for (let i = particles.length - 1; i >= 0; i--) if (particles[i].life <= 0) particles.splice(i, 1);
       run.speed = clamp(parameters.runSpeed + (run.distance / 1000) * 35 * parameters.speedRamp, 120, 600);
       distancePx += run.speed * dt; run.distance = Math.floor(distancePx / 10);
-      const priorMilestone = Math.floor((distancePx - run.speed * dt) / 1000);
-      if (Math.floor(distancePx / 1000) > priorMilestone) emit({ type: 'milestone', meters: Math.floor(distancePx / 1000) * 100 });
+      while (lastMilestone + 100 <= run.distance) { lastMilestone += 100; emit({ type: 'milestone', meters: lastMilestone }); }
       ensureWorld();
-      if (jumpHeld && player.vy < 0 && jumpLift < .16) { player.vy -= 450 * dt; jumpLift += dt; }
       const previousFeet = player.y + 38;
-      player.vy = clamp(player.vy + parameters.gravity * dt, -1200, player.powerUps.includes('glider') ? 280 : 1800);
-      player.y += player.vy * dt;
+      const flight = advanceFoxFlight({ y: player.y, vy: player.vy, jumpLift }, dt, parameters.gravity, jumpHeld, player.powerUps.includes('glider'));
+      player.y = flight.y; player.vy = flight.vy; jumpLift = flight.jumpLift;
       const at = distancePx + FOX_X;
       const ground = spans.some(span => at >= span.from && at <= span.to);
       const landingLedge = entities.find(item => item.alive && item.kind === 'ledge' && Math.abs(item.worldX - at) < 65 && previousFeet <= item.y - 16 && player.y + 38 >= item.y - 16 && player.vy >= 0);
@@ -251,20 +255,27 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       if (landing !== undefined && previousFeet <= landing + 8 && player.y + 38 >= landing && player.vy >= 0) {
         const wasGrounded = player.grounded; player.y = landing - 38; player.vy = 0; player.grounded = true; player.jumpsLeft = parameters.maxJumps;
         if (!wasGrounded) { audio.play('land'); emit({ type: 'land', x: player.x, y: player.y, on: landingLedge ? 'ledge' : 'ground' }); }
+        if (ground) fallTarget = undefined;
       } else player.grounded = false;
+      if (!ground && fallTarget === undefined && player.y + 38 >= GROUND) fallTarget = spans.find(span => span.from > at)?.from;
       if (player.y > HEIGHT + 40) {
         hurt('pit');
-        const next = spans.find(span => span.from > at) ?? spans.at(-1)!;
-        distancePx = Math.max(distancePx, next.from - FOX_X + 45);
+        const next = spans.find(span => span.from === fallTarget) ?? spans.find(span => span.from > at) ?? spans.at(-1)!;
+        if (at < next.from || at > next.to - 20) distancePx = next.from - FOX_X + 45;
+        run.distance = Math.floor(distancePx / 10);
+        while (lastMilestone + 100 <= run.distance) { lastMilestone += 100; emit({ type: 'milestone', meters: lastMilestone }); }
+        fallTarget = undefined;
         player.y = GROUND - 80; player.vy = 0; player.grounded = false; invulnerable = Math.max(invulnerable, 1.2);
       }
       for (const item of entities) {
         if (!item.alive) continue;
-        item.worldX += item.vx * dt; item.y += item.vy * dt;
+        item.worldX += item.vx * dt;
+        if (item.flightY !== undefined) { item.flightY += item.vy * dt; item.y = owlFlightY(item.flightY, elapsed, item.flightPhase ?? 0); }
+        else item.y += item.vy * dt;
         const x = screenX(item.worldX);
         if (item.kind === 'pinecone' && item.vy === 0) item.vy = 220;
         if (player.powerUps.includes('magnet') && item.kind === 'firefly' && Math.abs(x - FOX_X) < 180) item.worldX -= Math.sign(x - FOX_X) * 300 * dt;
-        if (x < -140) { item.alive = false; item.sprite?.destroy(); continue; }
+        if (x < -140 || x > WIDTH + 300) { item.alive = false; item.sprite?.destroy(); continue; }
         if (Math.abs(x - FOX_X) > 49 || Math.abs(item.y - player.y) > (item.kind === 'owl' ? 55 : 48)) continue;
         if (item.kind === 'firefly' || item.kind === 'acorn') {
           item.alive = false; item.sprite?.destroy(); const value = item.kind === 'acorn' ? 5 : parameters.fireflyValue;
@@ -322,7 +333,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       const pose = runOver > 0 || invulnerable > 0 && player.hearts < player.maxHearts && frame % 8 < 4 ? 'hurt' : player.grounded ? 'run' : player.vy < 0 ? 'jump' : 'fall';
       this.fox.setTexture(`lantern-fox-${pose}`).setPosition(FOX_X, player.y + (pose === 'run' ? Math.sin(elapsed * 13) * 2 : 0));
       this.hudCount.setText(`✦ ${run.fireflies}`); this.hudDistance.setText(`${run.distance} m`);
-      this.hudHearts.setText(`${'♥'.repeat(player.hearts)}${'♡'.repeat(player.maxHearts - player.hearts)}`);
+      this.hudHearts.setText(`${'♥'.repeat(clamp(player.hearts, 0, player.maxHearts))}${'♡'.repeat(Math.max(0, player.maxHearts - player.hearts))}`);
       this.banner.setText(messageLife > 0 ? message : '');
       this.card.setVisible(runOver > 0);
       if (runOver > 0) {
@@ -335,6 +346,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       const size = settings.hudSize === 'large' ? 34 : settings.hudSize === 'small' ? 22 : 27;
       for (const label of [this.hudCount, this.hudDistance, this.hudHearts]) label.setFontSize(size);
     }
+    hudBounds() { return [this.hudCount, this.hudDistance, this.hudHearts].map(label => { const { x, y, width, height } = label.getBounds(); return { x, y, width, height }; }); }
   }
 
   const phaser = new Phaser.Game({ type: Phaser.AUTO, width: WIDTH, height: HEIGHT, parent, backgroundColor: '#1f2b5c', scene: LanternScene, scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH } });

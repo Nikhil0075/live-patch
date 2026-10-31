@@ -37,9 +37,10 @@ export class SettingsStore {
     if (fs.existsSync(file)) try { input = JSON.parse(fs.readFileSync(file, 'utf8')) as typeof input; } catch { /* restore safe defaults */ }
     this.layouts = input.overlayLayouts && typeof input.overlayLayouts === 'object' && !Array.isArray(input.overlayLayouts) ? { ...input.overlayLayouts } : {};
     const migrationKey = options.migrationGameKey ?? this.gameKey;
-    if (Array.isArray(input.overlayWidgets) && !this.layouts[migrationKey]) {
+    if (!Object.hasOwn(input, 'overlayLayouts') && Array.isArray(input.overlayWidgets) && !this.layouts[migrationKey]) {
       this.layouts[migrationKey] = input.overlayWidgets;
-      fs.writeFileSync(file, JSON.stringify({ ...input, overlayLayouts: this.layouts }, null, 2), { mode: 0o600 });
+      const { overlayWidgets: _legacy, ...saved } = input;
+      fs.writeFileSync(file, JSON.stringify({ ...saved, overlayLayouts: this.layouts }, null, 2), { mode: 0o600 });
     }
     this.settings = this.normalize({ ...input, overlayWidgets: this.layouts[this.gameKey] ?? this.defaultLayout });
   }
@@ -49,7 +50,8 @@ export class SettingsStore {
     if (input.overlayWidgets) this.layouts[this.gameKey] = this.settings.overlayWidgets;
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     const temp = `${this.file}.${process.pid}.tmp`;
-    fs.writeFileSync(temp, JSON.stringify({ ...this.settings, overlayLayouts: this.layouts }, null, 2), { mode: 0o600 });
+    const { overlayWidgets: _active, ...globalSettings } = this.settings;
+    fs.writeFileSync(temp, JSON.stringify({ ...globalSettings, overlayLayouts: this.layouts }, null, 2), { mode: 0o600 });
     fs.renameSync(temp, this.file);
     return this.snapshot();
   }

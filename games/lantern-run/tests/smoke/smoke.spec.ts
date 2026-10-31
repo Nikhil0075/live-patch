@@ -69,6 +69,36 @@ test('rollback removes a patch’s weather, power-up, parameter and entities but
   expect(after.run.distance).toBeGreaterThanOrEqual(before.run.distance);
 });
 
+test('removing a five-heart module clamps hearts and keeps the frame loop alive', async ({ page }) => {
+  await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
+  await load(page, 'more-hearts.js', "export const meta={id:'more-hearts',title:'More Hearts',author:'test',description:'Raise the cap'}; export function onStart(game){game.setParameter('maxHearts',5);game.heal(2)}");
+  await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().player.hearts)).toBe(5);
+  const before = await page.evaluate(() => (window as any).__livePatch.game.snapshot().frame);
+  await page.evaluate(() => (window as any).__livePatch.host.sync([]));
+  await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().frame)).toBeGreaterThan(before + 10);
+  const state = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
+  expect(state.player.hearts).toBeLessThanOrEqual(state.player.maxHearts);
+  expect(state.player.maxHearts).toBe(3);
+});
+
+test('the HUD stays inside its protected stream zone at Large size and five hearts', async ({ page }) => {
+  await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
+  await page.evaluate(async () => {
+    const game = (window as any).__livePatch.game;
+    game.apply({ type: 'setParameter', args: ['maxHearts', 5] }, 'probe');
+    game.apply({ type: 'heal', args: [2] }, 'probe');
+    game.configure({ ...await fetch('/api/settings').then(response => response.json()), hudSize: 'large' });
+  });
+  const state = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
+  const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'live-patch.json'), 'utf8'));
+  const zone = manifest.overlay.keepClear.find((item: any) => item.label === 'Game HUD');
+  for (const bound of state.hudBounds) {
+    expect(bound.x * 1920 / 1152).toBeGreaterThanOrEqual(zone.x);
+    expect((bound.x + bound.width) * 1920 / 1152).toBeLessThanOrEqual(zone.x + zone.width);
+    expect((bound.y + bound.height) * 1080 / 648).toBeLessThanOrEqual(zone.y + zone.height);
+  }
+});
+
 test('entity caps and out-of-range actions stay bounded', async ({ page }) => {
   await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
   await page.evaluate(() => {
@@ -95,6 +125,35 @@ test('a ledge landing and a pit fall both reach mutation hooks', async ({ page }
   await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().player.y), { timeout: 3000 }).toBeLessThan(518);
   const state = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
   expect(state.player.hearts).toBe(2);
+});
+
+test('a pit fall recovers on the next ground and emits every crossed milestone', async ({ page }) => {
+  test.setTimeout(35_000);
+  await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
+  await page.evaluate(() => {
+    const { game, host } = (window as any).__livePatch;
+    const trace = { milestones: [] as number[], falls: 0, maxJump: 0, prior: 0, recovered: false };
+    (window as any).__fallTrace = trace;
+    const original = host.emit.bind(host);
+    host.emit = (event: any) => {
+      if (event.type === 'milestone') trace.milestones.push(event.meters);
+      if (event.type === 'fall') trace.falls++;
+      original(event);
+    };
+    window.setInterval(() => {
+      const state = game.snapshot();
+      if (trace.prior) trace.maxJump = Math.max(trace.maxJump, state.run.distance - trace.prior);
+      trace.prior = state.run.distance;
+      if (trace.falls && state.groundUnderFox && state.player.y < 518) trace.recovered = true;
+    }, 16);
+    game.apply({ type: 'setParameter', args: ['runSpeed', 600] }, 'probe');
+  });
+  await expect.poll(() => page.evaluate(() => (window as any).__fallTrace.falls), { timeout: 22_000 }).toBeGreaterThan(0);
+  await expect.poll(() => page.evaluate(() => (window as any).__fallTrace.recovered), { timeout: 4000 }).toBe(true);
+  await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().run.distance), { timeout: 8000 }).toBeGreaterThan(300);
+  const trace = await page.evaluate(() => (window as any).__fallTrace);
+  expect(trace.maxJump).toBeLessThan(30);
+  expect(trace.milestones.slice(0, 3)).toEqual([100, 200, 300]);
 });
 
 test('three hits show run over, then a new run starts after two seconds', async ({ page }) => {

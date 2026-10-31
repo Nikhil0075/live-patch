@@ -22,10 +22,16 @@ const arenaZones = [...keepClearZones, ...arenaOverlay.keepClear];
 const arenaSettings = { defaultLayout: arenaOverlay.defaultLayout, keepClear: arenaOverlay.keepClear };
 it('documents the actual mutation load deadline for live Codex', () => {
   const host = fs.readFileSync(path.resolve('engine/mutation/host.ts'), 'utf8');
-  const api = fs.readFileSync(path.resolve('games/arena-survivor/docs/mutation-api.md'), 'utf8');
   const deadline = Number(/LOAD_DEADLINE_MS = (\d+)/.exec(host)?.[1]);
   expect(deadline).toBeGreaterThan(0);
-  expect(api).toContain(`Each load has a ${deadline / 1000} second deadline`);
+  for (const game of fs.readdirSync(path.resolve('games'), { withFileTypes: true }).filter(entry => entry.isDirectory())) {
+    const directory = path.resolve('games', game.name);
+    const manifestFile = path.join(directory, 'live-patch.json');
+    if (!fs.existsSync(manifestFile)) continue;
+    const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8')) as { apiDocs: string };
+    const api = fs.readFileSync(path.join(directory, manifest.apiDocs), 'utf8');
+    expect(api, `${game.name} API load deadline`).toContain(`Each load has a ${deadline / 1000} second deadline`);
+  }
 });
 function token(name: string) { return new RegExp(`--${name}:\\s*(#[0-9a-f]{6})`, 'i').exec(css)?.[1] ?? ''; }
 function light(hex: string) {

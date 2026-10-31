@@ -24,7 +24,7 @@
   ],
   "overlay": {
     "keepClear": [
-      { "label": "Game HUD", "x": 0, "y": 0, "width": 460, "height": 130 },
+      { "label": "Game HUD", "x": 0, "y": 0, "width": 670, "height": 130 },
       { "label": "Run lane", "x": 420, "y": 500, "width": 1500, "height": 364 }
     ],
     "defaultLayout": [

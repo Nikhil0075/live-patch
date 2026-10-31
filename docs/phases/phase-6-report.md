@@ -87,6 +87,7 @@ All rectangles below are `(x,y,width,height)` in a 1920×1080 capture. The engin
 - Step 6, clean clone at `D:\twitchconXcodex\phase6-clean-clone-20261101` (deleted): `npm ci` added 49 packages, 0 vulnerabilities; `npm test` passed 100 unit (4 opt-in skipped), 30 studio, 35 Arena (1 optional WebGL skipped), 20 Lantern and HTTPS/HTTP2; `npm run build` passed; `npm audit --audit-level=high` found 0 vulnerabilities. `Test-Path ...\builds` was `False` both before and after `npm test`.
 - Step 6, live verification: `node scripts/verify-phase6-live.mjs` on the `D:` verification clone returned `SUMMARY: 3/3 shipped` and exit 0. The three `durationMs` values and mutation filenames are in the table above. The temporary clone was deleted.
 - Spec copy: a normalized text comparison of `docs/phases/phase-6.md` with the plan's `## Spec` section printed `Spec unchanged: true`.
+- Round 1 functional fixes: `npm test` passed 103 unit (4 opt-in skipped), 30 studio, 35 Arena (1 optional WebGL skipped), 23 Lantern, and HTTPS/HTTP2; the test runner reported no `builds/` change.
 
 ## Exit criteria
 
@@ -123,6 +124,21 @@ The unquoted English word `log` occurs only as a generic chat ARIA role and Wind
 ## Known gaps / risks
 
 - The sandbox permits temp-to-temp writes on this Windows account, so an isolated verification clone under `%TEMP%` fails the preflight even though the normal `D:` project location passes. Keep future verification clones on a protected project drive. The three real builds ran only after the probe passed.
-- The four captures are representative local states. The evolved image does not prove a live Codex patch shipped; criterion 6 remains open.
+- The four captures are representative local states. The evolved image does not itself prove a live Codex patch shipped; the separate three-build verification above does.
 
 ## Review responses
+
+## Round 1 responses
+
+- **P6-R1-01 — Fixed.** Recomputing `maxHearts` clamps current hearts, and HUD rendering bounds the count; the five-heart removal browser test checks that frames continue.
+- **P6-R1-02 — Fixed.** The Library switch waits for the restarted overlay server and gives navigation 30 seconds; the focused switch test passes.
+- **P6-R1-03 — Fixed.** Legacy layouts migrate only when `overlayLayouts` is absent, and new saves omit top-level `overlayWidgets`; the fresh Lantern save → Arena test passes.
+- **P6-R1-04 — Fixed.** The HUD row is compact and the protected zone is widened without reaching the toast; the Large five-heart bounds browser test passes. The icon HUD follows in the visual commit.
+- **P6-R1-05 — Fixed.** A fall records the ground immediately following its gap, and a milestone loop emits every crossed 100 m mark; the fall recovery browser test passes.
+- **P6-R1-06 — Fixed.** Generated owls travel toward the fox and bob at three seeded heights; the 250-seed height and motion test passes, and the API doc states the path.
+- **P6-R1-07 — Fixed.** The fairness test uses the same extracted flight step as the game to check held jumps across 250 seeds, gap clearance, ledge height and obstacle spacing.
+- **P6-R1-08 — In progress.** The visual and animation overhaul is the next commit in this round.
+- **P6-R1-09 — In progress.** The portrait OpenArt cover is the third commit in this round.
+- **P6-R1-10 — Fixed.** Lantern's API doc states the three-second load deadline; the doc test now checks every built-in game.
+- **P6-R1-11 — Fixed.** The stale criterion 6 sentence above now points to the separate three-build evidence.
+- **P6-R1-12 — Fixed.** Entities far beyond the right edge release their cap slots; the crowded browser test remains the guard.
