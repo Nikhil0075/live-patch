@@ -8,13 +8,15 @@ const root = document.querySelector<HTMLDivElement>('#control')!;
 root.innerHTML = `<main class="go-live-dashboard"><div class="live-status"><strong id="round">Loading round…</strong><span id="twitch-pill">Twitch checking…</span><span id="codex-pill">Codex checking…</span><span id="overlay-pill">Overlay ready</span><span id="sound-pill">Sound checking…</span></div><div class="layout-presets"><label>Layout <select id="layout-preset"><option value="default">Default</option><option value="chat-focus">Chat focus</option></select></label><span>Drag panels to reorder; use the controls in each panel. <a href="#overlay-editor">Customize OBS overlay ↓</a></span></div><div class="dashboard-panels" id="dashboard-panels">
 <section class="live-card panel-preview" data-panel="preview"><div class="live-card-heading"><h3>Stream preview</h3></div><div class="game-preview"><p id="preview-placeholder">Open Play to mirror the real game here. No second game is running.</p><canvas id="play-mirror" width="480" height="270" hidden aria-label="Mirror of the Play window"></canvas><iframe id="overlay-mirror" src="/overlay.html" title="OBS overlay preview" tabindex="-1" aria-hidden="true"></iframe></div><p class="hint">This mirrors the real Play window with the OBS overlay. It runs no second game.</p></section>
 <section class="live-card panel-round" data-panel="round"><div class="live-card-heading"><h3>Round and ballot</h3><span id="ballot-total"></span></div><p id="timing-hint" class="hint"></p><div id="candidates"></div><h4>Pitch queue <span id="pitch-count"></span></h4><p class="muted">Oldest pending pitches enter the ballot first.</p><div id="pitch-queue"></div><div id="triage-preview"></div><button data-action="triage" title="Shortcut T">Preview AI triage · T</button></section>
-<section class="live-card panel-chat" data-panel="chat"><div class="live-card-heading"><h3>Recent chat</h3></div><div id="chat-strip"></div></section>
+<section class="live-card panel-chat" data-panel="chat"><div class="live-card-heading"><h3>Recent chat</h3></div><div id="chat-strip" role="log" aria-live="polite"></div></section>
 <section class="live-card panel-actions" data-panel="actions"><div class="live-card-heading"><h3>Quick actions</h3></div><div class="quick-tiles"><button data-action="pause" title="Shortcut P">Pause round · P</button><button data-action="resume" title="Shortcut R">Resume round · R</button><button data-action="advance" title="Shortcut N">Next stage · N</button><button data-action="rollback" class="danger">Roll back latest</button><button data-action="save">Save build</button><button data-action="bet-start">Open prediction</button><button data-action="force-next" class="danger">Cancel build</button></div><p id="rollback-vote" class="hint"></p></section>
 <section class="live-card panel-activity" data-panel="activity"><div class="live-card-heading"><h3>Activity feed</h3></div><div id="activity-feed"></div><h4>Reward redemptions</h4><div id="refunds"></div><h4>Points prediction</h4><div id="prediction"></div></section>
 <section class="live-card panel-codex" data-panel="codex"><div class="live-card-heading"><h3>Codex at work</h3></div><div id="runs"></div></section>
 <section class="live-card panel-patches" data-panel="patches"><div class="live-card-heading"><h3>Active patches</h3><span id="patch-count"></span></div><div id="patches"></div><h4>Saved builds</h4><div id="builds"></div></section>
 </div><p id="notice" role="status"></p></main>`;
 const panels = root.querySelector<HTMLElement>('#dashboard-panels')!;
+const browserNotice = document.createElement('p'); browserNotice.id = 'browser-preflight-notice'; browserNotice.className = 'setup-warning'; browserNotice.hidden = true;
+root.querySelector('.live-status')!.after(browserNotice);
 const roundClockCard = document.createElement('div'); roundClockCard.className = 'round-clock-card'; roundClockCard.innerHTML = '<strong id="round-phase">PITCH</strong><b id="round-timer">—</b><small>Chat decides what ships next.</small>';
 root.querySelector('.panel-round .live-card-heading')!.after(roundClockCard);
 const removeDemos = document.createElement('button'); removeDemos.textContent = 'Remove demo patches'; removeDemos.dataset.action = 'remove-demo'; removeDemos.className = 'secondary';
@@ -71,7 +73,7 @@ async function action(name: string, ideaId?: string) {
     const response = await fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: name, ideaId: ideaId ?? (name === 'bet-start' ? currentCandidateId : undefined) }) });
     const data = await response.json() as { error?: string; message?: string; id?: string; applied?: number; preview?: unknown[] };
     const successWords: Record<string, string> = { advance: 'Round moved to the next stage', pause: 'Round paused', resume: 'Round resumed', rollback: 'Latest patch rolled back', 'force-next': 'Build cancelled; next round started' };
-    notify(response.ok ? (data.message ?? (data.id ? `Saved build ${data.id}` : data.preview ? `Review ${data.preview.length} AI suggestion(s) below` : data.applied !== undefined ? `AI triage updated ${data.applied} pitch(es)` : successWords[name] ?? `${name} complete`)) : (data.error ?? data.message ?? `HTTP ${response.status}`));
+    notify(response.ok ? (name === 'reject' && ideaId ? `rejected idea ${ideaId}` : data.message ?? (data.id ? `Saved build ${data.id}` : data.preview ? `Review ${data.preview.length} AI suggestion(s) below` : data.applied !== undefined ? `AI triage updated ${data.applied} pitch(es)` : successWords[name] ?? `${name} complete`)) : (data.error ?? data.message ?? `HTTP ${response.status}`));
     await refresh();
   } catch (error) { notify(String(error)); }
 }
@@ -90,15 +92,19 @@ window.addEventListener('keydown', event => {
 
 async function refresh() {
   try {
-    const [data, twitch, chat, saved, refundData, betData] = await Promise.all([
+    const [data, twitch, chat, saved, refundData, betData, setup] = await Promise.all([
       dashboardData(),
       fetch('/api/twitch/status').then(response => response.json()) as Promise<{ broadcaster: { login: string } | null; bot: { login: string } | null; eventsub: string; authIssue?: string; reward?: { state: string; reason: string }; refundIssue?: string }>,
       fetch('/api/chat/recent').then(response => response.json()) as Promise<{ messages: { at: string; author: string; text: string }[] }>,
       fetch('/api/builds').then(response => response.json()) as Promise<{ builds: { id: string; patches: unknown[]; createdAt?: string }[] }>,
       fetch('/api/twitch/refunds').then(response => response.json()) as Promise<{ refunds: { redemptionId: string; action?: 'refund' | 'fulfill'; status: string; message: string; updatedAt?: string }[] }>,
-      fetch('/api/predictions').then(response => response.json()) as Promise<{ active?: { ideaId: string; status: string; error?: string; createdAt?: string } }>
+      fetch('/api/predictions').then(response => response.json()) as Promise<{ active?: { ideaId: string; status: string; error?: string; createdAt?: string } }>,
+      fetch('/api/setup').then(response => response.json()) as Promise<{ checks: { id: string; state: string; reason: string }[] }>
     ]);
     const { round, runs, mutations, ideas, rollbackVote, events, settings } = data;
+    const browser = setup.checks.find(check => check.id === 'browser');
+    browserNotice.hidden = browser?.state !== 'Needs action';
+    browserNotice.textContent = browserNotice.hidden ? '' : `Test browser needs attention: ${browser?.reason} Open Setup to repair it before approving a patch.`;
     rewardIdeaIds = new Set(ideas.filter(idea => idea.source === 'reward').map(idea => idea.id));
     currentCandidateId = round.candidates[0]?.id;
     root.querySelector('#rollback-vote')!.textContent = rollbackVote
@@ -160,7 +166,6 @@ async function refresh() {
         const approve = document.createElement('button'); approve.textContent = 'Approve'; approve.dataset.action = 'approve'; approve.dataset.ideaId = idea.id; buttons.append(approve);
         const more = document.createElement('details'); more.className = 'ballot-more'; const moreLabel = document.createElement('summary'); moreLabel.textContent = 'More actions'; more.append(moreLabel);
         if (!betData.active) { const bet = document.createElement('button'); bet.textContent = 'Open points prediction'; bet.dataset.action = 'bet-start'; bet.dataset.ideaId = idea.id; more.append(bet); }
-        const menuReject = document.createElement('button'); menuReject.textContent = 'Reject'; menuReject.dataset.action = 'reject'; menuReject.dataset.ideaId = idea.id; more.append(menuReject);
         more.open = openMenus.has(idea.id); buttons.append(more);
       }
       const reject = document.createElement('button'); reject.textContent = 'Reject'; reject.dataset.action = 'reject'; reject.dataset.ideaId = idea.id; buttons.append(reject);
@@ -210,9 +215,14 @@ async function refresh() {
     const builds = root.querySelector<HTMLElement>('#builds')!; builds.replaceChildren();
     if (!saved.builds.length) appendText(builds, 'p', 'No saved builds. Use Save build and patch notes after a patch ships.', 'empty-state');
     for (const build of saved.builds.slice(0, 3)) appendText(builds, 'p', `${build.id} · ${build.patches.length} patch(es)`);
-    const strip = root.querySelector<HTMLElement>('#chat-strip')!; strip.replaceChildren();
+    const strip = root.querySelector<HTMLElement>('#chat-strip')!;
+    const scrollTop = strip.scrollTop;
+    const nearBottom = strip.scrollHeight - strip.clientHeight - scrollTop < 28;
+    const signature = JSON.stringify(chat.messages);
+    if (strip.dataset.signature !== signature) { strip.dataset.signature = signature; strip.replaceChildren();
     if (!chat.messages.length) appendText(strip, 'p', 'Recent viewer chat appears here once a message arrives.', 'empty-state');
     for (const message of chat.messages) { const line = document.createElement('p'); const time = document.createElement('time'); time.textContent = new Date(message.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); line.append(time); appendText(line, 'strong', `${message.author}: `); const command = /^!\w+/.exec(message.text); if (command) { appendText(line, 'b', command[0], 'chat-command'); appendText(line, 'span', message.text.slice(command[0].length)); } else appendText(line, 'span', message.text); strip.append(line); }
+    strip.scrollTop = nearBottom ? strip.scrollHeight : scrollTop; }
     const activity: { at: string; text: string }[] = [];
     for (const idea of ideas) {
       if (idea.createdAt) activity.push({ at: idea.createdAt, text: `${idea.source === 'reward' ? 'Reward redemption' : 'Pitch'} · @${idea.authorName}: ${idea.text}` });

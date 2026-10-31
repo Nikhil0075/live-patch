@@ -58,7 +58,17 @@
 #control #chat-strip{display:block;max-height:350px;overflow:auto}
 #control #chat-strip p{margin:0 0 6px;background:#242429;border-radius:4px}
 #control #chat-strip strong{color:var(--accent-text)}
-#control #chat-strip p{display:flex;gap:6px;align-items:baseline}#control #chat-strip p:nth-child(3n) strong{color:#68b5ff}#control #chat-strip p:nth-child(3n+1) strong{color:#82de95}#control #chat-strip time{color:#9b9ba5;white-space:nowrap}#control .chat-command{background:#4b2b68;color:#e9d2ff;padding:2px 4px;border-radius:3px}
+#control #chat-strip p{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;overflow-wrap:anywhere}#control #chat-strip p:nth-child(3n) strong{color:#68b5ff}#control #chat-strip p:nth-child(3n+1) strong{color:#82de95}#control #chat-strip time{color:#9b9ba5;white-space:nowrap}#control #chat-strip span{min-width:0;overflow-wrap:anywhere}#control .chat-command{background:#4b2b68;color:#e9d2ff;padding:2px 4px;border-radius:3px}
+#control #browser-preflight-notice{margin:0 0 10px;padding:10px 12px;border:1px solid #d69a4f;background:#39291d;color:#ffe0ae}
+#control .dashboard-panels *{scrollbar-width:thin;scrollbar-color:#6b3ca1 #24212d}
+#control .dashboard-panels *::-webkit-scrollbar{width:8px;height:8px}
+#control .dashboard-panels *::-webkit-scrollbar-track{background:#24212d}
+#control .dashboard-panels *::-webkit-scrollbar-thumb{background:#6b3ca1;border-radius:8px}
+#control .panel-actions{overflow:visible!important}
+#control .panel-patches{display:flex;flex-direction:column}
+#control .panel-patches #patches{overflow:auto;min-height:0;flex:1}
+#control .panel-patches #builds{max-height:42px;overflow:auto}
+#control .panel-patches [data-action=remove-demo]{flex:none;align-self:flex-start;margin-top:5px}
 #control .timeline-step{background:#242429;border-color:#6a478f;color:#dad3e2}
 #control .timeline-step.complete{border-color:#9146ff;color:#fff}
 #control .timeline-step{display:grid;grid-template-columns:30px 1fr auto;align-items:center;gap:8px;border-left:0;border-bottom:1px solid #3b3643;background:none}.timeline-symbol{display:grid;place-items:center;width:26px;height:26px;border:2px solid #6d6675;border-radius:50%;font-size:16px}.timeline-step.complete .timeline-symbol{border-color:#5fdba5;color:#5fdba5}.timeline-step small{padding:3px 6px;border:1px solid #4a4550;border-radius:4px;color:#bdb7c7}.timeline-step.complete small{border-color:#2c704c;color:#68da96}
@@ -81,8 +91,8 @@
   #control .dashboard-panels>.panel-actions,#control .dashboard-panels>.panel-activity,#control .dashboard-panels>.panel-codex,#control .dashboard-panels>.panel-patches{grid-column:span 3}
   #control .game-preview{margin:0;max-height:340px}
   #control .panel-preview>.hint{display:none}
-  #control .quick-tiles{grid-template-columns:repeat(3,minmax(0,1fr))}
-  #control .quick-tiles button{min-height:56px;display:flex;place-items:center;text-align:center;font-size:12px}
+  #control .quick-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #control .quick-tiles button{min-height:56px;font-size:12px}
   #control .ballot-item{padding:8px;margin:5px 0}
   #control .round-clock-card{padding-bottom:8px;margin-bottom:8px}
   #control .round-clock-card b{font-size:48px}
@@ -94,7 +104,13 @@
   .app-content:has(#control){padding-top:16px;padding-bottom:48px}
   .app-content:has(#control) .app-top{margin-bottom:14px}
   .app-content:has(#control) .page-heading{margin-bottom:8px}
-  #control .dashboard-panels>.panel-preview,#control .dashboard-panels>.panel-round,#control .dashboard-panels>.panel-chat{height:476px}
   #control .dashboard-panels>.live-card{height:275px}
   #control .dashboard-panels>.panel-preview,#control .dashboard-panels>.panel-round,#control .dashboard-panels>.panel-chat{height:476px}
 }
+#control .quick-tiles button{display:grid;grid-template-columns:30px minmax(0,1fr);align-items:center;gap:8px;min-width:0;padding:8px;text-align:left;white-space:normal;overflow-wrap:normal;word-break:normal;line-height:1.2}
+#control .quick-tiles button:before{grid-column:1;text-align:center}
+@container (max-width:360px){#control .quick-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+#control .panel-actions{container-type:inline-size}
+#control .dashboard-panels>.panel-actions{height:auto;min-height:275px;overflow:visible}
+#control .quick-tiles button{min-height:45px}
+@media(min-width:1500px){.app-content:has(#control){padding-bottom:38px}}

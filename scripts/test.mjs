@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { createServer } from 'vite';
+import { copyTestGame } from './copy-test-game.mjs';
 
 function run(script, args, env = process.env) {
   return new Promise(resolve => {
@@ -44,7 +45,7 @@ fs.mkdirSync(process.env.LIVE_PATCH_DATA_DIR, { recursive: true });
 fs.writeFileSync(path.join(process.env.LIVE_PATCH_DATA_DIR, 'tokens.json'), '{}');
 fs.writeFileSync(path.join(process.env.LIVE_PATCH_DATA_DIR, 'public-probe.txt'), 'safe fixture');
 const isolatedGame = path.join(temp, 'game');
-fs.cpSync(directory, isolatedGame, { recursive: true });
+copyTestGame(root, directory, isolatedGame, manifest.mutationDir, selected, smoke);
 process.env.LIVE_PATCH_GAME = isolatedGame;
 process.env.LIVE_PATCH_HTTP_PORT = String(await freePort());
 process.env.LIVE_PATCH_TEST_SERVER = '1';

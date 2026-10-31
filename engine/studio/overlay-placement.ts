@@ -25,3 +25,19 @@ export function clearPlacement(widget: OverlayWidget): OverlayWidget {
   }
   return result;
 }
+
+export function placeWidget(widget: OverlayWidget, placed: OverlayWidget[]): OverlayWidget {
+  const blocked = [...keepClearZones, ...placed];
+  const maxX = 1920 - widget.width, maxY = 1080 - widget.height;
+  const xs = new Set([widget.x, 0, maxX]);
+  const ys = new Set([widget.y, 0, maxY]);
+  for (const item of blocked) {
+    xs.add(Math.max(0, Math.min(maxX, item.x + item.width)));
+    xs.add(Math.max(0, Math.min(maxX, item.x - widget.width)));
+    ys.add(Math.max(0, Math.min(maxY, item.y + item.height)));
+    ys.add(Math.max(0, Math.min(maxY, item.y - widget.height)));
+  }
+  const candidates = [...xs].flatMap(x => [...ys].map(y => ({ ...widget, x, y })));
+  candidates.sort((a, b) => Math.abs(a.x - widget.x) + Math.abs(a.y - widget.y) - Math.abs(b.x - widget.x) - Math.abs(b.y - widget.y));
+  return candidates.find(candidate => blocked.every(item => !overlaps(candidate, item))) ?? widget;
+}

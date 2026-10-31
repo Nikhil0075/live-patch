@@ -19,6 +19,7 @@ export interface RunRecord {
   error?: string;
   diagnostic?: string;
   failureKind?: 'patch' | 'infrastructure';
+  stopReason?: 'setup' | 'codex_unavailable' | 'timeout' | 'cancelled' | 'other';
 }
 export interface RunnerEvent { runId: string; ideaId: string; type: 'started' | 'sandbox_verified' | 'thread' | 'file' | 'testing' | 'passed' | 'failed' | 'shipped' | 'rolled_back'; at: string; message?: string; threadId?: string }
 

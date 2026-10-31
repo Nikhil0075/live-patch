@@ -116,3 +116,28 @@ The isolated real HTTPS run found another smoke failure: with Play, Codex and sm
 The third run repaired a first smoke rejection before shipping. The isolated clone had no Twitch credentials or operator data; its elevated sandbox self-test passed. The user-visible journey took 104 seconds for run 2 and 178 seconds for run 3, including navigation and the visible Play check.
 
 Final checks: `npm test` passed 85 unit tests (4 opt-in skipped), 60 browser tests (1 opt-in WebGL skipped) and the HTTPS/HTTP2 regression. `npm run build` passed and `npm audit --audit-level=high` found 0 vulnerabilities. No dependencies were added. The operator-only OBS, Twitch and first-time usability checks remain open.
+
+The later operator approval was refused by the new browser preflight. Running `npx playwright install chromium` repaired the operator's local Playwright browser, and builds then shipped. This confirms that the browser installation was missing or broken at that point; it does not prove the exact cause of the earlier intermittent launch error. The isolated verification also had a run that timed out at the former three-minute budget before the three consecutive shipped runs shown above.
+
+## Round 4 responses
+
+- **P55-R4-01 Fixed:** run records now store a stop reason separate from failure kind. Setup, Codex unavailable, timeout and cancellation use distinct truthful chat notices; runner-plus-outcome tests cover cancellation and timeout.
+- **P55-R4-02 Fixed:** saved widget placement now checks other widgets as well as HUD and toast zones; the narrow-ballot migration regression checks that the patch card remains clear.
+- **P55-R4-03 Fixed:** the popup test asserts `locationbar.visible === false`; README explains Chrome's remaining title/address strip and full-screen or OBS crop.
+- **P55-R4-04 Fixed:** the reject browser test now covers approval-stage Reject and a More actions menu kept open through refresh.
+- **P55-R4-05 Fixed:** Go Live displays the cached browser setup check as a persistent notice when it needs action.
+- **P55-R4-06 Fixed:** architecture now states the current 1.8–2.2 second event deadline.
+- **P55-R4-07 Fixed:** the browser probe runs before the build timer, the default budget is four minutes and `LIVE_PATCH_RUN_TIMEOUT_MS` can override it. The earlier three-minute timeout is recorded above.
+- **P55-R4-08 Fixed:** removed the duplicate wide-screen panel-height rule.
+- **P55-R4-09 Fixed:** removed the duplicate approval-stage Reject from More actions and named the rejected idea in the Go Live notice.
+- **P55-R4-10 Deferred:** timeline repair-attempt polish remains for a later UI pass; no phase exit criterion depends on that nit.
+- **P55-R4-11 Fixed:** Quick actions use a consistent icon column and two-column layout, and browser geometry checks tile overflow.
+- **P55-R4-12 Fixed:** dark thin scrollbars, a non-scrolling Quick actions card and an always-visible Remove demo patches button are covered by browser geometry checks.
+- **P55-R4-13 Fixed:** Setup and README link to Twitch app registration, explain 2FA, redirect URI, Confidential client type and credentials; Setup can copy the URI.
+- **P55-R4-14 Fixed:** `npm test` copies only Git-tracked built-in mutations, while smoke and external games retain their active files; a unit regression leaves a shipped demo in the source and checks it is absent from the test copy.
+
+The Go Live Recent chat panel now includes viewer commands such as `!idea` and `!vote`, while game mutation chat still filters commands and bot messages. The panel keeps its scroll position between refreshes and wraps long lines; a browser test covers command display and plain-text rendering.
+
+Round 4 checks: `npm test` passed 88 unit tests (4 opt-in skipped), 62 browser tests (1 opt-in WebGL skipped), and the HTTPS/HTTP2 regression. `npm run build` passed, and `npm audit --audit-level=high` found 0 vulnerabilities. No dependency was added.
+
+The same checks passed in a fresh local clone of commit `6127f4e`. In that clone, the real HTTPS Practice UI shipped one demo file into the working game. A second full `npm test` passed with the demo file still present (88 unit, 62 browser, HTTPS); `npm run build` and the audit passed there as well. Automatic approval review rejected recursive deletion of the disposable verification clone at `C:\Users\ROG\AppData\Local\Temp\live-patch-r4-6127f4e`, so it remains for the operator to remove.

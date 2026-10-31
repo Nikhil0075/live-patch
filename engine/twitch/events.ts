@@ -6,7 +6,7 @@ const string = (value: unknown): string | null => typeof value === 'string' && v
 
 export function forwardToGame(event: Extract<InboundEvent, { kind: 'chat' }>, botId: string | undefined): boolean {
   if (event.origin === 'twitch' && event.viewer.id === botId) return false;
-  return !/^!(?:idea|vote|approve|reject|rollback)(?:\s|$)/i.test(event.text.trim());
+  return !/^!(?:idea|vote|approve|reject|rollback|rollbackvote)(?:\s|$)/i.test(event.text.trim());
 }
 
 export function normalizeEventSub(type: string, messageId: string, raw: unknown, broadcasterId: string): InboundEvent | null {

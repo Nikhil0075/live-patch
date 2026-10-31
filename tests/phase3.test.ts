@@ -219,7 +219,8 @@ describe('Phase 3 runner', () => {
         notifyStarted();
       })
     });
-    const runner = new LiveRunner(root, game, gameManifest, ideas, runs, () => {}, agent, async () => {});
+    const events: RunnerEvent[] = [];
+    const runner = new LiveRunner(root, game, gameManifest, ideas, runs, event => events.push(event), agent, async () => {});
     const first = ideas.add('viewer1', 'Viewer 1', 'Make coins glow', 'chat');
     const second = ideas.add('viewer2', 'Viewer 2', 'Make enemies glow', 'chat');
     const building = runner.enqueue(ideas.setStatus(first.id, 'approved')!);
@@ -229,8 +230,31 @@ describe('Phase 3 runner', () => {
     await Promise.all([building, queued]);
     expect(runs.list().map(run => run.status)).toEqual(['failed', 'failed']);
     expect(runs.list().find(run => run.ideaId === second.id)?.error).toBe('Cancelled by operator');
+    expect(runs.list().every(run => run.stopReason === 'cancelled')).toBe(true);
+    const { handleRunnerOutcome } = await import('../engine/twitch/runner-outcome');
+    const notices: string[] = [];
+    const predictions = { cancel: async () => {}, settle: async () => {} };
+    for (const event of events.filter(event => event.type === 'failed')) await handleRunnerOutcome(event, runs.get(event.runId), predictions, async message => { notices.push(message); });
+    expect(notices).toHaveLength(2);
+    expect(notices.every(message => message.includes('cancelled') && !message.includes('test browser') && !message.includes('still available'))).toBe(true);
     expect(fs.readdirSync(path.join(game, 'mutations'))).toHaveLength(0);
   }));
+
+  it('labels a timed-out build accurately through the runner outcome', async () => fixture(async (root, game, gameManifest, ideas, runs) => {
+    const events: RunnerEvent[] = [];
+    const agent: AgentFactory = (_worktree, signal) => ({ threadId: () => undefined, run: () => new Promise<void>((_resolve, reject) => {
+      if (signal.aborted) { reject(Error('aborted')); return; }
+      signal.addEventListener('abort', () => reject(Error('aborted')), { once: true });
+    }) });
+    const idea = ideas.add('viewer', 'Viewer', 'Make coins glow', 'chat');
+    await new LiveRunner(root, game, gameManifest, ideas, runs, event => events.push(event), agent, async () => {}, 30).enqueue(ideas.setStatus(idea.id, 'approved')!);
+    const record = runs.list()[0];
+    expect(record).toMatchObject({ status: 'failed', stopReason: 'timeout' });
+    const { handleRunnerOutcome } = await import('../engine/twitch/runner-outcome');
+    const notices: string[] = [];
+    await handleRunnerOutcome(events.find(event => event.type === 'failed')!, record, { cancel: async () => {}, settle: async () => {} }, async message => { notices.push(message); });
+    expect(notices).toEqual(['Patch build timed out. No patch shipped.']);
+  }), 30_000);
 
   it('rolls back a shipped patch during a slow build without waiting for the build queue', async () => fixture(async (root, game, gameManifest, ideas, runs) => {
     let notifyStarted!: () => void;

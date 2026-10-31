@@ -12,7 +12,9 @@ import { RunStore, publicFailure, type RunRecord, type RunnerEvent } from './sto
 import { probeBrowser } from '../studio/setup';
 import { codexBinary, disabledMcpConfigAsync, runnerConfig, runnerEnvironment, verifySandbox } from './sandbox';
 
-const RUN_TIMEOUT_MS = 3 * 60_000;
+const configuredTimeout = Number(process.env.LIVE_PATCH_RUN_TIMEOUT_MS);
+const RUN_TIMEOUT_MS = Number.isFinite(configuredTimeout) && configuredTimeout >= 60_000
+  ? Math.min(configuredTimeout, 30 * 60_000) : 4 * 60_000;
 const RUNNER_ROOT_NAME = 'live-patch-runner';
 const execFileAsync = promisify(execFile);
 async function gitAsync(cwd: string, ...args: string[]): Promise<string> {
@@ -131,7 +133,8 @@ export class LiveRunner {
     private runs: RunStore,
     private onEvent: (event: RunnerEvent) => void,
     private agentFactory: AgentFactory = codexAgent,
-    private smokeTest: typeof smoke = smoke
+    private smokeTest: typeof smoke = smoke,
+    private runTimeoutMs: number = RUN_TIMEOUT_MS
   ) {
     const fingerprint = createHash('sha256').update(path.resolve(root)).digest('hex').slice(0, 12);
     this.runnerRoot = path.join(os.tmpdir(), RUNNER_ROOT_NAME, fingerprint);
@@ -210,6 +213,7 @@ export class LiveRunner {
       record.status = 'failed';
       record.error = 'Server restarted during build';
       record.failureKind = 'infrastructure';
+      record.stopReason = 'other';
       record.finishedAt = new Date().toISOString();
       this.runs.upsert(record);
       if (this.ideas.list().find(idea => idea.id === record.ideaId)?.status === 'building') this.ideas.setStatus(record.ideaId, 'failed');
@@ -234,7 +238,7 @@ export class LiveRunner {
     if (epoch !== this.rollbackEpoch) {
       if (this.ideas.list().find(item => item.id === idea.id)?.status === 'approved') {
         const now = new Date().toISOString();
-        const record: RunRecord = { id: randomUUID(), ideaId: idea.id, gameDirectory: this.gameDirectory, status: 'failed', startedAt: now, finishedAt: now, error: this.cancellationReason, failureKind: 'infrastructure' };
+        const record: RunRecord = { id: randomUUID(), ideaId: idea.id, gameDirectory: this.gameDirectory, status: 'failed', startedAt: now, finishedAt: now, error: this.cancellationReason, failureKind: 'infrastructure', stopReason: 'cancelled' };
         this.runs.upsert(record);
         this.ideas.setStatus(idea.id, 'failed');
         this.emit(record, 'failed', record.error);
@@ -252,7 +256,7 @@ export class LiveRunner {
     let failureKind: RunRecord['failureKind'] = 'infrastructure';
     const abort = new AbortController();
     this.activeAbort = abort;
-    const timeout = setTimeout(() => abort.abort('Run timed out after three minutes'), RUN_TIMEOUT_MS);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       const relativeGame = path.relative(this.root, this.gameDirectory);
       if (relativeGame.split(path.sep)[0] === 'builds') throw Error('Saved builds are play-only; return to the original game to build new patches');
@@ -261,6 +265,7 @@ export class LiveRunner {
         const browser = await probeBrowser(this.root);
         if (browser.state !== 'Ready') throw Error(browser.reason);
       }
+      timeout = setTimeout(() => abort.abort(`Run timed out after ${Math.round(this.runTimeoutMs / 60000)} minutes`), this.runTimeoutMs);
       worktree = await this.prepare(id);
       record.branch = worktree.branch; this.runs.upsert(record);
       const filename = `patch-${id.replaceAll('-', '').slice(0, 12)}.js`;
@@ -326,12 +331,17 @@ export class LiveRunner {
       record.status = 'failed';
       record.error = abort.signal.aborted ? String(abort.signal.reason) : String(error).slice(0, 1000);
       record.failureKind = abort.signal.aborted ? 'infrastructure' : failureKind;
+      record.stopReason = abort.signal.aborted
+        ? /timed out/i.test(String(abort.signal.reason)) ? 'timeout' : 'cancelled'
+        : record.failureKind === 'patch' ? undefined
+        : /browserType\.launch|Executable doesn't exist|test browser|playwright|test.server|EADDRINUSE|Sandbox|setup/i.test(record.error) ? 'setup'
+        : /quota|sign.in|login|authentication|Codex unavailable/i.test(record.error) ? 'codex_unavailable' : 'other';
       record.finishedAt = new Date().toISOString();
       this.runs.upsert(record);
       this.ideas.setStatus(idea.id, record.failureKind === 'infrastructure' && !abort.signal.aborted ? 'shortlisted' : 'failed');
       this.emit(record, 'failed', record.error);
     } finally {
-      clearTimeout(timeout);
+      if (timeout) clearTimeout(timeout);
       if (this.activeAbort === abort) this.activeAbort = undefined;
       if (worktree) try { await this.cleanup(worktree.directory); } catch (error) { console.error(`Runner cleanup ${id} failed:`, error); }
       if (record.status === 'failed') {

@@ -104,6 +104,19 @@ describe('first live-stream regressions', () => {
       expect(layout).toMatchObject({ width: 501, height: 700 });
     } finally { fs.rmSync(folder, { recursive: true, force: true }); }
   });
+  it('keeps a migrated narrow ballot clear of the patch card', () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'live-patch-overlap-'));
+    try {
+      const store = new SettingsStore(path.join(folder, 'settings.json'));
+      const widgets = store.update({ overlayWidgets: [
+        { type: 'patches', x: 0, y: 2, width: 420, height: 352 },
+        { type: 'ballot', x: 24, y: 380, width: 501, height: 320 }
+      ] }).overlayWidgets;
+      expect(widgets[1].height).toBe(700);
+      expect(overlaps(widgets[0], widgets[1])).toBe(false);
+      expect(widgets.every(widget => keepClearZones.every(zone => !overlaps(widget, zone)))).toBe(true);
+    } finally { fs.rmSync(folder, { recursive: true, force: true }); }
+  });
   it('identifies the account missing new Twitch scopes without a network call', () => {
     const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'live-patch-old-token-'));
     try {
@@ -131,13 +144,13 @@ describe('first live-stream regressions', () => {
     const calls: string[] = [];
     const predictions = { cancel: async () => { calls.push('cancel'); }, settle: async () => { calls.push('settle'); } };
     const event = { runId: 'run', ideaId: 'idea', type: 'failed', at: new Date().toISOString(), message: "Couldn't start the test browser" } as const;
-    await handleRunnerOutcome(event, 'infrastructure', predictions, async message => { calls.push(message); });
+    await handleRunnerOutcome(event, { failureKind: 'infrastructure', stopReason: 'setup' }, predictions, async message => { calls.push(message); });
     expect(calls).toEqual(['cancel', expect.stringContaining('The idea is still available')]);
   });
   it('still announces the setup problem when Twitch prediction cancellation fails', async () => {
     const notices: string[] = [];
     const event = { runId: 'run', ideaId: 'idea', type: 'failed', at: new Date().toISOString() } as const;
-    await expect(handleRunnerOutcome(event, 'infrastructure', { cancel: async () => { throw Error('Twitch unavailable'); }, settle: async () => {} }, async message => { notices.push(message); })).rejects.toThrow('Twitch unavailable');
+    await expect(handleRunnerOutcome(event, { failureKind: 'infrastructure', stopReason: 'setup' }, { cancel: async () => { throw Error('Twitch unavailable'); }, settle: async () => {} }, async message => { notices.push(message); })).rejects.toThrow('Twitch unavailable');
     expect(notices[0]).toContain('check Setup');
   });
 });

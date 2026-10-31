@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { defaultOverlayWidgets, type OverlayWidget, type StudioSettings } from './settings-defaults';
-import { clearPlacement, minimumWidgetHeight, minimumWidgetSize } from './overlay-placement';
+import { clearPlacement, minimumWidgetHeight, minimumWidgetSize, placeWidget } from './overlay-placement';
 const previousDefaultWidgets: OverlayWidget[] = [
   { type: 'patches', x: 24, y: 120, width: 1080, height: 110 },
   { type: 'codex', x: 1546, y: 165, width: 350, height: 590 },
@@ -44,7 +44,7 @@ export class SettingsStore {
       const [minWidth, minHeight] = minimumWidgetSize[item.type];
       const width = clamp(item.width, 350, minWidth, 1920);
       const height = clamp(item.height, 200, Math.max(minHeight, minimumWidgetHeight(item.type, width)), 1080);
-      overlayWidgets.push(clearPlacement({ type: item.type, width, height, x: clamp(item.x, 0, 0, 1920 - width), y: clamp(item.y, 0, 0, 1080 - height) }));
+      overlayWidgets.push(placeWidget(clearPlacement({ type: item.type, width, height, x: clamp(item.x, 0, 0, 1920 - width), y: clamp(item.y, 0, 0, 1080 - height) }), overlayWidgets));
     }
     return {
       pitchSeconds: clamp(input.pitchSeconds, 60, 15, 600), voteSeconds: clamp(input.voteSeconds, 45, 10, 300),

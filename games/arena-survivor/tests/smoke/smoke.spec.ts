@@ -249,6 +249,7 @@ test('Play opens a reusable popup without browser tab chrome', async ({ page }) 
   try {
     await expect(popup.locator('#status')).toContainText('LIVE');
     expect(await popup.opener()).toBe(page);
+    expect(await popup.evaluate(() => window.locationbar.visible)).toBe(false);
     expect(await popup.evaluate(() => window.outerWidth)).toBeGreaterThan(1000);
     await page.locator('#top-play').click();
     await expect.poll(() => page.context().pages().filter(item => item.url().endsWith('/play')).length).toBe(1);
@@ -299,6 +300,8 @@ test('Go Live can remove Practice demo patches before a stream', async ({ page }
   await page.goto('/?view=go-live');
   const remove = page.getByRole('button', { name: 'Remove demo patches' });
   await expect(remove).toBeVisible();
+  const placement = await remove.evaluate(button => ({ buttonBottom: button.getBoundingClientRect().bottom, panelBottom: button.closest('.panel-patches')!.getBoundingClientRect().bottom }));
+  expect(placement.buttonBottom).toBeLessThanOrEqual(placement.panelBottom);
   page.once('dialog', dialog => void dialog.accept());
   await remove.click();
   await expect(remove).toBeHidden({ timeout: 10_000 });
@@ -336,6 +339,39 @@ test('Go Live rejects pitches and vote candidates and keeps ballot actions open 
   page.once('dialog', dialog => void dialog.accept());
   await candidate.getByRole('button', { name: 'Reject' }).click();
   await expect.poll(() => page.locator('#candidates .ballot-item').count()).toBeLessThan(3);
+  await page.evaluate(() => fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'advance' }) }));
+  await expect(page.locator('#round')).toContainText('APPROVAL');
+  const approval = page.locator('#candidates .ballot-item').first();
+  await approval.getByText('More actions').click();
+  await page.waitForTimeout(2200);
+  await expect(approval.locator('details')).toHaveAttribute('open', '');
+  page.once('dialog', dialog => void dialog.accept());
+  await approval.getByRole('button', { name: 'Reject' }).click();
+  await expect.poll(() => page.locator('#candidates .ballot-item').count()).toBeLessThan(2);
+});
+
+test('Go Live recent chat includes viewer commands and keeps text safely wrapped', async ({ page }) => {
+  await page.goto('/?view=go-live');
+  const text = `!idea chat-panel-${Date.now()} <b>plain text</b>`;
+  await page.evaluate(async message => {
+    await fetch('/api/simulator/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: crypto.randomUUID(), kind: 'chat', viewer: { id: crypto.randomUUID(), login: 'chatviewer', name: 'Chat viewer', moderator: false, broadcaster: false }, text: message }) });
+  }, text);
+  await expect(page.locator('#chat-strip')).toContainText(text);
+  await expect(page.locator('#chat-strip p').last().locator('b')).toHaveText('!idea');
+  expect(await page.locator('#chat-strip img').count()).toBe(0);
+});
+
+test('Go Live quick tiles fit and Setup links to Twitch registration', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto('/?view=go-live');
+  const geometry = await page.locator('.quick-tiles button:visible').evaluateAll(buttons => buttons.map(button => ({ width: button.clientWidth, scrollWidth: button.scrollWidth, height: button.clientHeight, scrollHeight: button.scrollHeight })));
+  expect(geometry.every(tile => tile.scrollWidth <= tile.width + 1 && tile.scrollHeight <= tile.height + 1)).toBe(true);
+  expect(await page.locator('.panel-actions').evaluate(panel => panel.scrollHeight <= panel.clientHeight + 1)).toBe(true);
+  await page.goto('/?view=setup');
+  await page.locator('.setup-step').nth(3).click();
+  await expect(page.locator('a[href="https://dev.twitch.tv/console/apps"]')).toHaveAttribute('target', '_blank');
+  await expect(page.locator('a[href="https://dev.twitch.tv/docs/authentication/register-app/"]')).toHaveAttribute('rel', 'noopener noreferrer');
+  await expect(page.locator('#copy-redirect')).toBeVisible();
 });
 
 test('top bar offers the correct one-click Twitch permission reconnect', async ({ page }) => {
@@ -855,7 +891,7 @@ test('simulator submits ideas and chat through the live game path as plain text'
 });
 
 test('operator controls timed voting and the OBS overlay renders viewer text safely', async ({ page }) => {
-  await page.goto('/control.html');
+  await page.goto('/?view=go-live');
   await expect(page.getByRole('heading', { name: 'Go Live' })).toBeVisible();
   const denied = await page.request.post('/api/control', { headers: { Origin: 'https://outside.example', 'Content-Type': 'application/json' }, data: { action: 'advance' } });
   expect(denied.status()).toBe(403);
@@ -894,7 +930,7 @@ test('operator controls timed voting and the OBS overlay renders viewer text saf
   await page.waitForTimeout(2200);
   await expect(ballot.locator('details')).toHaveAttribute('open', '');
   page.once('dialog', dialog => void dialog.accept());
-  await ballot.locator('details').getByRole('button', { name: 'Reject' }).click();
+  await ballot.locator('.actions > button[data-action="reject"]').click();
   await expect(page.locator('#notice')).toContainText('rejected');
   const runsAfter = await page.evaluate(async () => (await fetch('/api/runs').then(response => response.json())).runs.length as number);
   expect(runsAfter).toBe(runsBefore);

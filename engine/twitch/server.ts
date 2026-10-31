@@ -124,7 +124,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
     server.ws.send({ type: 'custom', event: 'live-patch:runner', data: event });
     if (event.type === 'shipped' || event.type === 'failed') {
       rounds?.runFinished(event.ideaId);
-      void handleRunnerOutcome(event, runs.get(event.runId)?.failureKind, predictions, async message => {
+      void handleRunnerOutcome(event, runs.get(event.runId), predictions, async message => {
         replies.push({ at: new Date().toISOString(), text: message });
         if (auth.identity('bot') && auth.identity('broadcaster')) void auth.helix('bot', 'chat/messages', { broadcaster_id: auth.identity('broadcaster')!.id, sender_id: auth.identity('bot')!.id, message }).catch(error => console.error(`Runner setup chat notice for idea ${event.ideaId} failed:`, error));
       }).catch(error => console.error(`Runner outcome for idea ${event.ideaId} failed:`, error));
@@ -151,7 +151,14 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
       } catch (error) { chatIssue = `Twitch chat reply failed: ${String(error)}`; }
       if (chatIssue) console.error(chatIssue);
     },
-    onChat: event => { if (forwardToGame(event, auth.identity('bot')?.id)) { const message = { at: new Date().toISOString(), text: event.text, author: event.viewer.name }; recentChat.push(message); if (recentChat.length > 30) recentChat.shift(); server.ws.send({ type: 'custom', event: 'live-patch:chat', data: message }); } },
+    onChat: event => {
+      const fromBot = event.origin === 'twitch' && event.viewer.id === auth.identity('bot')?.id;
+      if (!fromBot) {
+        const message = { at: new Date().toISOString(), text: event.text, author: event.viewer.name };
+        recentChat.push(message); if (recentChat.length > 30) recentChat.shift();
+        if (forwardToGame(event, auth.identity('bot')?.id)) server.ws.send({ type: 'custom', event: 'live-patch:chat', data: message });
+      }
+    },
     onIdea: idea => rounds.triage(idea),
     onRejectedReward: async (event, reason) => event.origin === 'twitch' && event.redemptionId
       ? tryRefund(event.redemptionId, event.rewardId, reason)
