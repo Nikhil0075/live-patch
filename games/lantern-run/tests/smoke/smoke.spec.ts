@@ -1,4 +1,15 @@
 import { test, expect } from '@playwright/test';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const directory = process.env.LIVE_PATCH_TEST_GAME_DIR || path.resolve('games/lantern-run');
+const builtIns = fs.readdirSync(path.join(directory, 'mutations')).filter(name => name.endsWith('.js'));
+const selected = process.env.MUTATION_FILE;
+const fixture = (name: string) => fs.readFileSync(path.join(directory, 'tests/fixtures', name), 'utf8');
+async function load(page: import('@playwright/test').Page, name: string, source: string) {
+  await page.evaluate(({ name, source }) => (window as any).__livePatch.host.sync([{ name, source, error: null }]), { name, source });
+  await expect(page.locator('#mutations')).toContainText('active');
+}
 
 test('Lantern Run starts and advances', async ({ page }) => {
   await page.goto('/play');
@@ -7,4 +18,163 @@ test('Lantern Run starts and advances', async ({ page }) => {
   await page.waitForTimeout(800);
   const later = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
   expect(later.run.distance).toBeGreaterThan(initial.run.distance);
+});
+
+for (const name of selected ? [selected] : builtIns) test(`game plays for five seconds with ${name}`, async ({ page }) => {
+  await page.goto('/play');
+  await expect(page.locator('#mutations')).toContainText('active');
+  await page.waitForTimeout(5000);
+  const state = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
+  expect(state.run.distance).toBeGreaterThan(100);
+  expect(state.maxFrameGap).toBeLessThan(350);
+  await expect(page.locator('#mutations')).not.toContainText('disabled');
+});
+
+test('Space, W, Up and canvas click all jump and pause freezes time', async ({ page }) => {
+  await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
+  for (const key of ['Space', 'KeyW', 'ArrowUp']) {
+    await page.reload(); await expect(page.locator('#status')).toContainText('LIVE');
+    await page.keyboard.press(key === 'KeyW' ? 'w' : key);
+    await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().player.grounded)).toBe(false);
+  }
+  await page.reload(); await expect(page.locator('#status')).toContainText('LIVE');
+  await page.locator('#game canvas').click({ position: { x: 350, y: 400 } });
+  await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().player.grounded)).toBe(false);
+  await page.keyboard.press('Escape'); await expect(page.locator('#play-menu')).toBeVisible();
+  const before = await page.evaluate(() => (window as any).__livePatch.game.snapshot().frame);
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => (window as any).__livePatch.game.snapshot().frame)).toBe(before);
+});
+
+test('rollback removes a patch’s weather, power-up, parameter and entities but keeps run progress', async ({ page }) => {
+  await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
+  await expect(page.locator('#mutations')).toContainText('Forest Breeze · active');
+  const before = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
+  await page.evaluate(() => {
+    const game = (window as any).__livePatch.game;
+    game.apply({ type: 'setWeather', args: ['rain'] }, 'probe');
+    game.apply({ type: 'setParameter', args: ['runSpeed', 400] }, 'probe');
+    game.apply({ type: 'grantPowerUp', args: ['shield', 10] }, 'probe');
+    game.apply({ type: 'spawn', args: ['firefly', 900, 360] }, 'probe');
+  });
+  const patched = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
+  expect(patched.weather).toBe('rain'); expect(patched.parameters.runSpeed).toBe(400);
+  expect(patched.player.powerUps).toContain('shield');
+  await page.evaluate(() => (window as any).__livePatch.game.removeMutation('probe'));
+  const after = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
+  expect(after.weather).toBe(before.weather); expect(after.parameters.runSpeed).toBe(before.parameters.runSpeed);
+  expect(after.player.powerUps).not.toContain('shield');
+  expect(after.entities.some((entity: any) => entity.id === patched.entities.at(-1).id)).toBe(false);
+  expect(after.run.fireflies).toBeGreaterThanOrEqual(before.run.fireflies);
+  expect(after.run.distance).toBeGreaterThanOrEqual(before.run.distance);
+});
+
+test('entity caps and out-of-range actions stay bounded', async ({ page }) => {
+  await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
+  await page.evaluate(() => {
+    const game = (window as any).__livePatch.game;
+    for (let i = 0; i < 100; i++) game.apply({ type: 'spawn', args: ['firefly', 1100, 350, 9] }, 'storm');
+    game.apply({ type: 'spawn', args: ['dragon', 500, 300] }, 'storm');
+    game.apply({ type: 'setParameter', args: ['runSpeed', 9999] }, 'storm');
+  });
+  const state = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
+  expect(state.entities.filter((item: any) => item.kind === 'firefly').length).toBeLessThanOrEqual(40);
+  expect(state.entities.some((item: any) => item.kind === 'dragon')).toBe(false);
+  expect(state.parameters.runSpeed).toBe(600);
+  expect(state.activeEntities).toBeLessThanOrEqual(80);
+});
+
+test('a ledge landing and a pit fall both reach mutation hooks', async ({ page }) => {
+  await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
+  await load(page, 'ledge-pit.js', "export const meta={id:'ledge-pit',title:'Ledge and Pit',author:'test',description:'Observe run events'}; export function onLand(game,e){if(e.on==='ledge')game.grantPowerUp('magnet',15)} export function onFall(game){game.grantPowerUp('shield',15)}");
+  await page.evaluate(() => (window as any).__livePatch.game.apply({ type: 'spawn', args: ['ledge', 520, 400] }, 'probe'));
+  await page.keyboard.press('Space');
+  await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().player.powerUps.includes('magnet')), { timeout: 7000 }).toBe(true);
+  await page.evaluate(() => (window as any).__livePatch.game.apply({ type: 'setParameter', args: ['runSpeed', 600] }, 'probe'));
+  await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().player.powerUps.includes('shield')), { timeout: 16000 }).toBe(true);
+  await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().player.y), { timeout: 3000 }).toBeLessThan(518);
+  const state = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
+  expect(state.player.hearts).toBe(2);
+});
+
+test('three hits show run over, then a new run starts after two seconds', async ({ page }) => {
+  await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
+  await page.evaluate(() => (window as any).__livePatch.game.apply({ type: 'setParameter', args: ['runSpeed', 600] }, 'probe'));
+  await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().runElapsed), { timeout: 8000 }).toBeGreaterThan(3.1);
+  for (let hearts = 2; hearts >= 0; hearts--) {
+    await page.evaluate(() => (window as any).__livePatch.game.apply({ type: 'spawn', args: ['boulder', 520, 480] }, 'probe'));
+    await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().player.hearts), { timeout: 5000 }).toBeLessThanOrEqual(hearts);
+    if (hearts > 0) await page.waitForTimeout(1200);
+  }
+  const over = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
+  expect(over.runOver).toBe(true); expect(over.player.hearts).toBe(0);
+  await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().run.number), { timeout: 5000 }).toBeGreaterThan(over.run.number);
+  const restarted = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
+  expect(restarted.player.hearts).toBe(3);
+  expect(restarted.run.best).toBeGreaterThan(0);
+});
+
+test('a crowded storm stays bounded without disabling an unrelated patch', async ({ page }) => {
+  await page.goto('/play'); await expect(page.locator('#mutations')).toContainText('Forest Breeze · active');
+  const baseline = await page.evaluate(() => (window as any).__livePatch.game.snapshot().frameRate as number);
+  await page.evaluate(() => {
+    const game = (window as any).__livePatch.game;
+    game.apply({ type: 'setWeather', args: ['rain'] }, 'storm');
+    for (const [kind, count] of [['firefly', 40], ['acorn', 10], ['owl', 6], ['pinecone', 10], ['log', 12], ['ledge', 10], ['spring', 4], ['shield', 4]] as const)
+      for (let i = 0; i < count; i++) game.apply({ type: 'spawn', args: [kind, 700 + (i % 7) * 50, 260 + (i % 4) * 40] }, 'storm');
+    for (let i = 0; i < 20; i++) game.apply({ type: 'burst', args: ['sparks', 720, 330] }, 'storm');
+  });
+  await page.waitForTimeout(1600);
+  const state = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
+  expect(state.activeEntities).toBeLessThanOrEqual(80);
+  expect(state.particles).toBeLessThanOrEqual(64);
+  expect(state.maxFrameGap).toBeLessThan(350);
+  expect(state.frameRate).toBeGreaterThan(baseline * .55);
+  await expect(page.locator('#mutations')).toContainText('Forest Breeze · active');
+});
+
+test('a mutation action storm is throttled by the host', async ({ page }) => {
+  await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
+  await load(page, 'action-storm.js', "export const meta={id:'action-storm',title:'Action Storm',author:'test',description:'Requests too many spawns'}; export function onStart(game){for(let i=0;i<100;i++)game.spawn('firefly',800,300)}");
+  await expect(page.locator('#mutations')).toContainText('actions skipped');
+  const state = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
+  expect(state.activeEntities).toBeLessThanOrEqual(80);
+});
+
+for (const name of ['double-jump.js', 'firefly-magnet.js', 'owl-pinecones.js', 'rainy-forest.js', 'speech-bubble.js', 'milestone-springs.js'])
+  test(`documented ${name} idea survives its trigger`, async ({ page }) => {
+    await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
+    await load(page, name, fixture(name));
+    await page.evaluate(name => {
+      const { game, host } = (window as any).__livePatch;
+      if (name === 'firefly-magnet.js') host.emit({ type: 'milestone', meters: 300 });
+      if (name === 'milestone-springs.js') host.emit({ type: 'milestone', meters: 200 });
+      if (name === 'speech-bubble.js') host.emit({ type: 'chat', text: '<img src=x onerror=alert(1)>', author: 'viewer' });
+      if (name === 'owl-pinecones.js') { game.apply({ type: 'spawn', args: ['owl', 850, 350] }, 'probe'); host.emit({ type: 'tick', delta: .1, distance: 1 }); }
+    }, name);
+    await page.waitForTimeout(400);
+    await expect(page.locator('#mutations')).toContainText('active');
+    const state = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
+    if (name === 'double-jump.js') expect(state.parameters.maxJumps).toBe(2);
+    if (name === 'firefly-magnet.js') expect(state.player.powerUps).toContain('magnet');
+    if (name === 'owl-pinecones.js') expect(state.entities.some((item: any) => item.kind === 'pinecone')).toBe(true);
+    if (name === 'rainy-forest.js') expect(state.weather).toBe('rain');
+    if (name === 'milestone-springs.js') expect(state.entities.some((item: any) => item.kind === 'spring')).toBe(true);
+    if (name === 'speech-bubble.js') expect(await page.locator('img[src="x"]').count()).toBe(0);
+  });
+
+test('a crashing module is disabled while the run continues', async ({ page }) => {
+  await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
+  await page.evaluate(() => (window as any).__livePatch.host.sync([{ name: 'crash.js', source: "export const meta={id:'crash',title:'Crash',author:'test',description:'Crash on tick'}; export function onTick(){throw Error('fixture crash')} ", error: null }]));
+  await expect(page.locator('#mutations')).toContainText('failed');
+  const before = await page.evaluate(() => (window as any).__livePatch.game.snapshot().frame);
+  await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().frame)).toBeGreaterThan(before + 10);
+});
+
+test('a stalling module is disabled while the run continues', async ({ page }) => {
+  await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
+  await page.evaluate(() => (window as any).__livePatch.host.sync([{ name: 'stall.js', source: "export const meta={id:'stall',title:'Stall',author:'test',description:'Loops on tick'}; export function onTick(){while(true){}} ", error: null }]));
+  await expect(page.locator('#mutations')).toContainText('failed', { timeout: 8000 });
+  const before = await page.evaluate(() => (window as any).__livePatch.game.snapshot().frame);
+  await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().frame)).toBeGreaterThan(before + 10);
 });

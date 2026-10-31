@@ -53,18 +53,17 @@ function sky(): HTMLCanvasElement {
   });
 }
 function forest(layer: 'far' | 'middle' | 'near'): HTMLCanvasElement {
-  const base = layer === 'far' ? 450 : layer === 'middle' ? 490 : 540;
   const color = layer === 'far' ? '#344066' : layer === 'middle' ? '#253f5d' : '#183b4d';
-  return canvas(width, height, ctx => {
+  return canvas(384, 256, ctx => {
     if (layer === 'far') {
-      triangle(ctx, [0, base, 190, 300, 370, base], '#5a5680'); triangle(ctx, [280, base, 510, 330, 740, base], '#505779');
-      triangle(ctx, [660, base, 880, 305, 1152, base], '#4d5276');
+      triangle(ctx, [0, 256, 120, 92, 250, 256], '#5a5680');
+      triangle(ctx, [190, 256, 310, 112, 384, 256], '#505779');
     }
-    const count = layer === 'near' ? 24 : 33;
+    const count = layer === 'near' ? 8 : 10;
     for (let index = 0; index < count; index++) {
-      const x = (index * 79 + (index % 4) * 19) % width;
+      const x = (index * 79 + (index % 4) * 19) % 384;
       const tall = 55 + (index * 37) % (layer === 'near' ? 160 : 115);
-      const y = base + (index * 29) % 45;
+      const y = 256 + (index * 29) % 45;
       ctx.fillStyle = color; ctx.fillRect(x - 4, y - tall * .5, 8, tall * .5);
       for (let tier = 0; tier < 3; tier++) triangle(ctx, [x, y - tall + tier * tall * .25, x - 27 + tier * 3, y - tall * .36 + tier * tall * .19, x + 27 - tier * 3, y - tall * .36 + tier * tall * .19], color);
     }
@@ -97,6 +96,15 @@ function icon(kind: string): HTMLCanvasElement {
       ctx.strokeStyle = '#d5d7dd'; ctx.lineWidth = 4; for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(33, 55 + i * 8); ctx.lineTo(63, 60 + i * 8); ctx.stroke(); }
     } else if (kind === 'shield') {
       ctx.strokeStyle = '#ffb84a'; ctx.lineWidth = 7; ctx.shadowColor = '#ffd56b'; ctx.shadowBlur = 16; ctx.beginPath(); ctx.arc(48, 48, 36, 0, Math.PI * 2); ctx.stroke();
+    } else if (kind === 'glider') {
+      ellipse(ctx, 48, 48, 35, 17, '#9fce67', -.35);
+      ctx.strokeStyle = '#446d34'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(17, 68); ctx.lineTo(77, 27); ctx.stroke();
+    } else if (kind === 'magnet') {
+      ctx.strokeStyle = '#e0bf68'; ctx.lineWidth = 15; ctx.beginPath(); ctx.arc(48, 44, 28, 0, Math.PI); ctx.stroke();
+      ellipse(ctx, 20, 48, 9, 10, '#e86b59'); ellipse(ctx, 76, 48, 9, 10, '#e86b59');
+    } else if (kind === 'pinecone') {
+      ellipse(ctx, 48, 54, 21, 29, '#8b552c');
+      for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) ellipse(ctx, 34 + col * 14, 39 + row * 14, 8, 5, '#b27b42');
     }
   });
 }
@@ -105,6 +113,6 @@ export function createLanternArt(scene: Phaser.Scene): void {
   for (const [name, texture] of [['sky', sky()], ['far', forest('far')], ['middle', forest('middle')], ['near', forest('near')]] as const)
     if (!scene.textures.exists(`lantern-${name}`)) scene.textures.addCanvas(`lantern-${name}`, texture);
   for (const pose of ['run', 'jump', 'fall', 'hurt'] as const) if (!scene.textures.exists(`lantern-fox-${pose}`)) scene.textures.addCanvas(`lantern-fox-${pose}`, fox(pose));
-  for (const kind of ['firefly', 'acorn', 'owl', 'log', 'thorns', 'boulder', 'ledge', 'spring', 'shield'])
+  for (const kind of ['firefly', 'acorn', 'owl', 'log', 'thorns', 'boulder', 'ledge', 'spring', 'shield', 'glider', 'magnet', 'pinecone'])
     if (!scene.textures.exists(`lantern-${kind}`)) scene.textures.addCanvas(`lantern-${kind}`, icon(kind));
 }
