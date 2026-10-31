@@ -17,6 +17,13 @@ import { ChatPipeline } from '../engine/pipeline/commands';
 import { handleRunnerOutcome } from '../engine/twitch/runner-outcome';
 
 const css = fs.readFileSync(path.resolve('engine/tokens.css'), 'utf8');
+it('documents the actual mutation load deadline for live Codex', () => {
+  const host = fs.readFileSync(path.resolve('engine/mutation/host.ts'), 'utf8');
+  const api = fs.readFileSync(path.resolve('games/arena-survivor/docs/mutation-api.md'), 'utf8');
+  const deadline = Number(/LOAD_DEADLINE_MS = (\d+)/.exec(host)?.[1]);
+  expect(deadline).toBeGreaterThan(0);
+  expect(api).toContain(`Each load has a ${deadline / 1000} second deadline`);
+});
 function token(name: string) { return new RegExp(`--${name}:\\s*(#[0-9a-f]{6})`, 'i').exec(css)?.[1] ?? ''; }
 function light(hex: string) {
   const rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4);

@@ -119,3 +119,4 @@
 #control .panel-patches #builds a{display:block;color:#d7bbff;font-size:12px;line-height:20px}
 #control .panel-patches [data-action=remove-demo]{padding:6px 10px;font-size:12px}
 @media(min-width:1500px){#control .dashboard-panels>.panel-patches{height:300px;overflow:hidden}.app-content:has(#control){padding-bottom:13px}}
+@media(min-width:1500px){#control .panel-codex .timeline-step{padding:5px 8px}}

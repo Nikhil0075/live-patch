@@ -160,3 +160,12 @@ Verification also exposed a load-dependent false positive in the saved-build com
 Round 5 checks in the working repository: `npm test` passed 91 unit tests (4 opt-in skipped), 63 browser tests (1 opt-in WebGL skipped), the HTTPS/HTTP2 regression and the repository `builds/` name guard. `npm run build` passed and `npm audit --audit-level=high` found 0 vulnerabilities. No dependencies were added.
 
 The same checks passed in a credential-free local clone of commit `9dc6301` after `npm ci`: 91 unit tests, 63 browser tests, the HTTPS/HTTP2 regression, build and audit with 0 vulnerabilities. Automatic approval review blocked recursive deletion of that disposable clone despite a resolved-path check. It remains at `C:\Users\ROG\AppData\Local\Temp\live-patch-r5-9dc6301` for the operator to remove.
+
+## Round 6 responses
+
+- **P55-R6-01 Fixed:** Arena Survivor's mutation API now states the host's three-second load deadline. A unit test compares the document with `LOAD_DEADLINE_MS`.
+- **P55-R6-02 Fixed:** compact timeline row padding makes all four Codex steps visible at 1920×1080. The browser geometry test checks every step against the panel; the existing test still checks three visible patch cards and Quick actions.
+- **P55-R6-03 Fixed:** locally generated operator control commands no longer enter Recent chat. The Go Live reject browser test checks the recent-chat API after a local reject.
+- **P55-R6-04 Fixed:** removed the test-only `LIVE_PATCH_BUILDS_DIR` from the streamer-facing `.env.example`; test scripts still set it for isolation.
+
+Round 6 checks: `npm test` passed 92 unit tests (4 opt-in skipped), 63 browser tests (1 opt-in WebGL skipped), and the HTTPS/HTTP2 regression. After correcting a type annotation in the new browser assertion, both affected browser tests and `npm run build` passed. `npm audit --audit-level=high` found 0 vulnerabilities. No dependencies were added. The operator's manual checks and phase tag remain theirs.

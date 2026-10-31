@@ -147,7 +147,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
     },
     onChat: event => {
       const fromBot = event.origin === 'twitch' && event.viewer.id === auth.identity('bot')?.id;
-      if (!fromBot) {
+      if (!fromBot && event.viewer.id !== 'local-operator') {
         const message = { at: new Date().toISOString(), text: event.text, author: event.viewer.name };
         recentChat.push(message); if (recentChat.length > 30) recentChat.shift();
         if (forwardToGame(event, auth.identity('bot')?.id)) server.ws.send({ type: 'custom', event: 'live-patch:chat', data: message });

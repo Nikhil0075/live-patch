@@ -384,6 +384,8 @@ test('Go Live rejects pitches and vote candidates and keeps ballot actions open 
   page.once('dialog', dialog => void dialog.accept());
   await approval.getByRole('button', { name: 'Reject' }).click();
   await expect.poll(() => page.locator('#candidates .ballot-item').count()).toBeLessThan(2);
+  const recent = await page.evaluate(async () => await (await fetch('/api/chat/recent')).json() as { messages: { author: string; text: string }[] });
+  expect(recent.messages.some(message => message.author === 'Operator' && message.text.startsWith('!reject'))).toBe(false);
 });
 
 test('Go Live recent chat includes viewer commands and keeps text safely wrapped', async ({ page }) => {
@@ -437,6 +439,16 @@ test('Go Live fits a 1080p studio view and shows every quick-action explanation'
   });
   expect(bounds.page).toBeLessThanOrEqual(bounds.viewport);
   expect(bounds.noteBottom).toBeLessThanOrEqual(bounds.panelBottom);
+  const codex = await page.locator('[data-panel="codex"]').boundingBox();
+  const steps = await page.locator('#runs .timeline-step').all();
+  expect(codex).not.toBeNull();
+  expect(steps).toHaveLength(4);
+  for (const step of steps) {
+    const box = await step.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.y + box!.height).toBeLessThanOrEqual(codex!.y + codex!.height);
+  }
+  expect(await page.locator('.panel-actions').evaluate(panel => panel.scrollHeight <= panel.clientHeight + 1)).toBe(true);
 });
 
 test('failed browser launch is shown as a failed smoke step in studio and OBS', async ({ page }) => {
