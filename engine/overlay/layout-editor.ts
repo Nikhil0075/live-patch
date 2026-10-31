@@ -31,8 +31,11 @@ export async function createLayoutEditor(parent: HTMLElement): Promise<void> {
       Object.assign(marker.style, { left: `${zone.x / 1920 * 100}%`, top: `${zone.y / 1080 * 100}%`, width: `${zone.width / 1920 * 100}%`, height: `${zone.height / 1080 * 100}%` });
       stage.append(marker);
     }
-    const collisions = widgets.flatMap(widget => keepClear.filter(zone => overlaps(widget, zone)).map(zone => `${labels[widget.type]} covers ${zone.label}`));
-    if (collisions.length) status.textContent = `Layout adjusted to keep ${collisions.join('; ')} clear.`;
+    const collisions = widgets.flatMap((widget, index) => [
+      ...keepClear.filter(zone => overlaps(widget, zone)).map(zone => `${labels[widget.type]} covers ${zone.label}`),
+      ...widgets.slice(index + 1).filter(other => overlaps(widget, other)).map(other => `${labels[widget.type]} covers ${labels[other.type]}`)
+    ]);
+    if (collisions.length) status.textContent = `Layout overlap: ${collisions.join('; ')}. Move or resize a widget before streaming.`;
     for (const [type, label] of Object.entries(labels) as [OverlayWidgetType, string][]) if (!widgets.some(item => item.type === type)) {
       const option = document.createElement('option'); option.value = type; option.textContent = label; select.append(option);
     }

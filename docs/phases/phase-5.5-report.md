@@ -141,3 +141,20 @@ The Go Live Recent chat panel now includes viewer commands such as `!idea` and `
 Round 4 checks: `npm test` passed 88 unit tests (4 opt-in skipped), 62 browser tests (1 opt-in WebGL skipped), and the HTTPS/HTTP2 regression. `npm run build` passed, and `npm audit --audit-level=high` found 0 vulnerabilities. No dependency was added.
 
 The same checks passed in a fresh local clone of commit `6127f4e`. In that clone, the real HTTPS Practice UI shipped one demo file into the working game. A second full `npm test` passed with the demo file still present (88 unit, 62 browser, HTTPS); `npm run build` and the audit passed there as well. Automatic approval review rejected recursive deletion of the disposable verification clone at `C:\Users\ROG\AppData\Local\Temp\live-patch-r4-6127f4e`, so it remains for the operator to remove.
+
+## Round 5 responses
+
+- **P55-R5-01 Fixed:** placement shrinks a widget to a free width or height when moving it cannot clear another; the editor warns if overlap remains. A unit test loads all four saved widget types with a 700 px ballot and checks every pair and protected zone.
+- **P55-R5-02 Fixed:** the studio root, content and dialogs inherit thin violet scrollbars. A browser test checks the welcome dialog and all seven studio views, then scrolls Library with the keyboard.
+- **P55-R5-03 Fixed:** Active patches has room for three compact cards, a single Saved builds link and the demo removal button. Browser geometry checks four active patches at 1920×1080 and non-overlap at 1366×768; Quick actions retains its no-scroll check.
+- **P55-R5-04 Fixed:** the runner reads `LIVE_PATCH_RUN_TIMEOUT_MS` when constructed after `.env` loads, retaining the four-minute default and one-to-thirty-minute bounds. A unit test loads a fixture `.env` after importing the runner and checks its budget.
+- **P55-R5-05 Fixed:** without a Git index, the test copy excludes generated `demo-*.js` and `patch-*.js`, and reports the copy mode. A no-Git unit fixture tests the fallback.
+- **P55-R5-06 Fixed:** test servers save and read builds inside their temporary folder. The saved-build comparison test checks that path, and `npm test` checks that the repository `builds/` names do not change.
+- **P55-R5-07 Fixed:** usage-limit, rate-limit and dropped-stream errors count as Codex unavailable; the generic notice uses viewer-facing wording. A runner-plus-outcome test covers the usage-limit line.
+- **P55-R5-08 Fixed:** Go Live reject feedback names the author and opening words instead of the internal idea ID, using text nodes; a browser test checks the notice.
+
+The Go Live dashboard now loads round and patch data without waiting for the slower cached Setup check; its browser-preflight notice still updates separately.
+
+Verification also exposed a load-dependent false positive in the saved-build comparison: when three game views were active late in the browser suite, all built-in mutations in the evolved view exceeded the 1.5-second module load deadline. The finite load deadline is now three seconds; the existing top-level endless-loop browser test still verifies that a stalled module is disabled while play continues.
+
+Round 5 checks in the working repository: `npm test` passed 91 unit tests (4 opt-in skipped), 63 browser tests (1 opt-in WebGL skipped), the HTTPS/HTTP2 regression and the repository `builds/` name guard. `npm run build` passed and `npm audit --audit-level=high` found 0 vulnerabilities. No dependencies were added.

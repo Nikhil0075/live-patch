@@ -26,7 +26,7 @@ interface Loaded {
   budgetCount: number;
 }
 
-const LOAD_DEADLINE_MS = 1500;
+const LOAD_DEADLINE_MS = 3000;
 // The frame and Worker share a busy streaming PC with Codex and a second smoke browser.
 // Keep a finite deadline, but allow scheduler stalls without disabling an innocent patch.
 const EVENT_DEADLINE_MS = 1800;

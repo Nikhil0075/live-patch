@@ -39,6 +39,7 @@ const defaultGame = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 
 fs.cpSync(path.resolve(root, defaultGame), game, { recursive: true });
 process.env.LIVE_PATCH_GAME = game;
 process.env.LIVE_PATCH_DATA_DIR = path.join(temp, 'data');
+process.env.LIVE_PATCH_BUILDS_DIR = path.join(temp, 'builds');
 process.env.LIVE_PATCH_HTTP_PORT = String(await freePort());
 process.env.TWITCH_CLIENT_ID = '';
 process.env.TWITCH_CLIENT_SECRET = '';

@@ -14,3 +14,8 @@ button.library-select:not(.secondary):not(.danger){background:var(--surface);bor
 button.setup-step:not(.secondary):not(.danger){background:#142337;border-color:#38556c;color:#c6d6e2}button.setup-step.current:not(.secondary):not(.danger){background:#1b4d4b;border-color:var(--mint);color:#fff}button.setup-step.done:not(.secondary):not(.danger){background:#193d3e;border-color:#467e70;color:#b4ffe0}button.setup-step.upcoming:not(.secondary):not(.danger){background:#152439;color:#9db2c4}
 
 :root{--bg:#0e0e10;--surface:#18181b;--raised:#1f1f23;--line:#2f2f35;--text:#efeff1;--muted:#adadb8;--mint:#9146ff;--coral:#eb0400;--radius:4px}
+
+:root,body,.app-content,dialog{scrollbar-width:thin;scrollbar-color:#6b3ca1 #24212d}
+*::-webkit-scrollbar{width:8px;height:8px}
+*::-webkit-scrollbar-track{background:#24212d}
+*::-webkit-scrollbar-thumb{background:#6b3ca1;border-radius:8px}

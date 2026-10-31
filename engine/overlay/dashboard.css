@@ -114,3 +114,8 @@
 #control .dashboard-panels>.panel-actions{height:auto;min-height:275px;overflow:visible}
 #control .quick-tiles button{min-height:45px}
 @media(min-width:1500px){.app-content:has(#control){padding-bottom:38px}}
+#control .panel-patches .patch-item{padding:4px 8px;margin:2px 0}
+#control .panel-patches #builds{max-height:none;overflow:visible;flex:none;margin:5px 0}
+#control .panel-patches #builds a{display:block;color:#d7bbff;font-size:12px;line-height:20px}
+#control .panel-patches [data-action=remove-demo]{padding:6px 10px;font-size:12px}
+@media(min-width:1500px){#control .dashboard-panels>.panel-patches{height:300px;overflow:hidden}.app-content:has(#control){padding-bottom:13px}}

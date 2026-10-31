@@ -12,9 +12,11 @@ import { RunStore, publicFailure, type RunRecord, type RunnerEvent } from './sto
 import { probeBrowser } from '../studio/setup';
 import { codexBinary, disabledMcpConfigAsync, runnerConfig, runnerEnvironment, verifySandbox } from './sandbox';
 
-const configuredTimeout = Number(process.env.LIVE_PATCH_RUN_TIMEOUT_MS);
-const RUN_TIMEOUT_MS = Number.isFinite(configuredTimeout) && configuredTimeout >= 60_000
-  ? Math.min(configuredTimeout, 30 * 60_000) : 4 * 60_000;
+export function configuredRunTimeoutMs(environment: NodeJS.ProcessEnv = process.env): number {
+  const configured = Number(environment.LIVE_PATCH_RUN_TIMEOUT_MS);
+  return Number.isFinite(configured) && configured >= 60_000
+    ? Math.min(configured, 30 * 60_000) : 4 * 60_000;
+}
 const RUNNER_ROOT_NAME = 'live-patch-runner';
 const execFileAsync = promisify(execFile);
 async function gitAsync(cwd: string, ...args: string[]): Promise<string> {
@@ -134,12 +136,13 @@ export class LiveRunner {
     private onEvent: (event: RunnerEvent) => void,
     private agentFactory: AgentFactory = codexAgent,
     private smokeTest: typeof smoke = smoke,
-    private runTimeoutMs: number = RUN_TIMEOUT_MS
+    private runTimeoutMs: number = configuredRunTimeoutMs()
   ) {
     const fingerprint = createHash('sha256').update(path.resolve(root)).digest('hex').slice(0, 12);
     this.runnerRoot = path.join(os.tmpdir(), RUNNER_ROOT_NAME, fingerprint);
     this.recoverInterrupted();
   }
+  get runBudgetMs(): number { return this.runTimeoutMs; }
   enqueue(idea: Idea): Promise<void> {
     if (this.closed) return Promise.reject(Error('Runner is stopped'));
     const epoch = this.rollbackEpoch;
@@ -335,7 +338,7 @@ export class LiveRunner {
         ? /timed out/i.test(String(abort.signal.reason)) ? 'timeout' : 'cancelled'
         : record.failureKind === 'patch' ? undefined
         : /browserType\.launch|Executable doesn't exist|test browser|playwright|test.server|EADDRINUSE|Sandbox|setup/i.test(record.error) ? 'setup'
-        : /quota|sign.in|login|authentication|Codex unavailable/i.test(record.error) ? 'codex_unavailable' : 'other';
+        : /quota|usage limit|rate.?limit|stream (?:disconnected|closed|dropped)|sign.in|login|authentication|Codex unavailable/i.test(record.error) ? 'codex_unavailable' : 'other';
       record.finishedAt = new Date().toISOString();
       this.runs.upsert(record);
       this.ideas.setStatus(idea.id, record.failureKind === 'infrastructure' && !abort.signal.aborted ? 'shortlisted' : 'failed');

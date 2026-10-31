@@ -24,6 +24,7 @@ function freePort() {
 }
 
 const root = process.cwd();
+const buildsBefore = fs.existsSync(path.join(root, 'builds')) ? fs.readdirSync(path.join(root, 'builds')).sort() : [];
 const args = process.argv.slice(2);
 const smoke = args.includes('--smoke');
 const browserOnly = args.includes('--browser-only');
@@ -41,6 +42,7 @@ if (!smoke && !browserOnly && await run('node_modules/vitest/vitest.mjs', ['run'
 
 const temp = fs.mkdtempSync(path.join(root, '.live-patch-test-'));
 process.env.LIVE_PATCH_DATA_DIR = path.join(temp, 'data');
+process.env.LIVE_PATCH_BUILDS_DIR = path.join(temp, 'builds');
 fs.mkdirSync(process.env.LIVE_PATCH_DATA_DIR, { recursive: true });
 fs.writeFileSync(path.join(process.env.LIVE_PATCH_DATA_DIR, 'tokens.json'), '{}');
 fs.writeFileSync(path.join(process.env.LIVE_PATCH_DATA_DIR, 'public-probe.txt'), 'safe fixture');
@@ -63,3 +65,5 @@ try {
   fs.rmSync(temp, { recursive: true, force: true });
 }
 if (!smoke && !browserOnly && process.exitCode === 0) process.exitCode = await run('scripts/test-https.mjs', []);
+const buildsAfter = fs.existsSync(path.join(root, 'builds')) ? fs.readdirSync(path.join(root, 'builds')).sort() : [];
+if (JSON.stringify(buildsAfter) !== JSON.stringify(buildsBefore)) throw Error('npm test changed the repository builds/ folder');

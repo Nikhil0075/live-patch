@@ -7,7 +7,7 @@ import { generatedCover } from '../engine/manifest/cover-art';
 import { practiceDemoEligible } from '../engine/twitch/practice-demo';
 import { mutationTitle } from '../engine/mutation/metadata';
 import { bannerY } from '../games/arena-survivor/src/layout';
-import { clearPlacement, keepClearZones, overlaps } from '../engine/studio/overlay-placement';
+import { clearPlacement, keepClearZones, minimumWidgetSize, overlaps } from '../engine/studio/overlay-placement';
 import { timelineState } from '../engine/overlay/timeline';
 import { smokeInfrastructureFailure } from '../engine/runner/runner';
 import { publicFailure } from '../engine/runner/store';
@@ -115,6 +115,25 @@ describe('first live-stream regressions', () => {
       expect(widgets[1].height).toBe(700);
       expect(overlaps(widgets[0], widgets[1])).toBe(false);
       expect(widgets.every(widget => keepClearZones.every(zone => !overlaps(widget, zone)))).toBe(true);
+    } finally { fs.rmSync(folder, { recursive: true, force: true }); }
+  });
+  it('keeps all four operator widgets clear when the narrow ballot needs three rows', () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'live-patch-full-overlay-'));
+    try {
+      const file = path.join(folder, 'settings.json');
+      fs.writeFileSync(file, JSON.stringify({ overlayWidgets: [
+        { type: 'patches', x: 0, y: 2, width: 420, height: 430 },
+        { type: 'codex', x: 1546, y: 165, width: 350, height: 590 },
+        { type: 'ballot', x: 24, y: 380, width: 501, height: 320 },
+        { type: 'ticker', x: 560, y: 998, width: 1336, height: 58 }
+      ] }));
+      const widgets = new SettingsStore(file).snapshot().overlayWidgets;
+      expect(widgets.find(widget => widget.type === 'ballot')?.height).toBe(700);
+      for (const [index, widget] of widgets.entries()) {
+        expect(widget.width).toBeGreaterThanOrEqual(minimumWidgetSize[widget.type][0]);
+        expect(keepClearZones.some(zone => overlaps(widget, zone))).toBe(false);
+        expect(widgets.slice(index + 1).some(other => overlaps(widget, other))).toBe(false);
+      }
     } finally { fs.rmSync(folder, { recursive: true, force: true }); }
   });
   it('identifies the account missing new Twitch scopes without a network call', () => {

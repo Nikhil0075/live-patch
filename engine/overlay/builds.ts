@@ -10,9 +10,9 @@ const safeText = (text: string) => text.replace(/[\r\n]+/g, ' ').slice(0, 220)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/[\\`*_{}\[\]()#+.!|:]/g, char => `\\${char}`);
 
-export async function saveBuild(root: string, gameDirectory: string, manifest: GameManifest, ideas: IdeaStore, runs: RunStore) {
+export async function saveBuild(root: string, gameDirectory: string, manifest: GameManifest, ideas: IdeaStore, runs: RunStore, buildsDirectory = path.join(root, 'builds')) {
   const id = `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`;
-  const directory = path.join(root, 'builds', id);
+  const directory = path.join(buildsDirectory, id);
   const game = path.join(directory, 'game');
   const mutationDir = path.resolve(gameDirectory, manifest.mutationDir);
   const shipped = runs.list().filter(run => run.gameDirectory === gameDirectory && run.status === 'shipped' && run.mutationName && /^patch-[a-f0-9]{12}\.js$/.test(run.mutationName) && fs.existsSync(path.join(mutationDir, run.mutationName)));

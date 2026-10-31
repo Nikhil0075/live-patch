@@ -297,9 +297,26 @@ test('Go Live can remove Practice demo patches before a stream', async ({ page }
   await expect(page.locator('#demo-ship')).toBeVisible({ timeout: 15_000 });
   await page.locator('#demo-ship').click();
   await expect(page.locator('#quick-result')).toContainText('Done.', { timeout: 15_000 });
+  await page.setViewportSize({ width: 1920, height: 1080 });
   await page.goto('/?view=go-live');
   const remove = page.getByRole('button', { name: 'Remove demo patches' });
   await expect(remove).toBeVisible();
+  await expect(page.locator('.panel-patches .patch-item')).toHaveCount(4);
+  const wide = await page.locator('.panel-patches').evaluate(panel => {
+    const list = panel.querySelector('#patches')!.getBoundingClientRect();
+    const cards = Array.from(panel.querySelectorAll('.patch-item')).map(item => item.getBoundingClientRect());
+    const saved = panel.querySelector('#builds')!.getBoundingClientRect();
+    const remove = panel.querySelector('[data-action="remove-demo"]')!.getBoundingClientRect();
+    return { thirdBottom: cards[2].bottom, listBottom: list.bottom, savedTop: saved.top, savedBottom: saved.bottom, removeTop: remove.top, removeBottom: remove.bottom, panelBottom: panel.getBoundingClientRect().bottom };
+  });
+  expect(wide.thirdBottom).toBeLessThanOrEqual(wide.listBottom);
+  expect(wide.listBottom).toBeLessThanOrEqual(wide.savedTop);
+  expect(wide.savedBottom).toBeLessThanOrEqual(wide.removeTop);
+  expect(wide.removeBottom).toBeLessThanOrEqual(wide.panelBottom);
+  await page.setViewportSize({ width: 1366, height: 768 });
+  const narrow = await page.locator('.panel-patches').evaluate(panel => ({ listBottom: panel.querySelector('#patches')!.getBoundingClientRect().bottom, savedTop: panel.querySelector('#builds')!.getBoundingClientRect().top, savedBottom: panel.querySelector('#builds')!.getBoundingClientRect().bottom, removeTop: panel.querySelector('[data-action="remove-demo"]')!.getBoundingClientRect().top }));
+  expect(narrow.listBottom).toBeLessThanOrEqual(narrow.savedTop);
+  expect(narrow.savedBottom).toBeLessThanOrEqual(narrow.removeTop);
   const placement = await remove.evaluate(button => ({ buttonBottom: button.getBoundingClientRect().bottom, panelBottom: button.closest('.panel-patches')!.getBoundingClientRect().bottom }));
   expect(placement.buttonBottom).toBeLessThanOrEqual(placement.panelBottom);
   page.once('dialog', dialog => void dialog.accept());
@@ -307,6 +324,23 @@ test('Go Live can remove Practice demo patches before a stream', async ({ page }
   await expect(remove).toBeHidden({ timeout: 10_000 });
   const files = await page.evaluate(() => fetch('/api/mutations').then(r => r.json()) as Promise<{ name: string }[]>);
   expect(files.some(file => file.name.startsWith('demo-'))).toBe(false);
+});
+
+test('studio and welcome scrollbars use the violet theme and keep keyboard scrolling', async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 600 });
+  await page.goto('/?first-run=1');
+  const welcome = page.getByRole('dialog', { name: 'Welcome to Live Patch' });
+  await expect(welcome).toBeVisible();
+  expect(await welcome.evaluate(element => getComputedStyle(element).scrollbarColor)).toContain('rgb(107, 60, 161)');
+  await page.locator('#welcome-close').click();
+  for (const view of ['home', 'practice', 'go-live', 'library', 'builds', 'setup', 'settings']) {
+    await page.goto(`/?view=${view}`);
+    const colours = await page.evaluate(() => [document.documentElement, document.body, document.querySelector('.app-content')!].map(element => getComputedStyle(element).scrollbarColor));
+    expect(colours.every(colour => colour.includes('rgb(107, 60, 161)'))).toBe(true);
+  }
+  await page.goto('/?view=library');
+  await page.keyboard.press('PageDown');
+  await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(0);
 });
 
 test('Go Live rejects pitches and vote candidates and keeps ballot actions open across refresh', async ({ page }) => {
@@ -329,6 +363,8 @@ test('Go Live rejects pitches and vote candidates and keeps ballot actions open 
   page.once('dialog', dialog => void dialog.accept());
   await pitchReject.click();
   await expect(pitch).toHaveCount(0);
+  await expect(page.locator('#notice')).toContainText('@Rejecter: reject-in-pitch-');
+  expect(await page.locator('#notice').innerText()).not.toMatch(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}/);
   await page.evaluate(async () => {
     for (let i = 0; i < 3; i++) await fetch('/api/simulator/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: crypto.randomUUID(), kind: 'chat', viewer: { id: crypto.randomUUID(), login: `voter${i}`, name: `Voter${i}`, moderator: false, broadcaster: false }, text: `!idea vote-reject-${i}-${Date.now()}` }) });
     await fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'advance' }) });
@@ -990,9 +1026,10 @@ test('saved build compares original and evolved games without changing the live 
   await page.goto('/play');
   await expect(page.locator('#mutations')).toContainText('Quick Feet');
   const before = await page.evaluate(() => (window as any).__livePatch.game.snapshot().frame);
-  const saved = await page.evaluate(async () => fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save' }) }).then(response => response.json())) as { id: string };
+  const saved = await page.evaluate(async () => fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save' }) }).then(response => response.json())) as { id: string; directory: string };
   expect(saved).toHaveProperty('id');
   expect(saved.id).toMatch(/^[\w-]+$/);
+  expect(saved.directory).toBe(path.join(path.dirname(process.env.LIVE_PATCH_TEST_DATA_DIR!), 'builds', saved.id));
   const compare = await page.context().newPage();
   try {
     await compare.goto(`/compare.html?id=${encodeURIComponent(saved.id)}`);

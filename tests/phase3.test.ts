@@ -12,6 +12,7 @@ import { LiveRunner, type AgentFactory } from '../engine/runner/runner';
 import { RunStore, publicRun, type RunnerEvent } from '../engine/runner/store';
 import { unsafeIdea } from '../engine/runner/gates';
 import { codexBinary, disabledMcpConfig, runnerConfig, runnerEnvironment } from '../engine/runner/sandbox';
+import { loadLocalEnv } from '../engine/studio/local-env';
 
 function git(root: string, ...args: string[]) { return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim(); }
 function manifest(name: string, mutationDir = 'mutations/', testCommand = 'npm run smoke -- --mutation {file}'): GameManifest {
@@ -60,6 +61,18 @@ function fakeAgent(source: (prompt: string) => string, prompts: string[] = []): 
 const good = (title: string) => `export const meta={id:'test',title:'${title}',author:'viewer',description:'test'}; export function onStart(game){game.showMessage('Ready');}`;
 
 describe('Phase 3 runner', () => {
+  it('reads the build budget from .env after the runner module was imported', async () => fixture(async (root, game, gameManifest, ideas, runs) => {
+    const previous = process.env.LIVE_PATCH_RUN_TIMEOUT_MS;
+    try {
+      delete process.env.LIVE_PATCH_RUN_TIMEOUT_MS;
+      fs.writeFileSync(path.join(root, '.env'), 'LIVE_PATCH_RUN_TIMEOUT_MS=600000\n');
+      loadLocalEnv(root);
+      expect(new LiveRunner(root, game, gameManifest, ideas, runs, () => {}).runBudgetMs).toBe(600000);
+    } finally {
+      if (previous === undefined) delete process.env.LIVE_PATCH_RUN_TIMEOUT_MS;
+      else process.env.LIVE_PATCH_RUN_TIMEOUT_MS = previous;
+    }
+  }));
   it('moves ten varied simulator ideas through approval, shipping or rejection, then rolls back under five seconds', async () => fixture(async (root, game, gameManifest, ideas, runs) => {
     const events: RunnerEvent[] = [];
     const prompts: string[] = [];
@@ -194,6 +207,17 @@ describe('Phase 3 runner', () => {
     const second = ideas.add('two', 'Two', 'Make enemies glow', 'chat');
     await new LiveRunner(root, game, gameManifest, ideas, runs, () => {}, fakeAgent(() => good('Glow')), async () => { throw Error('Smoke rejected patch'); }).enqueue(ideas.setStatus(second.id, 'approved')!);
     expect(runs.list()[1].failureKind).toBe('patch');
+    const usageLimit: AgentFactory = () => ({ threadId: () => undefined, run: async () => { throw Error("You've hit your usage limit. Try again later."); } });
+    const third = ideas.add('three', 'Three', 'Make coins bounce', 'chat');
+    const events: RunnerEvent[] = [];
+    await new LiveRunner(root, game, gameManifest, ideas, runs, event => events.push(event), usageLimit, async () => {}).enqueue(ideas.setStatus(third.id, 'approved')!);
+    const record = runs.list()[2];
+    expect(record).toMatchObject({ failureKind: 'infrastructure', stopReason: 'codex_unavailable' });
+    const { handleRunnerOutcome } = await import('../engine/twitch/runner-outcome');
+    const notices: string[] = [];
+    await handleRunnerOutcome(events.find(event => event.type === 'failed')!, record, { cancel: async () => {}, settle: async () => {} }, async message => { notices.push(message); });
+    expect(notices[0]).toContain('Codex is unavailable');
+    expect(notices[0]).toContain('idea is still available');
   }), 30_000);
 
   it('retries a missing browser once, preserves the idea and reports an infrastructure failure', async () => fixture(async (root, game, gameManifest, ideas, runs) => {

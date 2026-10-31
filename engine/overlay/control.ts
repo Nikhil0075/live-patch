@@ -12,7 +12,7 @@ root.innerHTML = `<main class="go-live-dashboard"><div class="live-status"><stro
 <section class="live-card panel-actions" data-panel="actions"><div class="live-card-heading"><h3>Quick actions</h3></div><div class="quick-tiles"><button data-action="pause" title="Shortcut P">Pause round · P</button><button data-action="resume" title="Shortcut R">Resume round · R</button><button data-action="advance" title="Shortcut N">Next stage · N</button><button data-action="rollback" class="danger">Roll back latest</button><button data-action="save">Save build</button><button data-action="bet-start">Open prediction</button><button data-action="force-next" class="danger">Cancel build</button></div><p id="rollback-vote" class="hint"></p></section>
 <section class="live-card panel-activity" data-panel="activity"><div class="live-card-heading"><h3>Activity feed</h3></div><div id="activity-feed"></div><h4>Reward redemptions</h4><div id="refunds"></div><h4>Points prediction</h4><div id="prediction"></div></section>
 <section class="live-card panel-codex" data-panel="codex"><div class="live-card-heading"><h3>Codex at work</h3></div><div id="runs"></div></section>
-<section class="live-card panel-patches" data-panel="patches"><div class="live-card-heading"><h3>Active patches</h3><span id="patch-count"></span></div><div id="patches"></div><h4>Saved builds</h4><div id="builds"></div></section>
+<section class="live-card panel-patches" data-panel="patches"><div class="live-card-heading"><h3>Active patches</h3><span id="patch-count"></span></div><div id="patches"></div><div id="builds"></div></section>
 </div><p id="notice" role="status"></p></main>`;
 const panels = root.querySelector<HTMLElement>('#dashboard-panels')!;
 const browserNotice = document.createElement('p'); browserNotice.id = 'browser-preflight-notice'; browserNotice.className = 'setup-warning'; browserNotice.hidden = true;
@@ -59,6 +59,17 @@ window.addEventListener('beforeunload', () => channel.close());
 
 let currentCandidateId: string | undefined;
 let rewardIdeaIds = new Set<string>();
+let ideaLabels = new Map<string, string>();
+let setupNoticeAt = 0;
+function refreshSetupNotice() {
+  if (Date.now() - setupNoticeAt < 30_000) return;
+  setupNoticeAt = Date.now();
+  void fetch('/api/setup').then(response => response.json() as Promise<{ checks: { id: string; state: string; reason: string }[] }>).then(setup => {
+    const browser = setup.checks.find(check => check.id === 'browser');
+    browserNotice.hidden = browser?.state !== 'Needs action';
+    browserNotice.textContent = browserNotice.hidden ? '' : `Test browser needs attention: ${browser?.reason} Open Setup to repair it before approving a patch.`;
+  }).catch(() => { setupNoticeAt = 0; });
+}
 async function action(name: string, ideaId?: string) {
   const confirmations: Record<string, string> = { rollback: 'Roll back the latest shipped patch?', reject: rewardIdeaIds.has(ideaId ?? '') ? 'Reject this idea? If its channel-point redemption was already fulfilled, its points cannot be returned.' : 'Reject this idea?', 'force-next': 'Cancel the current build and start a new round?', 'triage-discard': 'Discard these AI triage suggestions?', 'bet-cancel': 'Cancel the points prediction and return all points?', 'remove-demo': 'Remove all active Practice demo patches before going live?' };
   if (confirmations[name] && !confirm(confirmations[name])) return;
@@ -73,7 +84,7 @@ async function action(name: string, ideaId?: string) {
     const response = await fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: name, ideaId: ideaId ?? (name === 'bet-start' ? currentCandidateId : undefined) }) });
     const data = await response.json() as { error?: string; message?: string; id?: string; applied?: number; preview?: unknown[] };
     const successWords: Record<string, string> = { advance: 'Round moved to the next stage', pause: 'Round paused', resume: 'Round resumed', rollback: 'Latest patch rolled back', 'force-next': 'Build cancelled; next round started' };
-    notify(response.ok ? (name === 'reject' && ideaId ? `rejected idea ${ideaId}` : data.message ?? (data.id ? `Saved build ${data.id}` : data.preview ? `Review ${data.preview.length} AI suggestion(s) below` : data.applied !== undefined ? `AI triage updated ${data.applied} pitch(es)` : successWords[name] ?? `${name} complete`)) : (data.error ?? data.message ?? `HTTP ${response.status}`));
+    notify(response.ok ? (name === 'reject' ? `rejected ${ideaLabels.get(ideaId ?? '') ?? 'the selected idea'}` : data.message ?? (data.id ? `Saved build ${data.id}` : data.preview ? `Review ${data.preview.length} AI suggestion(s) below` : data.applied !== undefined ? `AI triage updated ${data.applied} pitch(es)` : successWords[name] ?? `${name} complete`)) : (data.error ?? data.message ?? `HTTP ${response.status}`));
     await refresh();
   } catch (error) { notify(String(error)); }
 }
@@ -92,19 +103,20 @@ window.addEventListener('keydown', event => {
 
 async function refresh() {
   try {
-    const [data, twitch, chat, saved, refundData, betData, setup] = await Promise.all([
+    refreshSetupNotice();
+    const [data, twitch, chat, saved, refundData, betData] = await Promise.all([
       dashboardData(),
       fetch('/api/twitch/status').then(response => response.json()) as Promise<{ broadcaster: { login: string } | null; bot: { login: string } | null; eventsub: string; authIssue?: string; reward?: { state: string; reason: string }; refundIssue?: string }>,
       fetch('/api/chat/recent').then(response => response.json()) as Promise<{ messages: { at: string; author: string; text: string }[] }>,
       fetch('/api/builds').then(response => response.json()) as Promise<{ builds: { id: string; patches: unknown[]; createdAt?: string }[] }>,
       fetch('/api/twitch/refunds').then(response => response.json()) as Promise<{ refunds: { redemptionId: string; action?: 'refund' | 'fulfill'; status: string; message: string; updatedAt?: string }[] }>,
-      fetch('/api/predictions').then(response => response.json()) as Promise<{ active?: { ideaId: string; status: string; error?: string; createdAt?: string } }>,
-      fetch('/api/setup').then(response => response.json()) as Promise<{ checks: { id: string; state: string; reason: string }[] }>
+      fetch('/api/predictions').then(response => response.json()) as Promise<{ active?: { ideaId: string; status: string; error?: string; createdAt?: string } }>
     ]);
     const { round, runs, mutations, ideas, rollbackVote, events, settings } = data;
-    const browser = setup.checks.find(check => check.id === 'browser');
-    browserNotice.hidden = browser?.state !== 'Needs action';
-    browserNotice.textContent = browserNotice.hidden ? '' : `Test browser needs attention: ${browser?.reason} Open Setup to repair it before approving a patch.`;
+    ideaLabels = new Map(ideas.map(idea => {
+      const words = idea.text.trim().split(/\s+/);
+      return [idea.id, `@${idea.authorName}: ${words.slice(0, 8).join(' ')}${words.length > 8 ? '…' : ''}`];
+    }));
     rewardIdeaIds = new Set(ideas.filter(idea => idea.source === 'reward').map(idea => idea.id));
     currentCandidateId = round.candidates[0]?.id;
     root.querySelector('#rollback-vote')!.textContent = rollbackVote
@@ -213,8 +225,7 @@ async function refresh() {
       refundBox.append(item);
     }
     const builds = root.querySelector<HTMLElement>('#builds')!; builds.replaceChildren();
-    if (!saved.builds.length) appendText(builds, 'p', 'No saved builds. Use Save build and patch notes after a patch ships.', 'empty-state');
-    for (const build of saved.builds.slice(0, 3)) appendText(builds, 'p', `${build.id} · ${build.patches.length} patch(es)`);
+    const buildLink = document.createElement('a'); buildLink.href = '/?view=builds'; buildLink.textContent = `Saved builds (${saved.builds.length}) →`; builds.append(buildLink);
     const strip = root.querySelector<HTMLElement>('#chat-strip')!;
     const scrollTop = strip.scrollTop;
     const nearBottom = strip.scrollHeight - strip.clientHeight - scrollTop < 28;

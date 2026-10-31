@@ -31,15 +31,8 @@ import { mutationTitle } from '../mutation/metadata';
 import { RollbackVotes } from '../pipeline/rollback-votes';
 import { PatchPredictions } from './predictions';
 import { handleRunnerOutcome } from './runner-outcome';
+import { loadLocalEnv } from '../studio/local-env';
 
-function loadLocalEnv(root: string) {
-  const file = path.join(root, '.env');
-  if (!fs.existsSync(file)) return;
-  for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
-    const match = /^\s*([A-Z][A-Z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line);
-    if (match && process.env[match[1]] === undefined) process.env[match[1]] = match[2].replace(/^(['"])(.*)\1$/, '$2');
-  }
-}
 function json(res: ServerResponse, status: number, data: unknown) {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -65,6 +58,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
   loadLocalEnv(root);
   const config: TwitchConfig = { clientId: process.env.TWITCH_CLIENT_ID ?? '', clientSecret: process.env.TWITCH_CLIENT_SECRET ?? '', redirectUri: process.env.TWITCH_REDIRECT_URI ?? defaultTwitchRedirectUri, rewardId: process.env.TWITCH_PITCH_REWARD_ID ?? '' };
   const dataDir = path.resolve(process.env.LIVE_PATCH_DATA_DIR ?? path.join(root, '.live-patch'));
+  const buildsDir = path.resolve(process.env.LIVE_PATCH_BUILDS_DIR || path.join(root, 'builds'));
   const settings = new SettingsStore(path.join(dataDir, 'settings.json'));
   let lastSandbox: SetupCheck | undefined;
   let diagnostics = '';
@@ -219,6 +213,13 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
   server.middlewares.use(async (req, res, next) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? '127.0.0.1'}`);
     const route = url.pathname;
+    const isolatedEntry = process.env.LIVE_PATCH_BUILDS_DIR && /^\/builds\/([\w-]+)\/game-entry\.js$/.exec(route);
+    if (isolatedEntry && req.method === 'GET') {
+      const file = path.join(buildsDir, isolatedEntry[1], 'game-entry.js');
+      if (!fs.existsSync(file)) { json(res, 404, { error: 'Build not found' }); return; }
+      res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+      res.end(fs.readFileSync(file)); return;
+    }
     if (route === '/api/ideas' && req.method === 'GET') { json(res, 200, { ideas: store.list(), candidateIds: [1, 2, 3].map(number => rounds.candidate(number)?.id ?? null), rollbackRequests: store.rollbackRequests(), rollbackVote: rollbackVotes.snapshot(runs.lastShipped(gameDirectory)?.id), replies }); return; }
     if (route === '/api/chat/recent' && req.method === 'GET') { json(res, 200, { messages: recentChat.slice(-8) }); return; }
     if (route === '/api/round' && req.method === 'GET') { json(res, 200, rounds.snapshot()); return; }
@@ -272,7 +273,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
       const games = discoverGames(root, dataDir);
       const selection = path.join(dataDir, 'active-game.json');
       const previous = fs.existsSync(selection) ? (JSON.parse(fs.readFileSync(selection, 'utf8')) as { directory?: string }).directory : undefined;
-      json(res, 200, { active: gameDirectory, playOnly: gameDirectory.startsWith(path.join(root, 'builds') + path.sep), returnGame: games.find(game => game.directory === previous && game.valid)?.directory ?? games.find(game => game.valid)?.directory, games }); return;
+      json(res, 200, { active: gameDirectory, playOnly: gameDirectory.startsWith(buildsDir + path.sep), returnGame: games.find(game => game.directory === previous && game.valid)?.directory ?? games.find(game => game.valid)?.directory, games }); return;
     }
     if (route === '/api/library/docs' && req.method === 'GET') {
       const item = discoverGames(root, dataDir).find(game => game.directory === url.searchParams.get('directory') && game.valid);
@@ -323,21 +324,21 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
       return;
     }
     if (route === '/api/builds' && req.method === 'GET') {
-      const folder = path.join(root, 'builds');
+      const folder = buildsDir;
       const builds = fs.existsSync(folder) ? fs.readdirSync(folder).filter(name => /^[\w-]+$/.test(name) && fs.existsSync(path.join(folder, name, 'build.json'))).sort().reverse().slice(0, 20).map(name => JSON.parse(fs.readFileSync(path.join(folder, name, 'build.json'), 'utf8')) as unknown) : [];
       json(res, 200, { builds }); return;
     }
     if (route === '/api/builds/notes' && req.method === 'GET') {
       const id = url.searchParams.get('id') ?? '';
       if (!/^[\w-]+$/.test(id)) { json(res, 400, { error: 'Invalid build ID' }); return; }
-      const file = path.join(root, 'builds', id, 'patch-notes.md');
+      const file = path.join(buildsDir, id, 'patch-notes.md');
       if (!fs.existsSync(file)) { json(res, 404, { error: 'Build not found' }); return; }
       res.setHeader('Content-Type', 'text/plain; charset=utf-8'); res.end(fs.readFileSync(file, 'utf8')); return;
     }
     if ((route === '/api/compare/game' || route === '/api/compare/mutations') && req.method === 'GET') {
       const id = url.searchParams.get('id') ?? '';
       if (!/^[\w-]+$/.test(id)) { json(res, 400, { error: 'Invalid build ID' }); return; }
-      const saved = path.join(root, 'builds', id);
+      const saved = path.join(buildsDir, id);
       if (!fs.existsSync(path.join(saved, 'build.json'))) { json(res, 404, { error: 'Build not found' }); return; }
       try {
         const selected = loadGame(root, path.join(saved, 'game'));
@@ -359,7 +360,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
       try {
         const body = await readJson(req) as { id?: string };
         if (!body.id || !/^[\w-]+$/.test(body.id)) throw Error('Invalid build ID');
-        const selected = path.join(root, 'builds', body.id, 'game');
+        const selected = path.join(buildsDir, body.id, 'game');
         loadGame(root, selected);
         process.env.LIVE_PATCH_GAME = selected;
         json(res, 200, { message: 'Opening play-only build' });
@@ -374,7 +375,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
         const state = rounds.snapshot();
         const selected = state.candidates.find(idea => idea.id === body.ideaId);
         if (!selected || !practiceDemoEligible(state.phase, state.candidates, selected.id, Boolean(auth.identity('broadcaster') && auth.identity('bot') && eventsub.status().startsWith('connected')))) throw Error('Demo patches require an all-Practice ballot at approval with live Twitch chat disconnected');
-        if (!manifest.demoMutation || gameDirectory.startsWith(path.resolve(root, 'builds') + path.sep)) throw Error('This game has no Practice demo patch');
+        if (!manifest.demoMutation || gameDirectory.startsWith(buildsDir + path.sep)) throw Error('This game has no Practice demo patch');
         const sourcePath = path.resolve(gameDirectory, manifest.demoMutation);
         const mutationDir = path.resolve(gameDirectory, manifest.mutationDir);
         if (!sourcePath.startsWith(gameDirectory + path.sep) || !fs.statSync(sourcePath).isFile()) throw Error('Invalid demo patch path');
@@ -416,7 +417,7 @@ export function configureTwitchServer(server: ViteDevServer, root: string, gameD
         else if (body.action === 'triage-apply') { const applied = rounds.applyTriagePreview(); json(res, 200, { applied, round: rounds.snapshot() }); return; }
         else if (body.action === 'triage-discard') rounds.discardTriagePreview();
         else if (body.action === 'force-next') { rounds.forceNext(); runner.cancelBuild(); if (predictions.active()) void predictions.cancel().catch(error => console.error('Prediction cancel after force-next failed:', error)); }
-        else if (body.action === 'save') { json(res, 200, await saveBuild(root, gameDirectory, manifest, store, runs)); return; }
+        else if (body.action === 'save') { json(res, 200, await saveBuild(root, gameDirectory, manifest, store, runs, buildsDir)); return; }
         else if (body.action === 'remove-demo') {
           const demos = runs.list().filter(run => run.gameDirectory === gameDirectory && run.demo && run.status === 'shipped' && /^demo-[a-f0-9]{8}\.js$/.test(run.mutationName ?? ''));
           for (const run of demos) {

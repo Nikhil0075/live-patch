@@ -28,16 +28,32 @@ export function clearPlacement(widget: OverlayWidget): OverlayWidget {
 
 export function placeWidget(widget: OverlayWidget, placed: OverlayWidget[]): OverlayWidget {
   const blocked = [...keepClearZones, ...placed];
-  const maxX = 1920 - widget.width, maxY = 1080 - widget.height;
-  const xs = new Set([widget.x, 0, maxX]);
-  const ys = new Set([widget.y, 0, maxY]);
+  const find = (size: OverlayWidget): OverlayWidget | undefined => {
+  const maxX = 1920 - size.width, maxY = 1080 - size.height;
+  const xs = new Set([Math.min(size.x, maxX), 0, maxX]);
+  const ys = new Set([Math.min(size.y, maxY), 0, maxY]);
   for (const item of blocked) {
     xs.add(Math.max(0, Math.min(maxX, item.x + item.width)));
-    xs.add(Math.max(0, Math.min(maxX, item.x - widget.width)));
+    xs.add(Math.max(0, Math.min(maxX, item.x - size.width)));
     ys.add(Math.max(0, Math.min(maxY, item.y + item.height)));
-    ys.add(Math.max(0, Math.min(maxY, item.y - widget.height)));
+    ys.add(Math.max(0, Math.min(maxY, item.y - size.height)));
   }
-  const candidates = [...xs].flatMap(x => [...ys].map(y => ({ ...widget, x, y })));
-  candidates.sort((a, b) => Math.abs(a.x - widget.x) + Math.abs(a.y - widget.y) - Math.abs(b.x - widget.x) - Math.abs(b.y - widget.y));
-  return candidates.find(candidate => blocked.every(item => !overlaps(candidate, item))) ?? widget;
+  const candidates = [...xs].flatMap(x => [...ys].map(y => ({ ...size, x, y })));
+  candidates.sort((a, b) => Math.abs(a.x - size.x) + Math.abs(a.y - size.y) - Math.abs(b.x - size.x) - Math.abs(b.y - size.y));
+  return candidates.find(candidate => blocked.every(item => !overlaps(candidate, item)));
+  };
+  const full = find(widget);
+  if (full) return full;
+  const [minimumWidth, minimumHeight] = minimumWidgetSize[widget.type];
+  const widths = new Set([minimumWidth, ...blocked.flatMap(item => [item.x, 1920 - item.x - item.width])]);
+  for (const width of [...widths].filter(value => value >= minimumWidth && value < widget.width && widget.height >= minimumWidgetHeight(widget.type, value)).sort((a, b) => b - a)) {
+    const resized = find({ ...widget, width });
+    if (resized) return resized;
+  }
+  const heights = new Set([Math.max(minimumHeight, minimumWidgetHeight(widget.type, widget.width)), ...blocked.flatMap(item => [item.y, 1080 - item.y - item.height])]);
+  for (const height of [...heights].filter(value => value >= minimumHeight && value < widget.height).sort((a, b) => b - a)) {
+    const resized = find({ ...widget, height });
+    if (resized) return resized;
+  }
+  return widget;
 }

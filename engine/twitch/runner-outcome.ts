@@ -14,7 +14,7 @@ export async function handleRunnerOutcome(
       : record?.stopReason === 'codex_unavailable' ? 'Patch build stopped because Codex is unavailable. The idea is still available; check Codex sign-in or quota before retrying.'
       : record?.stopReason === 'timeout' ? 'Patch build timed out. No patch shipped.'
       : record?.stopReason === 'cancelled' ? 'Patch build was cancelled. No patch shipped.'
-      : 'Patch build stopped. No patch shipped; check the local run record.';
+      : 'Patch build stopped before shipping. The streamer can try again.';
     const results = await Promise.allSettled([predictions.cancel(), notifySetup(notice)]);
     for (const result of results) if (result.status === 'rejected') throw result.reason;
   } else await predictions.settle(event.ideaId, event.type === 'shipped');
