@@ -44,14 +44,26 @@ async function runBrowserSuite(source, suite, mutation) {
   const gameManifest = JSON.parse(fs.readFileSync(path.join(source, 'live-patch.json'), 'utf8'));
   const temp = fs.mkdtempSync(path.join(root, '.live-patch-test-'));
   const dataDir = path.join(temp, 'data');
-  const isolatedGame = path.join(temp, 'game');
+  // Keep each copied game two folders below the repository root so its
+  // relative imports of the shared engine resolve exactly as in games/.
+  const catalogDir = temp;
+  const builtIns = fs.readdirSync(path.join(root, 'games'), { withFileTypes: true })
+    .filter(item => item.isDirectory() && fs.existsSync(path.join(root, 'games', item.name, 'live-patch.json')))
+    .map(item => path.join(root, 'games', item.name));
+  const sourceBuiltIn = builtIns.find(game => path.resolve(game) === path.resolve(source));
+  const isolatedGame = path.join(catalogDir, sourceBuiltIn ? path.basename(source) : 'active');
   fs.mkdirSync(dataDir, { recursive: true });
   fs.writeFileSync(path.join(dataDir, 'tokens.json'), '{}');
   fs.writeFileSync(path.join(dataDir, 'public-probe.txt'), 'safe fixture');
-  copyTestGame(root, source, isolatedGame, gameManifest.mutationDir, mutation, Boolean(mutation));
+  for (const game of builtIns) {
+    const gameCopy = path.join(catalogDir, path.basename(game));
+    const item = JSON.parse(fs.readFileSync(path.join(game, 'live-patch.json'), 'utf8'));
+    copyTestGame(root, game, gameCopy, item.mutationDir, game === sourceBuiltIn ? mutation : undefined, Boolean(mutation && game === sourceBuiltIn));
+  }
+  if (!sourceBuiltIn) copyTestGame(root, source, isolatedGame, gameManifest.mutationDir, mutation, Boolean(mutation));
   const testDir = suite === 'studio' ? path.join(root, 'tests/browser') : path.join(isolatedGame, 'tests/smoke');
-  const originalEnv = Object.fromEntries(['LIVE_PATCH_GAME', 'LIVE_PATCH_DATA_DIR', 'LIVE_PATCH_BUILDS_DIR', 'LIVE_PATCH_HTTP_PORT', 'LIVE_PATCH_TEST_SERVER'].map(key => [key, process.env[key]]));
-  Object.assign(process.env, { LIVE_PATCH_GAME: isolatedGame, LIVE_PATCH_DATA_DIR: dataDir, LIVE_PATCH_BUILDS_DIR: path.join(temp, 'builds'), LIVE_PATCH_HTTP_PORT: String(await freePort()), LIVE_PATCH_TEST_SERVER: '1' });
+  const originalEnv = Object.fromEntries(['LIVE_PATCH_GAME', 'LIVE_PATCH_DATA_DIR', 'LIVE_PATCH_BUILDS_DIR', 'LIVE_PATCH_HTTP_PORT', 'LIVE_PATCH_TEST_SERVER', 'LIVE_PATCH_TEST_CATALOG_DIR'].map(key => [key, process.env[key]]));
+  Object.assign(process.env, { LIVE_PATCH_GAME: isolatedGame, LIVE_PATCH_DATA_DIR: dataDir, LIVE_PATCH_BUILDS_DIR: path.join(temp, 'builds'), LIVE_PATCH_HTTP_PORT: String(await freePort()), LIVE_PATCH_TEST_SERVER: '1', LIVE_PATCH_TEST_CATALOG_DIR: catalogDir });
   let server;
   try {
     server = await createServer({ server: { host: '127.0.0.1' } });

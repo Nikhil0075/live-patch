@@ -22,7 +22,7 @@ Create a folder containing `live-patch.json`, a TypeScript entry, API documentat
 - `reload`: `{"type":"websocket","url":"ws://127.0.0.1:5173","event":"live-patch:changed"}`. Use a local host, explicit port and a unique custom event name. Phase 1 sends that event over Vite's development WebSocket. The test runner overrides the port to isolate itself from a live server.
 - `maxFileLines`: positive integer up to 120; the engine also caps files at 12,000 bytes.
 
-The manifest is validated before any server port opens. Paths must stay inside the game folder. `npm run smoke -- --mutation file.js` copies the selected game to a temporary directory, starts the engine on free ports, and runs that game's smoke suite there. `LIVE_PATCH_GAME=path/to/game` selects a different game for `npm test` and `npm run smoke`.
+The manifest is validated before any server port opens. Paths must stay inside the game folder. `npm run smoke -- --mutation file.js` copies the selected game to a temporary directory, starts the engine on free ports, and runs that game's smoke suite there. `LIVE_PATCH_GAME=path/to/game` selects a different game for `npm test` and `npm run smoke`. The studio browser suite runs once with that selected game, while `npm test` also runs every built-in game's own smoke suite; their Library catalog consists of temporary copies.
 
 ## Game adapter contract
 

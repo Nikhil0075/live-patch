@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { manifestSchema } from '../engine/manifest/schema';
+import { keepClearZones, overlaps, minimumWidgetHeight, placeWidget } from '../engine/studio/overlay-placement';
+import { SettingsStore } from '../engine/studio/settings';
 
 const game = path.resolve('games/lantern-run');
 const manifest = manifestSchema.parse(JSON.parse(fs.readFileSync(path.join(game, 'live-patch.json'), 'utf8')));
@@ -25,5 +27,28 @@ describe('Lantern Run manifest and API documentation', () => {
       expect(source).toContain('export const meta');
       expect(source).toMatch(/export function on[A-Z]/);
     }
+  });
+
+  it('keeps all four default OBS widgets separate from each other and game zones at maximum ballot height', () => {
+    const zones = [...keepClearZones, ...(manifest.overlay?.keepClear ?? [])];
+    const layout = manifest.overlay?.defaultLayout ?? [];
+    expect(layout).toHaveLength(4);
+    expect(new Set(layout.map(widget => widget.type)).size).toBe(4);
+    const effective = new SettingsStore(path.join(game, 'tests', 'nonexistent-settings.json'), {
+      gameKey: 'lantern-run', defaultLayout: layout, keepClear: manifest.overlay?.keepClear
+    }).snapshot().overlayWidgets;
+    for (const widgets of [layout, effective]) for (const [index, widget] of widgets.entries()) {
+      expect(widget.height).toBeGreaterThanOrEqual(minimumWidgetHeight(widget.type, widget.width));
+      expect(widget.x + widget.width).toBeLessThanOrEqual(1920);
+      expect(widget.y + widget.height).toBeLessThanOrEqual(1080);
+      for (const zone of zones) expect(overlaps(widget, zone), `${widget.type} overlaps ${zone.label}`).toBe(false);
+      for (const prior of widgets.slice(0, index)) expect(overlaps(widget, prior), `${widget.type} overlaps ${prior.type}`).toBe(false);
+    }
+  });
+
+  it('does not shrink a narrow stacked ballot below its readable height', () => {
+    const ballot = { type: 'ballot' as const, x: 24, y: 380, width: 500, height: 700 };
+    const placed = placeWidget(ballot, [], [...keepClearZones, ...(manifest.overlay?.keepClear ?? [])]);
+    expect(placed.height).toBeGreaterThanOrEqual(700);
   });
 });

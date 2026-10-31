@@ -9,8 +9,9 @@ const root = process.cwd();
 const gamePath = process.env.LIVE_PATCH_GAME || defaultGame(root);
 describe('platform contract', () => {
   it('loads the active game through its manifest', () => {
-    const { manifest } = loadGame(root, gamePath);
-    expect(manifest.name).toBe('Arena Survivor');
+    const { directory, manifest } = loadGame(root, gamePath);
+    expect(directory).toBe(path.resolve(root, gamePath));
+    expect(manifest.name.length).toBeGreaterThan(0);
     expect(manifest.mutationDir).toBe('mutations/');
   });
   it('rejects missing and invalid manifests with clear errors', () => {

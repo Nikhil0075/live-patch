@@ -50,8 +50,9 @@ export function placeWidget(widget: OverlayWidget, placed: OverlayWidget[], zone
     const resized = find({ ...widget, width });
     if (resized) return resized;
   }
-  const heights = new Set([Math.max(minimumHeight, minimumWidgetHeight(widget.type, widget.width)), ...blocked.flatMap(item => [item.y, 1080 - item.y - item.height])]);
-  for (const height of [...heights].filter(value => value >= minimumHeight && value < widget.height).sort((a, b) => b - a)) {
+  const requiredHeight = Math.max(minimumHeight, minimumWidgetHeight(widget.type, widget.width));
+  const heights = new Set([requiredHeight, ...blocked.flatMap(item => [item.y, 1080 - item.y - item.height])]);
+  for (const height of [...heights].filter(value => value >= requiredHeight && value < widget.height).sort((a, b) => b - a)) {
     const resized = find({ ...widget, height });
     if (resized) return resized;
   }

@@ -611,3 +611,33 @@ test('setup shows checks while loading and keeps step labels readable', async ({
   await expect(done).toContainText('Requirements');
   await expect(done).toHaveCSS('color', 'rgb(180, 255, 224)');
 });
+
+test('Library switches both built-in games and the OBS layout follows the active manifest', async ({ page }) => {
+  test.setTimeout(60_000);
+  const catalog = await page.request.get('/api/library').then(response => response.json()) as { active: string; games: { name: string; directory: string }[] };
+  const first = catalog.games.find(game => game.directory === catalog.active)!;
+  const other = catalog.games.find(game => game.directory !== catalog.active && ['Arena Survivor', 'Lantern Run'].includes(game.name))!;
+  expect(first).toBeTruthy(); expect(other).toBeTruthy();
+  const firstSettings = await page.request.get('/api/settings').then(response => response.json()) as { overlayWidgets: { type: string; x: number; y: number }[] };
+  await page.goto('/?view=library');
+  await expect(page.locator('.library-card').filter({ hasText: first.name })).toBeVisible();
+  await expect(page.locator('.library-card').filter({ hasText: other.name })).toBeVisible();
+  await page.locator('.library-card').filter({ hasText: other.name }).click();
+  await page.getByRole('button', { name: 'Make active for streams' }).click();
+  const activeName = async () => { try { return await page.request.get('/api/game').then(response => response.json()).then(game => game.name as string); } catch { return ''; } };
+  await expect.poll(activeName, { timeout: 20_000 }).toBe(other.name);
+  const otherSettings = await page.request.get('/api/settings').then(response => response.json()) as typeof firstSettings;
+  expect(otherSettings.overlayWidgets).not.toEqual(firstSettings.overlayWidgets);
+  await expect(async () => {
+    await page.goto('/overlay.html', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('.stream-shell header')).toBeVisible();
+  }).toPass({ timeout: 15_000 });
+  const patch = otherSettings.overlayWidgets.find(widget => widget.type === 'patches')!;
+  await expect(page.locator('.stream-shell header')).toHaveCSS('top', `${patch.y}px`);
+  await page.goto('/?view=library');
+  await page.locator('.library-card').filter({ hasText: first.name }).click();
+  await page.getByRole('button', { name: 'Make active for streams' }).click();
+  await expect.poll(activeName, { timeout: 20_000 }).toBe(first.name);
+  const restored = await page.request.get('/api/settings').then(response => response.json()) as typeof firstSettings;
+  expect(restored.overlayWidgets).toEqual(firstSettings.overlayWidgets);
+});

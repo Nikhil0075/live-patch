@@ -48,6 +48,8 @@ function sky(): HTMLCanvasElement {
     const gradient = ctx.createLinearGradient(0, 0, 0, height);
     gradient.addColorStop(0, '#1f2b5c'); gradient.addColorStop(.52, '#5b3f86'); gradient.addColorStop(.82, '#f2a25a'); gradient.addColorStop(1, '#324765');
     ctx.fillStyle = gradient; ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = '#b780a52b';
+    ellipse(ctx, 175, 280, 180, 23, '#b780a52b'); ellipse(ctx, 920, 330, 250, 28, '#efb0802b');
     ctx.shadowColor = '#ffc77c'; ctx.shadowBlur = 38; ellipse(ctx, 620, 380, 36, 36, '#ffcf79'); ctx.shadowBlur = 0;
     for (let index = 0; index < 30; index++) ellipse(ctx, (index * 211 + 43) % width, (index * 67 + 19) % 260, index % 5 === 0 ? 2 : 1, 1, '#fff5d6');
   });

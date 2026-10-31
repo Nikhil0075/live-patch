@@ -11,7 +11,8 @@ function atomic(file: string, value: unknown) { fs.mkdirSync(path.dirname(file),
 
 export function discoverGames(root: string, dataDir: string): LibraryGame[] {
   const imports = readJson<string[]>(path.join(dataDir, 'imported-games.json'), []);
-  const standard = path.join(root, 'games');
+  const standard = process.env.LIVE_PATCH_TEST_SERVER === '1' && process.env.LIVE_PATCH_TEST_CATALOG_DIR
+    ? path.resolve(process.env.LIVE_PATCH_TEST_CATALOG_DIR) : path.join(root, 'games');
   const folders = fs.existsSync(standard) ? fs.readdirSync(standard, { withFileTypes: true }).filter(item => item.isDirectory()).map(item => path.join(standard, item.name)) : [];
   const smoke = readJson<Record<string, LibraryGame['smoke']>>(path.join(dataDir, 'smoke-results.json'), {});
   const runs = readJson<{ gameDirectory: string; status: string }[]>(path.join(dataDir, 'runs.json'), []);

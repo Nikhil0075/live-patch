@@ -211,7 +211,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       const best = this.add.text(0, 30, '', { ...style, fontSize: '21px', color: '#b9b4c8' }).setOrigin(.5);
       const next = this.add.text(0, 75, 'Next run in 2 s · Space to start now', { ...style, fontSize: '17px' }).setOrigin(.5);
       this.card = this.add.container(WIDTH / 2, HEIGHT / 2, [backing, title, result, best, next]).setDepth(20).setVisible(false);
-      this.card.setData('result', result); this.card.setData('best', best);
+      this.card.setData('result', result); this.card.setData('best', best); this.card.setData('next', next);
       this.input.keyboard?.on('keydown', (event: KeyboardEvent) => { if (['Space', 'ArrowUp', 'KeyW'].includes(event.code) && !event.repeat) { jumpHeld = true; jump(); event.preventDefault(); } });
       this.input.keyboard?.on('keyup', (event: KeyboardEvent) => { if (['Space', 'ArrowUp', 'KeyW'].includes(event.code)) jumpHeld = false; });
       this.input.on('pointerdown', () => { jumpHeld = true; jump(); });
@@ -290,8 +290,17 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
         const left = screenX(span.from), right = screenX(span.to);
         if (right < 0 || left > WIDTH) continue;
         g.fillStyle(0x5a3a24); g.fillRect(left, GROUND + 13, right - left, HEIGHT - GROUND);
+        g.fillStyle(0x69442b); g.fillRect(left, GROUND + 26, right - left, 22);
+        g.fillStyle(0x432f29); g.fillRect(left, GROUND + 91, right - left, HEIGHT - GROUND - 91);
         g.fillStyle(0x7fae3a); g.fillRect(left, GROUND, right - left, 17);
         g.fillStyle(0xa1c45a); g.fillRect(left, GROUND, right - left, 5);
+        for (let world = Math.ceil(span.from / 95) * 95; world < span.to; world += 95) {
+          const x = screenX(world); if (x < -20 || x > WIDTH + 20) continue;
+          g.fillStyle(0x98bc4c); g.fillTriangle(x - 9, GROUND, x - 3, GROUND - 11, x + 1, GROUND);
+          g.fillTriangle(x + 2, GROUND, x + 8, GROUND - 9, x + 13, GROUND);
+          g.fillStyle(0x8b6140); g.fillCircle(x + 28, GROUND + 47 + world % 23, 5);
+          g.fillStyle(0x2d3035); g.fillCircle(x - 17, GROUND + 88 + world % 17, 3);
+        }
       }
       for (const item of entities) if (item.alive) {
         item.sprite?.setPosition(screenX(item.worldX), item.y);
@@ -319,6 +328,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       if (runOver > 0) {
         (this.card.getData('result') as Phaser.GameObjects.Text).setText(`${run.distance} m with ${run.fireflies} fireflies`);
         (this.card.getData('best') as Phaser.GameObjects.Text).setText(`Best ${run.best} m`);
+        (this.card.getData('next') as Phaser.GameObjects.Text).setText(`Next run in ${Math.ceil(runOver)} s · Space to start now`);
       }
     }
     applyHudSize() {

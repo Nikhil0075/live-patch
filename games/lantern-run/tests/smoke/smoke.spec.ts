@@ -178,3 +178,22 @@ test('a stalling module is disabled while the run continues', async ({ page }) =
   const before = await page.evaluate(() => (window as any).__livePatch.game.snapshot().frame);
   await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().frame)).toBeGreaterThan(before + 10);
 });
+
+test('a saved Lantern Run build reopens its original and evolved views', async ({ page }) => {
+  test.setTimeout(70_000);
+  await page.goto('/play');
+  await expect(page.locator('#mutations')).toContainText('Firefly Trail · active');
+  const saved = await page.evaluate(async () => fetch('/api/control', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save' })
+  }).then(response => response.json())) as { id: string; directory: string };
+  expect(saved.id).toMatch(/^[\w-]+$/);
+  expect(saved.directory).toBe(path.join(path.dirname(process.env.LIVE_PATCH_TEST_DATA_DIR!), 'builds', saved.id));
+  const compare = await page.context().newPage();
+  try {
+    await compare.goto(`/compare.html?id=${encodeURIComponent(saved.id)}`);
+    await expect(compare.frameLocator('#original').locator('#status')).toContainText('Lantern Run · LIVE', { timeout: 40_000 });
+    await expect(compare.frameLocator('#original').locator('#mutations')).toContainText('No mutations yet');
+    await expect(compare.frameLocator('#evolved').locator('#mutations')).toContainText('Firefly Trail · active', { timeout: 40_000 });
+    await expect(page.locator('#mutations')).toContainText('Forest Breeze · active');
+  } finally { await compare.close(); }
+});
