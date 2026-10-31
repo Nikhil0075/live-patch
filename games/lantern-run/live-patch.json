@@ -1,0 +1,46 @@
+{
+  "name": "Lantern Run",
+  "hint": "Run automatically · Space, W, Up or click to jump · Hold for a higher jump",
+  "description": "A fox courier runs through a twilight forest that chat can reshape.",
+  "tags": ["Runner", "One button"],
+  "version": "1.0.0",
+  "author": "Live Patch",
+  "audio": ["jump", "land", "firefly", "acorn", "hurt", "fall", "run-over", "spring", "power-up", "round-start", "vote-tick", "patch-shipped", "patch-failed", "rollback"],
+  "effects": ["sparks", "leaves", "splash", "celebration"],
+  "controls": [
+    { "action": "Jump", "keys": ["Space", "W", "Up", "Click", "Tap"] },
+    { "action": "Menu", "keys": ["Esc", "P"] },
+    { "action": "Full screen", "keys": ["F"] },
+    { "action": "Mute", "keys": ["M"] }
+  ],
+  "samplePitches": [
+    "The fox can double jump",
+    "Owls drop pinecones when they fly over",
+    "Every 300 meters fireflies fly toward the fox",
+    "It starts raining and the forest gets slippery",
+    "Mushroom springs pop up after every pit",
+    "Collecting 10 fireflies in a row gives a lantern shield"
+  ],
+  "overlay": {
+    "keepClear": [
+      { "label": "Game HUD", "x": 0, "y": 0, "width": 460, "height": 130 },
+      { "label": "Run lane", "x": 420, "y": 500, "width": 1500, "height": 364 }
+    ],
+    "defaultLayout": [
+      { "type": "patches", "x": 24, "y": 140, "width": 380, "height": 340 },
+      { "type": "codex", "x": 24, "y": 500, "width": 380, "height": 300 },
+      { "type": "ballot", "x": 880, "y": 175, "width": 1010, "height": 320 },
+      { "type": "ticker", "x": 560, "y": 1004, "width": 1336, "height": 58 }
+    ]
+  },
+  "entry": "src/main.ts",
+  "mutationDir": "mutations/",
+  "apiDocs": "docs/mutation-api.md",
+  "examples": ["mutations/"],
+  "forbidden": ["fetch", "eval", "document", "window", "import("],
+  "testCommand": "npm run smoke -- --mutation {file}",
+  "actions": { "showMessage": [{ "type": "string", "maxLength": 100 }] },
+  "hooks": { "tick": "onTick" },
+  "reload": { "type": "websocket", "url": "ws://127.0.0.1:5173", "event": "live-patch:changed" },
+  "maxFileLines": 120
+}

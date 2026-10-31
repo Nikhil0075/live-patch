@@ -545,7 +545,7 @@ test('studio navigation, setup and build library keep viewer data plain text', a
   await expect(page.locator('#game-cards')).toContainText(manifest.name);
   await page.locator('#library-sort').selectOption('shipped');
   expect(await page.locator('.library-card').first().evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgb(24, 24, 27)');
-  expect(await page.locator('.library-card img').evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
+  expect(await page.locator('.library-card img').first().evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
   await page.locator('#game-search').fill('no matching world');
   await expect(page.locator('#game-cards')).toContainText('No games match your search');
   await page.locator('.rail-setup a').filter({ hasText: 'Codex' }).click();
