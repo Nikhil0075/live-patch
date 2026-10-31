@@ -155,5 +155,3 @@ The engine changes this needs are generic platform features, listed under "Platf
 10. **The standing checks hold.** No viewer or game text is inserted as HTML. Mutations get no new globals. Gates are unchanged or stricter. No secrets appear in code, logs or the overlay.
 11. **The docs are in sync.** README, `docs/adding-a-game.md`, `docs/architecture.md`, `docs/demo-script.md`, the game's `docs/mutation-api.md` and `assets/CREDITS.md`.
 12. **A clean clone passes.** `npm test` (unit, studio, both games' smoke suites, HTTPS regression), `npm run build` and `npm audit --audit-level=high` pass in a clean clone, and `builds/` is unchanged after `npm test`.
-
----
