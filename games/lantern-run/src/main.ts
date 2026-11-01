@@ -49,6 +49,8 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
   let flashLife = 0, flashColor = 0xffffff;
   let countPulse = 0, heartPulse = 0;
   let scene: LanternScene | undefined;
+  let resolveReady: (() => void) | undefined;
+  const ready = new Promise<void>(resolve => { resolveReady = resolve; });
   let message = '', messageLife = 0, messageOwner = '';
   const screenX = (worldX: number) => worldX - distancePx;
   const worldX = (screen: number) => screen + distancePx;
@@ -78,7 +80,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       spans.push({ from, to: from + stretch.groundLength, stretch });
       if (stretch.hazard !== 'none' && (index * 47 + seed * 13) % 100 < Math.min(100, parameters.spawnRate * 70)) {
         const height = owlFlightHeight(seed, index);
-        const item = addEntity(stretch.hazard, from + 220, stretch.hazard === 'owl' ? height : GROUND - 32);
+        const item = addEntity(stretch.hazard, from + (stretch.hazard === 'owl' ? 350 : 220), stretch.hazard === 'owl' ? height : GROUND - 32);
         if (item && stretch.hazard === 'owl') { item.vx = -24; item.flightY = height; item.flightPhase = (seed + index * 7) % 19; }
       }
       const collectible = stretch.pickup;
@@ -221,7 +223,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       this.clouds = this.add.tileSprite(WIDTH / 2, 210, WIDTH, 200, 'lantern-world-clouds').setDepth(-9).setAlpha(.6);
       this.stars = Array.from({ length: 20 }, (_, index) => this.add.circle((index * 227 + 45) % WIDTH, (index * 71 + 33) % 280, index % 4 ? 1 : 2, 0xffecc2, .4).setDepth(-9));
       this.layers = Array.from({ length: 5 }, (_, index) => this.add.tileSprite(WIDTH / 2, 362 + index * 8, WIDTH, 330, `lantern-world-layer-${index}`)
-        .setDepth(index === 4 ? 2 : -8 + index).setAlpha(index === 4 ? .45 : 1));
+        .setDepth(-8 + index).setAlpha(index === 4 ? .72 : 1));
       this.foreground = this.add.tileSprite(WIDTH / 2, 563, WIDTH, 190, 'lantern-world-foreground').setDepth(6).setAlpha(.52);
       this.pen = this.add.graphics().setDepth(1);
       this.fox = new FoxRig(this, FOX_X, player.y, GROUND);
@@ -251,6 +253,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       this.input.on('pointerdown', () => { jumpHeld = true; jump(); });
       this.input.on('pointerup', () => { jumpHeld = false; });
       ensureWorld(); emit({ type: 'runStart', run: run.number });
+      resolveReady?.();
     }
     update(_time: number, deltaMs: number) {
       const now = performance.now(); const actualDelta = lastFrameAt ? now - lastFrameAt : deltaMs;
@@ -310,7 +313,9 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
         }
         if (item.kind === 'pinecone' && item.vy === 0) item.vy = 220;
         if (player.powerUps.includes('magnet') && item.kind === 'firefly' && Math.abs(x - FOX_X) < 180) item.worldX -= Math.sign(x - FOX_X) * 300 * dt;
-        if (x < -140 || x > WIDTH + 300) { item.alive = false; item.sprite?.destroy(); continue; }
+        // Generated ledges are placed 350 px into the next stretch, which itself
+        // can begin 650 px beyond the viewport when ensureWorld extends it.
+        if (x < -140 || x > WIDTH + 1100) { item.alive = false; item.sprite?.destroy(); continue; }
         if (Math.abs(x - FOX_X) > 49 || Math.abs(item.y - player.y) > (item.kind === 'owl' ? 55 : 48)) continue;
         if (item.kind === 'firefly' || item.kind === 'acorn') {
           item.alive = false; item.sprite?.destroy(); const value = item.kind === 'acorn' ? 5 : parameters.fireflyValue;
@@ -336,7 +341,17 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       this.layers[3].setAlpha(.92 + .08 * Math.sin(elapsed * 2));
       const g = this.pen; g.clear();
       g.fillStyle(0x1b1f33); g.fillRect(0, GROUND, WIDTH, HEIGHT - GROUND);
-      for (const span of spans) {
+      for (let index = 1; index < spans.length; index++) {
+        const left = screenX(spans[index - 1].to), right = screenX(spans[index].from);
+        if (right - left <= 1 || right < 0 || left > WIDTH) continue;
+        g.fillStyle(0x151d2b); g.fillRect(left, GROUND, right - left, HEIGHT - GROUND);
+        g.fillStyle(0x26303a, .8);
+        for (let x = left + 16; x < right; x += 27) {
+          const ridge = GROUND + 73 + Math.sin(x * .17) * 11;
+          g.fillTriangle(x - 18, HEIGHT, x, ridge, x + 23, HEIGHT);
+        }
+      }
+      for (const [index, span] of spans.entries()) {
         const left = screenX(span.from), right = screenX(span.to);
         if (right < 0 || left > WIDTH) continue;
         g.fillStyle(0x5a3f30); g.fillRect(left, GROUND + 10, right - left, HEIGHT - GROUND);
@@ -345,10 +360,15 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
         g.fillStyle(0x5f8746); g.fillRect(left, GROUND, right - left, 17);
         g.fillStyle(0xb2c76e); g.fillRect(left, GROUND, right - left, 5);
         g.lineStyle(3, 0x9abb65, .85); g.lineBetween(left, GROUND + 6, right, GROUND + 6);
-        for (const edge of [left, right]) if (edge > -12 && edge < WIDTH + 12) {
-          g.fillStyle(0x252a35); g.fillRect(edge - 4, GROUND + 18, 8, HEIGHT - GROUND);
-          g.fillStyle(0x7a9e58); g.fillTriangle(edge - 7, GROUND + 7, edge + 7, GROUND + 7, edge, GROUND + 25);
-          for (let j = 0; j < 3; j++) { g.lineStyle(2, 0x7ea05b); g.lineBetween(edge + j * 8, GROUND + 11, edge + j * 8 + 5, GROUND + 24 + j * 5); }
+        const edges = [
+          { x: left, outward: -1, gap: index > 0 && span.from - spans[index - 1].to > 1 },
+          { x: right, outward: 1, gap: index < spans.length - 1 && spans[index + 1].from - span.to > 1 }
+        ];
+        for (const edge of edges) if (edge.gap && edge.x > -12 && edge.x < WIDTH + 12) {
+          g.fillStyle(0x303a3d); g.fillTriangle(edge.x, GROUND + 12, edge.x + edge.outward * 22, GROUND + 48, edge.x, GROUND + 93);
+          g.fillStyle(0x586461); g.fillTriangle(edge.x, GROUND + 18, edge.x + edge.outward * 12, GROUND + 47, edge.x, GROUND + 64);
+          g.lineStyle(2, 0x8c9b76, .8).lineBetween(edge.x, GROUND + 9, edge.x + edge.outward * 8, GROUND + 28);
+          g.fillStyle(0x7a9e58); g.fillTriangle(edge.x - 7, GROUND + 7, edge.x + 7, GROUND + 7, edge.x, GROUND + 25);
         }
         for (let world = Math.ceil(span.from / 95) * 95; world < span.to; world += 95) {
           const x = screenX(world); if (x < -20 || x > WIDTH + 20) continue;
@@ -407,6 +427,18 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       this.hudFirefly.setScale((settings.hudSize === 'large' ? 35 : settings.hudSize === 'small' ? 27 : 31) / 96 * (1 + countPulse * .6));
       this.hudHearts.forEach((icon, index) => icon.setVisible(index < player.maxHearts).setTexture(index < player.hearts ? 'lantern-rig-hud-heart' : 'lantern-rig-hud-heart-empty'));
       this.hudHearts.forEach(icon => icon.setScale((settings.hudSize === 'large' ? 25 : settings.hudSize === 'small' ? 19 : 23) / 80 * (1 + heartPulse * .35)));
+      const iconWidth = settings.hudSize === 'large' ? 25 : settings.hudSize === 'small' ? 19 : 23;
+      const baseFont = settings.hudSize === 'large' ? 34 : settings.hudSize === 'small' ? 22 : 27;
+      const textBudget = 398 - 61 - player.maxHearts * (iconWidth + 1) - 28;
+      const currentFont = Number.parseInt(String(this.hudCount.style.fontSize), 10) || baseFont;
+      const naturalWidth = (this.hudCount.width * this.hudCount.scaleX + this.hudDistance.width) * baseFont / currentFont;
+      const fontSize = Math.max(17, Math.floor(baseFont * Math.min(1, textBudget / Math.max(1, naturalWidth))));
+      if (currentFont !== fontSize) {
+        this.hudCount.setFontSize(fontSize); this.hudDistance.setFontSize(fontSize);
+      }
+      this.hudDistance.x = this.hudCount.x + this.hudCount.displayWidth + 14;
+      const firstHeart = this.hudDistance.x + this.hudDistance.displayWidth + 14 + iconWidth / 2;
+      this.hudHearts.forEach((icon, index) => { icon.x = firstHeart + index * (iconWidth + 1); });
       this.banner.setText(messageLife > 0 ? message : '');
       this.bannerBack.clear().setVisible(messageLife > 0);
       if (messageLife > 0) {
@@ -430,7 +462,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       const size = settings.hudSize === 'large' ? 34 : settings.hudSize === 'small' ? 22 : 27;
       for (const label of [this.hudCount, this.hudDistance]) label.setFontSize(size);
       const iconSize = settings.hudSize === 'large' ? 25 : settings.hudSize === 'small' ? 19 : 23;
-      this.hudHearts.forEach((icon, index) => icon.setDisplaySize(iconSize, iconSize).setPosition(270 + index * (iconSize + 1), 19 + size * .68));
+      this.hudHearts.forEach(icon => icon.setDisplaySize(iconSize, iconSize).setY(19 + size * .68));
       this.hudFirefly.setDisplaySize(iconSize + 5, iconSize + 5).setPosition(38, 19 + size * .68);
     }
     hudBounds() { return [this.hudCount, this.hudDistance, this.hudFirefly, ...this.hudHearts.filter(icon => icon.visible)].map(label => { const { x, y, width, height } = label.getBounds(); return { x, y, width, height }; }); }
@@ -448,7 +480,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       } catch { resolve(null); }
     }, 'image/jpeg', .65);
   });
-  return { apply, removeMutation, snapshot, enableSound: () => audio.enable(), configure: value => { settings = value as StudioSettings; audio.configure(settings); scene?.applyHudSize(); },
+  return { apply, removeMutation, snapshot, ready, enableSound: () => audio.enable(), configure: value => { settings = value as StudioSettings; audio.configure(settings); scene?.applyHudSize(); },
     pause: () => { scene?.scene.pause(); audio.pause(); }, resume: () => { lastFrameAt = 0; scene?.scene.resume(); audio.resume(); }, captureFrame,
     destroy: () => { audio.destroy(); phaser.destroy(true); } };
 }

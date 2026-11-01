@@ -44,6 +44,7 @@ async function start() {
   }, 1000);
   host = new MutationHost(game, info, document.querySelector('#mutations')!, document.querySelector('#notice')!);
   createPlayMenu(game, host, info, settings);
+  (window as Window & { __livePatch?: { game: GameAdapter; host: MutationHost } }).__livePatch = { game, host };
   if (comparison || (await fetch('/api/library').then(r => r.json()).catch(() => ({})) as { playOnly?: boolean }).playOnly) document.querySelector<HTMLElement>('#play-only-label')!.hidden = false;
   dispatch = event => host?.emit(event);
   const selected = params.get('mutation');
@@ -90,9 +91,10 @@ async function start() {
       version++;
       host?.sync(selected ? changed.filter(file => file.name === selected) : changed);
     });
-    import.meta.hot?.on('vite:ws:connect', () => { void sync().then(() => { document.querySelector('#status')!.textContent = info.name + ' · LIVE'; }); });
+    import.meta.hot?.on('vite:ws:connect', () => { void Promise.resolve(game.ready).then(sync).then(() => { document.querySelector('#status')!.textContent = info.name + ' · LIVE'; }); });
     import.meta.hot?.on('vite:ws:disconnect', () => { document.querySelector('#status')!.textContent = info.name + ' · RECONNECTING'; });
   }
+  await game.ready;
   await sync();
   if (!comparison && !selected && !params.has('original')) {
     try {
@@ -104,6 +106,5 @@ async function start() {
     } catch { /* the game remains playable if run history is unavailable */ }
   }
   document.querySelector('#status')!.textContent = info.name + ' · LIVE';
-  (window as Window & { __livePatch?: { game: GameAdapter; host: MutationHost } }).__livePatch = { game, host };
 }
 start().catch(error => { document.querySelector('#status')!.textContent = `Startup failed: ${error}`; console.error(error); });

@@ -32,6 +32,7 @@ The entry exports `createGame(parent, emit)`. `parent` is the game's container; 
 - `removeMutation(origin)`: remove effects, entities and parameter writes owned by the removed or failed module without replaying unrelated modules.
 - `snapshot()`: return a JSON-serializable state with only finite numbers and bounded lists.
 - `destroy()`: free game resources.
+- Optional `ready: Promise<void>` resolves after the scene has finished creating its art and input. The engine waits for it before loading mutation Workers, so expensive game startup cannot consume their three-second load deadline.
 - Optional `pause()` and `resume()` freeze and resume game time, physics and mutation delivery from the Play menu.
 - Optional `configure(settings)` applies sound volume, mute, effects intensity, reduced flashing and shake, and HUD size from Studio Settings.
 - Optional `enableSound()` unlocks synthesized audio after a user gesture; `captureFrame()` supplies the Go Live mirror.

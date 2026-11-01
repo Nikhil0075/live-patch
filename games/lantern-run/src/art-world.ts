@@ -88,15 +88,21 @@ function prop(c: CanvasRenderingContext2D, kind: string): void {
     line(c, [59, 38, 65, 54, 52, 70], '#576568', 2);
     ellipse(c, 38, 37, 10, 3, '#d5c1a3', -.3);
   } else if (kind === 'ledge') {
-    path(c, [3, 46, 88, 43, 91, 64, 74, 72, 10, 70], gradient(c, 15, 44, 75, 78, ['#9f8d68', '#56544a', '#38464d']));
-    path(c, [3, 45, 12, 35, 83, 34, 91, 44, 76, 49, 16, 50], '#709650');
-    for (let i = 0; i < 9; i++) line(c, [9 + i * 9, 48, 10 + i * 9, 52 + i % 3 * 6], '#a5bb68', 2);
-    for (let i = 0; i < 5; i++) ellipse(c, 18 + i * 15, 37, 5, 3, '#9db970');
+    path(c, [4, 39, 86, 38, 91, 51, 80, 68, 62, 73, 52, 88, 39, 76, 21, 73, 8, 60], gradient(c, 24, 39, 71, 84, ['#8b9292', '#53616a', '#344454']));
+    path(c, [10, 49, 29, 57, 40, 75, 28, 68, 15, 65], '#667475');
+    path(c, [55, 53, 79, 47, 73, 68, 55, 80, 61, 65], '#46545f');
+    path(c, [2, 41, 13, 30, 38, 28, 56, 31, 80, 29, 92, 39, 75, 46, 18, 47], gradient(c, 25, 28, 70, 48, ['#a4c873', '#689950', '#4c7545']));
+    for (let i = 0; i < 8; i++) line(c, [12 + i * 10, 44, 14 + i * 10, 51 + i % 3 * 5], '#81ae5c', 2);
+    for (let i = 0; i < 5; i++) ellipse(c, 18 + i * 15, 33, 5, 3, '#b1cf7b');
   } else if (kind === 'spring') {
-    ellipse(c, 48, 76, 35, 8, '#374d52');
-    line(c, [31, 68, 61, 61, 32, 54, 62, 47, 32, 40], '#d7d5bc', 5);
-    ellipse(c, 48, 35, 35, 12, '#b84836'); ellipse(c, 48, 31, 27, 6, '#f7bb74');
-    for (let i = 0; i < 5; i++) ellipse(c, 25 + i * 11, 31, 2, 2, '#ffe6a0');
+    ellipse(c, 48, 80, 37, 8, '#354b50');
+    ellipse(c, 48, 73, 29, 6, '#a68362');
+    line(c, [30, 68, 64, 64, 32, 57, 62, 51, 34, 44, 62, 39], '#d8e0d9', 5);
+    line(c, [31, 66, 64, 62, 32, 55, 62, 49], '#87959c', 2);
+    ellipse(c, 48, 38, 16, 6, '#f4e2c2');
+    path(c, [9, 37, 18, 19, 33, 11, 51, 8, 69, 13, 81, 23, 87, 37, 74, 42, 22, 42], gradient(c, 24, 8, 70, 41, ['#ff8b6b', '#e74842', '#9f303d']));
+    for (const [x, y, rx] of [[30, 23, 7], [59, 19, 8], [73, 31, 5]] as const) ellipse(c, x, y, rx, rx * .52, '#ffe9c8');
+    ellipse(c, 25, 18, 8, 3, '#ffd5b7b0', -.4);
   } else if (kind === 'acorn') {
     ellipse(c, 48, 55, 19, 25, gradient(c, 32, 33, 62, 77, ['#f7c563', '#a56a36', '#6a412a']));
     ellipse(c, 48, 38, 23, 12, '#765131');
@@ -129,15 +135,18 @@ export function createWorldArt(scene: Phaser.Scene): void {
     c.fillStyle = gradient(c, 0, 0, 0, 648, ['#15233f', '#2d3d64', '#78587a', '#d48b72', '#f0bb83']); c.fillRect(0, 0, 1152, 648);
     const halo = c.createRadialGradient(740, 215, 10, 740, 215, 180);
     halo.addColorStop(0, '#ffe1a675'); halo.addColorStop(1, '#ffe1a600'); ellipse(c, 740, 215, 180, 180, halo);
-    ellipse(c, 740, 215, 54, 54, '#ffe8b9'); ellipse(c, 724, 207, 52, 52, '#f1c391');
+    ellipse(c, 740, 215, 54, 54, '#f7d39e');
+    ellipse(c, 722, 198, 15, 5, '#ffe8bd4d', -.45);
     for (let i = 0; i < 34; i++) ellipse(c, (i * 227 + 45) % 1152, (i * 71 + 33) % 300, i % 4 ? 1 : 2, 1, '#fff2d8aa');
     for (let i = 0; i < 9; i++) ellipse(c, (i * 307 + 25) % 1152, 290 + i % 3 * 27, 85, 11, '#edb3a02b');
   });
   texture(scene, 'clouds', 1152, 200, c => {
     for (let i = 0; i < 10; i++) {
       const x = (i * 311 + 71) % 1152, y = 52 + i % 4 * 31;
-      ellipse(c, x, y, 74 + i % 3 * 19, 14, '#f1c6b429');
-      ellipse(c, x + 37, y - 6, 44, 11, '#ecd4c035');
+      for (const wrap of [-1152, 0, 1152]) {
+        ellipse(c, x + wrap, y, 74 + i % 3 * 19, 14, '#f1c6b429');
+        ellipse(c, x + wrap + 37, y - 6, 44, 11, '#ecd4c035');
+      }
     }
   });
   for (let i = 0; i < 5; i++) texture(scene, `layer-${i}`, 1152, 330, c => forest(c, i));

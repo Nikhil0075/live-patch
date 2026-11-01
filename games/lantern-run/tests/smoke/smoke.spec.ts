@@ -16,16 +16,26 @@ async function crop(page: import('@playwright/test').Page, x: number, y: number,
   return page.screenshot({ clip: { x: bounds.x + (x - width / 2) * bounds.width / 1152, y: bounds.y + (y - height / 2) * bounds.height / 648,
     width: width * bounds.width / 1152, height: height * bounds.height / 648 } });
 }
-async function changedPixels(page: import('@playwright/test').Page, a: Buffer, b: Buffer): Promise<number> {
-  return page.evaluate(async ([first, second]) => {
+async function subjectChangedPixels(page: import('@playwright/test').Page, a: Buffer, b: Buffer, subject: 'fox' | 'owl' | 'firefly'): Promise<number> {
+  return page.evaluate(async ([first, second, kind]) => {
     const decode = async (base64: string) => createImageBitmap(await (await fetch(`data:image/png;base64,${base64}`)).blob());
     const images = await Promise.all([decode(first), decode(second)]);
     const canvas = document.createElement('canvas'); canvas.width = images[0].width; canvas.height = images[0].height;
-    const c = canvas.getContext('2d')!; c.drawImage(images[0], 0, 0); const p = c.getImageData(0, 0, canvas.width, canvas.height).data;
-    c.clearRect(0, 0, canvas.width, canvas.height); c.drawImage(images[1], 0, 0); const q = c.getImageData(0, 0, canvas.width, canvas.height).data;
-    let count = 0; for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - q[i]) + Math.abs(p[i + 1] - q[i + 1]) + Math.abs(p[i + 2] - q[i + 2]) > 45) count++;
+    const c = canvas.getContext('2d')!; c.drawImage(images[0], 0, 0); const aPixels = c.getImageData(0, 0, canvas.width, canvas.height).data;
+    c.clearRect(0, 0, canvas.width, canvas.height); c.drawImage(images[1], 0, 0); const bPixels = c.getImageData(0, 0, canvas.width, canvas.height).data;
+    const belongs = (pixels: Uint8ClampedArray, i: number) => {
+      const [red, green, blue] = [pixels[i], pixels[i + 1], pixels[i + 2]];
+      if (kind === 'fox') return red > 110 && red > green * 1.24 && red > blue * 1.7;
+      if (kind === 'owl') return red > 78 && green > 80 && blue > green + 14 && blue > red + 22;
+      return red > 135 && green > 135 && green > blue * 1.45;
+    };
+    let count = 0;
+    for (let i = 0; i < aPixels.length; i += 4) {
+      if (!belongs(aPixels, i) && !belongs(bPixels, i)) continue;
+      if (Math.abs(aPixels[i] - bPixels[i]) + Math.abs(aPixels[i + 1] - bPixels[i + 1]) + Math.abs(aPixels[i + 2] - bPixels[i + 2]) > 45) count++;
+    }
     images.forEach(image => image.close()); return count;
-  }, [a.toString('base64'), b.toString('base64')]);
+  }, [a.toString('base64'), b.toString('base64'), subject] as const);
 }
 
 test('Lantern Run starts and advances', async ({ page }) => {
@@ -35,6 +45,32 @@ test('Lantern Run starts and advances', async ({ page }) => {
   await page.waitForTimeout(800);
   const later = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
   expect(later.run.distance).toBeGreaterThan(initial.run.distance);
+});
+
+test('generated pickups and hazards enter the playfield after the opening stretch', async ({ page }) => {
+  await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
+  await page.evaluate(() => {
+    const { game, host } = (window as any).__livePatch;
+    host.sync([]);
+    game.apply({ type: 'setParameter', args: ['runSpeed', 600] }, 'natural-probe');
+    game.apply({ type: 'setParameter', args: ['spawnRate', 3] }, 'natural-probe');
+    game.apply({ type: 'setParameter', args: ['maxHearts', 5] }, 'natural-probe');
+    const ahead = new Set<number>(), entered = new Set<string>();
+    (window as any).__natural = { ahead, entered };
+    window.setInterval(() => {
+      const state = game.snapshot();
+      if (state.player.hearts < 4) game.apply({ type: 'heal', args: [2] }, 'natural-probe');
+      for (const item of state.entities) {
+        if (item.id <= 3) continue;
+        if (item.x > 1452) ahead.add(item.id);
+        if (ahead.has(item.id) && item.x >= 0 && item.x <= 1152) entered.add(item.kind);
+      }
+    }, 50);
+  });
+  await expect.poll(() => page.evaluate(() => {
+    const kinds = [...(window as any).__natural.entered];
+    return kinds.some(kind => ['firefly', 'acorn'].includes(kind)) && kinds.some(kind => ['log', 'thorns', 'boulder', 'owl'].includes(kind));
+  }), { timeout: 20_000 }).toBe(true);
 });
 
 for (const name of selected ? [selected] : builtIns) test(`game plays for five seconds with ${name}`, async ({ page }) => {
@@ -63,31 +99,21 @@ test('Space, W, Up and canvas click all jump and pause freezes time', async ({ p
   expect(await page.evaluate(() => (window as any).__livePatch.game.snapshot().frame)).toBe(before);
 });
 
-test('fox, owl and firefly visibly animate, jump responds immediately, and pause freezes the picture', async ({ page }) => {
+test('fox legs visibly animate while the world scrolls, and pause freezes the picture', async ({ page }) => {
   await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
-  const firstFox = await crop(page, 346, 468, 170, 125);
+  const firstFox = await crop(page, 346, 493, 112, 50);
   await page.waitForTimeout(125);
-  const nextFox = await crop(page, 346, 468, 170, 125);
-  expect(await changedPixels(page, firstFox, nextFox)).toBeGreaterThan(150);
-  const ids = await page.evaluate(() => {
-    const game = (window as any).__livePatch.game;
-    game.apply({ type: 'setParameter', args: ['runSpeed', 120] }, 'animation-probe');
-    game.apply({ type: 'spawn', args: ['owl', 960, 325] }, 'animation-probe');
-    const owl = game.snapshot().entities.filter((entity: any) => entity.kind === 'owl').at(-1)?.id;
-    game.apply({ type: 'spawn', args: ['firefly', 820, 345] }, 'animation-probe');
-    const firefly = game.snapshot().entities.filter((entity: any) => entity.kind === 'firefly').at(-1)?.id;
-    return { owl, firefly };
+  const nextFox = await crop(page, 346, 493, 112, 50);
+  expect(await subjectChangedPixels(page, firstFox, nextFox, 'fox')).toBeGreaterThan(150);
+  await page.evaluate(async () => {
+    const info = await fetch('/api/game').then(response => response.json());
+    const url = new URL('./rig.ts', new URL(info.entry, location.origin));
+    const rigs = await import(/* @vite-ignore */ url.href);
+    rigs.FoxRig.prototype.update = () => {};
   });
-  const entityCrop = async (id: number) => {
-    const item = await page.evaluate(id => (window as any).__livePatch.game.snapshot().entities.find((entity: any) => entity.id === id), id);
-    if (!item) throw Error(`Animation entity ${id} despawned`);
-    return crop(page, item.x, item.y, 140, 110);
-  };
-  const owlA = await entityCrop(ids.owl), flyA = await entityCrop(ids.firefly);
+  const stillFox = await crop(page, 346, 493, 112, 50);
   await page.waitForTimeout(125);
-  const owlB = await entityCrop(ids.owl), flyB = await entityCrop(ids.firefly);
-  expect(await changedPixels(page, owlA, owlB)).toBeGreaterThan(120);
-  expect(await changedPixels(page, flyA, flyB)).toBeGreaterThan(45);
+  expect(await subjectChangedPixels(page, stillFox, await crop(page, 346, 493, 112, 50), 'fox')).toBeLessThan(75);
   await page.keyboard.down('Space');
   expect(await page.evaluate(() => (window as any).__livePatch.game.snapshot().player.grounded)).toBe(false);
   await page.keyboard.up('Space');
@@ -149,6 +175,29 @@ test('the HUD stays inside its protected stream zone at Large size and five hear
     expect((bound.x + bound.width) * 1920 / 1152).toBeLessThanOrEqual(zone.x + zone.width);
     expect((bound.y + bound.height) * 1080 / 648).toBeLessThanOrEqual(zone.y + zone.height);
   }
+});
+
+test('large HUD keeps four-digit firefly totals clear of distance and five hearts', async ({ page }) => {
+  await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
+  await page.evaluate(async () => {
+    const game = (window as any).__livePatch.game;
+    game.apply({ type: 'setParameter', args: ['maxHearts', 5] }, 'hud-probe');
+    game.apply({ type: 'heal', args: [2] }, 'hud-probe');
+    game.apply({ type: 'setParameter', args: ['fireflyValue', 10] }, 'hud-probe');
+    game.configure({ ...await fetch('/api/settings').then(response => response.json()), hudSize: 'large' });
+  });
+  for (let batch = 0; batch < 4; batch++) {
+    await page.evaluate(() => {
+      const game = (window as any).__livePatch.game;
+      for (let i = 0; i < 40; i++) game.apply({ type: 'spawn', args: ['firefly', 346, game.snapshot().player.y] }, 'hud-probe');
+    });
+    await page.waitForTimeout(120);
+  }
+  await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().run.fireflies)).toBeGreaterThanOrEqual(1000);
+  const bounds = await page.evaluate(() => (window as any).__livePatch.game.snapshot().hudBounds);
+  expect(bounds[0].x + bounds[0].width).toBeLessThanOrEqual(bounds[1].x);
+  expect(bounds[1].x + bounds[1].width).toBeLessThanOrEqual(bounds[3].x);
+  expect(bounds.at(-1).x + bounds.at(-1).width).toBeLessThanOrEqual(402);
 });
 
 test('entity caps and out-of-range actions stay bounded', async ({ page }) => {

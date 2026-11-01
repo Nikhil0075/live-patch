@@ -54,13 +54,13 @@ All rectangles below are `(x,y,width,height)` in a 1920×1080 capture. The engin
 
 ## Visual overhaul
 
-The first four captures below are 1920×1080. The strips are cropped from the running game at 1280×720; the capture script briefly pauses the game between jump screenshots so browser screenshot latency cannot shift the subject out of frame. The nine-second 1280×720 WebM is a Playwright recording edited in browser Canvas and MediaRecorder without a new dependency.
+The first four captures below are 1920×1080. The strips are cropped from the running game at 1280×720; the run strip advances the browser clock in fixed 37 ms steps, and the jump strip briefly pauses between screenshots so capture latency cannot shift the subject out of frame. The nine-second 1280×720 WebM is a Playwright recording edited in browser Canvas and MediaRecorder without a new dependency. `01-gameplay.png` waits for a naturally generated pickup and hazard and injects none. `04-evolved.png` loads five prepared modules and one visual-only module that spawns an owl, two ledges and a spring. `05-run-over.png` injects boulders for a repeatable death pose. The owl, firefly and prop strips and motion video also stage their subjects; they demonstrate art and animation, not natural generator frequency.
 
 ### `01-gameplay.png`
 
 | Matches the concept | Differs and why |
 |---|---|
-| Fixed left-side animated fox, one-row firefly/distance/icon-heart HUD, twilight sky, five scrolling layers plus foreground leaves, animated pickups and a running lane. | Ground begins at 80% of the canvas for the OBS ticker; the bridge and stone lantern are omitted per Appendix 3 row `01-gameplay.png`. The geometric code-drawn trees, moon and soil are simpler than the painted reference, and the foreground leaves are a subtle accent rather than a thick frame. |
+| Fixed left-side animated fox, one-row firefly/distance/icon-heart HUD, twilight sky, five scrolling layers plus foreground leaves, naturally generated owl, acorn and fireflies, and a rocky pit. | Ground begins at 80% of the canvas for the OBS ticker; the bridge and stone lantern are omitted per Appendix 3 row `01-gameplay.png`. The geometric code-drawn trees and soil are simpler than the painted reference, and the foreground leaves are a subtle accent rather than a thick frame. |
 
 ### `04-evolved.png`
 
@@ -84,7 +84,7 @@ The first four captures below are 1920×1080. The strips are cropped from the ru
 
 | Concepts | Matches | Differs and why |
 |---|---|---|
-| `02-art-sheet.png`, `06-fox-animation.png` row 1, `07-fox-parts.png` | Eight successive captures show separate leg, paw, tail, satchel and lantern motion. Stride is driven by travelled distance; the lantern swings from its stick and casts light. | The silhouettes are pre-rendered Canvas shapes rather than the reference's painted frames. The segmented tail is more visible at this scale. |
+| `02-art-sheet.png`, `06-fox-animation.png` row 1, `07-fox-parts.png` | Eight fixed-step captures show a longer body, smaller head, two visible front legs with opposite phases, separate paws, tail, satchel and lantern motion. The front paw holds the stick below the face. | The silhouettes are pre-rendered Canvas shapes rather than the reference's painted frames. The segmented tail is more visible at this scale. |
 
 ### `08-fox-jump.png`
 
@@ -108,7 +108,7 @@ The first four captures below are 1920×1080. The strips are cropped from the ru
 
 | Concepts | Matches | Differs and why |
 |---|---|---|
-| `05-run-over.png`, `06-fox-animation.png`, `08-owl-animation.png`, `10-props-animation.png`, `11-effects.png` | The 9.04 s, 1280×720, 2.06 MB clip shows running, ledge landing, two jumps including a spin, an owl, a firefly collection, hits and the run-over card. All displayed counters are live game state. | The browser recording is silent and plays the source at 1.08× to fit the requested duration; it does not demonstrate the separate glider and weather modes. |
+| `05-run-over.png`, `06-fox-animation.png`, `08-owl-animation.png`, `10-props-animation.png`, `11-effects.png` | The roughly nine-second, 1280×720, 1.61 MB clip shows running, ledge landing, two jumps including a spin, an owl, a firefly collection, hits and the run-over card. All displayed counters are live game state. | The browser recording is silent and plays the source at 1.08× to fit the requested duration; it does not demonstrate the separate glider and weather modes. |
 
 ### Crowded rendering measurement
 
@@ -119,7 +119,7 @@ The first four captures below are 1920×1080. The strips are cropped from the ru
 | `deab45e` before overhaul | 13.2 fps | 10.2 fps | 175.3 ms |
 | `df4cadc` after overhaul | 7.7 fps | 6.1 fps | 291.1 ms |
 
-The richer layers and animated parts cost headless Chromium throughput. The old revision was measured from a temporary worktree whose linked `node_modules` caused Vite to block font files, so the two rates are directional rather than a controlled visual comparison. The crowded smoke test still passes its existing requirements: at most 80 entities and 64 particles, worst gap below 350 ms, and crowded frame rate above 55% of the baseline. A visible hardware-accelerated stream has not been measured in this round, so that performance remains a manual risk.
+The richer layers and animated parts cost headless Chromium throughput. The old revision was measured from a temporary worktree whose linked `node_modules` caused Vite to block font files, so the two rates are directional rather than a controlled visual comparison. The crowded smoke test still passes its existing requirements: at most 80 entities and 64 particles, worst gap below 350 ms, and crowded frame rate above 55% of the baseline. The round-2 reviewer measured 58.3 fps in a visible 1920×1080 WebGL browser and 58.9 fps with 57 entities, 64 particles and rain; those visible-GPU results better represent this operator's stream PC than the headless probe. They do not establish performance on other PCs.
 
 ## How to run and test
 
@@ -137,6 +137,8 @@ The richer layers and animated parts cost headless Chromium throughput. The old 
 - Round 1 final verification, first fresh clone at `D:\twitchconXcodex\phase6-r1-clone-a2` (deleted): `npm ci` added 49 packages; `npm test` passed 103 unit (4 opt-in skipped), 30 studio, 35 Arena (1 optional WebGL skipped), 24 Lantern, and HTTPS/HTTP2. `npm run build` passed; `npm audit --audit-level=high` found 0 vulnerabilities. `Test-Path builds` was `False` before and after the test.
 - Round 1 final verification, second fresh clone at `D:\twitchconXcodex\phase6-r1-clone-b` (deleted): the same `npm ci`, `npm test`, `npm run build`, and audit results passed; `Test-Path builds` remained `False`.
 - Round 1 final verification, Lantern selected in the repository: `$env:LIVE_PATCH_GAME='games/lantern-run'; npm test` passed the same 103 unit, 30 studio, 35 Arena, 24 Lantern, and HTTPS/HTTP2 checks. The test runner reported no change to `builds/`. The three-hit run-over check was stabilized by running on the first continuous stretch; it passed twice alone and in both clean clones and the Lantern-selected full suite.
+- Round 2 final repository verification: `npm test` exited 0 with 104 unit tests passed (4 opt-in skipped), 30 studio browser tests passed, 36 Arena Survivor smoke tests passed (1 optional WebGL test skipped), 26 Lantern Run smoke tests passed, and the HTTPS/HTTP2 regression passed. The runner detected no change in `builds/`. `npm run build` exited 0; `npm audit --audit-level=high` reported 0 vulnerabilities.
+- Round 2 clean-clone verification of `b9d9391`: `npm ci` added 49 packages with 0 vulnerabilities. `npm test` exited 0 with the same 104 unit, 30 studio, 36 Arena, 26 Lantern and HTTPS/HTTP2 results. `builds/` was absent before and after the test. `npm run build` exited 0; `npm audit --audit-level=high` found 0 vulnerabilities. The final amend changes this report only.
 
 ## Exit criteria
 
@@ -164,7 +166,7 @@ The unquoted English word `log` occurs only as a generic chat ARIA role and Wind
 - [x] 9. Visual captures — `docs/phases/phase-6-visual/{01-gameplay,04-evolved,05-run-over,06-library}.png` are 1920×1080; four animation strips and a 9.04 s WebM are also present. The comparison tables above cite Appendix 3 and the animation concepts. Evolved has six active local modules including the demo.
 - [x] 10. Standing checks — game-specific names and kinds are absent from `engine/`; new mutations receive only the existing game handle; engine gates and sandbox were not loosened; browser tests insert viewer text as text and exercise HTML-like input; no secrets were added to tracked files or the overlay.
 - [x] 11. Docs are in sync — README, adding-a-game, architecture, demo-script, Lantern's mutation API and asset credits describe the shipped features and cover provenance.
-- [x] 12. Clean clone passes — `npm ci`, `npm test`, `npm run build` and `npm audit --audit-level=high` passed in two sequential fresh clones after the Round 1 fixes; `builds/` was absent before and after each test; both clones deleted.
+- [x] 12. Clean clone passes — Round 1 passed in two sequential fresh clones. Round 2 passed `npm ci`, `npm test`, `npm run build` and `npm audit --audit-level=high` in a clean checkout of `b9d9391`; `builds/` remained absent. The Round 2 clone remains at the path listed under Known gaps because automatic approval review blocked its deletion.
 
 ## Deferred
 
@@ -174,7 +176,8 @@ The unquoted English word `log` occurs only as a generic chat ARIA role and Wind
 
 - The sandbox permits temp-to-temp writes on this Windows account, so an isolated verification clone under `%TEMP%` fails the preflight even though the normal `D:` project location passes. Keep future verification clones on a protected project drive. The three real builds ran only after the probe passed.
 - The four captures are representative local states. The evolved image does not itself prove a live Codex patch shipped; the separate three-build verification above does.
-- At 1920×1080 in headless Chromium, the crowded probe fell from 10.2 fps before the visual overhaul to 6.1 fps after it, while still passing the established smoke-test thresholds. The old worktree had blocked font files, so the comparison is directional. Validate frame rate on the streamer's visible, hardware-accelerated browser before relying on this art under encoding load.
+- Automatic approval review blocked recursive deletion of the verification clone at `D:\twitchconXcodex\phase6-r2-clean-a-20261101` without a more specific reason. It contains a checkout of this repository and test dependencies; no operator `.env` or `.live-patch` data was copied into it.
+- At 1920×1080 in headless Chromium, the crowded probe fell from 10.2 fps before the visual overhaul to 6.1 fps after it, while still passing the established smoke-test thresholds. The old worktree had blocked font files, so the comparison is directional. The round-2 reviewer measured 58.9 fps in a visible crowded WebGL browser on this machine; verify again during an encoded stream.
 
 ## Review responses
 
@@ -192,3 +195,16 @@ The unquoted English word `log` occurs only as a generic chat ARIA role and Wind
 - **P6-R1-10 — Fixed.** Lantern's API doc states the three-second load deadline; the doc test now checks every built-in game.
 - **P6-R1-11 — Fixed.** The stale criterion 6 sentence above now points to the separate three-build evidence.
 - **P6-R1-12 — Fixed.** Entities far beyond the right edge release their cap slots; the crowded browser test remains the guard.
+
+## Round 2 responses
+
+- **P6-R2-01 — Fixed.** Right-side despawn starts past the generator's farthest ledge placement. A browser test with all modules removed observes naturally generated pickups and hazards cross from beyond the old cutoff into the visible playfield. The refreshed `01-gameplay.png` uses no injected entities.
+- **Saved-build load regression — Fixed.** A module's three-second load deadline now starts when its source is sent to the sandbox frame; frame initialization has its own ten-second deadline. The saved-build browser test checks that original and evolved views both reopen with their expected patch states under the full suite.
+- **Windows mutation reload lock — Fixed.** Vite retries a transient locked or not-yet-present mutation file instead of crashing its watcher. All six documented Arena mutation fixtures passed in the focused browser run.
+- **Studio timeline measurement race — Fixed.** The Go Live 1080p browser test now measures all four timeline rows in one browser turn, so a live status refresh cannot replace a locator between measurements.
+- **P6-R2-02 — Fixed.** Generated owls use three heights above the standing fox's hit band and appear 350 px beyond the gap landing edge. A 250-seed, four-wave-phase test runs the shared flight step, checks that the fox lands before the owl encounter and stays outside the 55 px collision band.
+- **P6-R2-03 — Fixed.** Play exposes `__livePatch` immediately after creating the host and menu, before either mutation sync or run-history waits can show LIVE or an active patch list. The Arena browser regression delays `/api/runs` and checks the hook at both readiness signals.
+- **P6-R2-04 — Fixed.** The fox animation test counts only orange fox pixels in a leg-height crop. It then disables `FoxRig.update` while the world keeps scrolling and requires the measured change to fall nearly to zero; jump and pause checks remain.
+- **P6-R2-05 — Fixed.** The fox has a smaller head, longer raised torso, visible front legs in opposing run phases, and a stick rooted at its front paw. The fifth forest layer is behind ground; the moon is one disc; the lantern glow texture has full radial room; touching ground spans have no cliff edge; pits have jagged rock faces; clouds wrap seamlessly; the run-over lantern rests at ground level. The spring cap and floating ledge have more distinct shapes. New captures show these changes; the code-drawn shapes remain simpler than the painterly references.
+- **P6-R2-06 — Fixed.** The HUD measures count and distance widths each frame, reduces their font size only when needed, and positions the hearts after the distance. A browser test collects over 1,000 fireflies at Large size with five hearts and checks no overlaps or keep-clear overflow.
+- **P6-R2-07 — Fixed.** The mutation API doc now names the read-only `hudBounds` and `groundUnderFox` diagnostic snapshot fields.

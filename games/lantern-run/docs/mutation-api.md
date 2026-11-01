@@ -2,7 +2,7 @@
 
 Each load has a 3 second deadline. A module that does not load in time is disabled; the game keeps running.
 
-Generated owls fly toward the fox at one of three seeded heights, with a gentle vertical wave. Mutation-spawned owls can be moved with `setVelocity` and `moveEntity`.
+Generated owls fly toward the fox at one of three seeded heights above the standing fox's hit band, with a gentle vertical wave. They appear farther past a gap's landing edge so a jump can finish before they arrive. Mutation-spawned owls can be moved with `setVelocity` and `moveEntity`.
 
 Put one `.js` module in `mutations/`. Export `meta` with nonempty `id`, `title`, `author`, and `description` strings under 120 characters, plus any of the hooks below. Modules have no imports, DOM, network, storage, timers or browser globals. The sandboxed Worker runs `onStart` once when that file is added or changed. Other module reloads do not restart it. An error, unhandled rejection or 1.8–2.2 second event deadline disables only that module. A full dev-server restart resets the run.
 
@@ -15,7 +15,7 @@ All time values are seconds; distance is metres. Canvas coordinates are 1152×64
 
 ## State and hooks
 
-`game.state` is a JSON snapshot: `player {x,y,vy,grounded,jumpsLeft,hearts,maxHearts,powerUps}`, `run {number,distance,fireflies,best,speed}`, `elapsed`, `runElapsed`, `frame`, `frameRate`, `maxFrameGap`, `weather`, `parameters`, and up to 100 `entities` of `{id,kind,x,y,size,vx,vy,tag}`. `elapsed` excludes paused time. Distance, fireflies and hearts already earned remain when a module is removed. Entity IDs stay stable for their lifetime.
+`game.state` is a JSON snapshot: `player {x,y,vy,grounded,jumpsLeft,hearts,maxHearts,powerUps}`, `run {number,distance,fireflies,best,speed}`, `elapsed`, `runElapsed`, `frame`, `frameRate`, `maxFrameGap`, `weather`, `parameters`, and up to 100 `entities` of `{id,kind,x,y,size,vx,vy,tag}`. It also includes diagnostic `groundUnderFox` (whether solid ground is under the fox) and `hudBounds` (canvas-coordinate rectangles of visible HUD elements). `elapsed` excludes paused time. Distance, fireflies and hearts already earned remain when a module is removed. Entity IDs stay stable for their lifetime.
 
 | Event | Hook | Payload |
 |---|---|---|

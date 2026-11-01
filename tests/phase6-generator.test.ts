@@ -26,10 +26,32 @@ describe('Lantern Run generator fairness', () => {
     for (let seed = 0; seed < 250; seed++) {
       const base = owlFlightHeight(seed, 5);
       heights.add(base);
-      for (const seconds of [0, .4, .8, 1.2]) expect(owlFlightY(base, seconds, seed % 19)).toBeGreaterThanOrEqual(355);
+      for (const seconds of [0, .4, .8, 1.2]) expect(owlFlightY(base, seconds, seed % 19)).toBeLessThan(425);
       expect(owlFlightY(base, 0, 0)).not.toBe(owlFlightY(base, 1, 0));
     }
     expect(heights.size).toBe(3);
+  });
+  it('leaves room to land after every generated gap before an owl reaches the fox', () => {
+    const dt = 1 / 60, speed = 260;
+    for (let seed = 0; seed < 250; seed++) for (let index = 2; index < 30; index++) {
+      const stretch = generateStretch(seed, index, { speed, jumpPower: 720, gravity: 1600 });
+      if (stretch.hazard !== 'owl') continue;
+      for (const wavePhase of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
+        let fox = { y: 480, vy: -720, jumpLift: 0 };
+        let landed = false;
+        for (let step = 1; step < 120; step++) {
+          const time = step * dt, foxX = speed * time;
+          fox = advanceFoxFlight(fox, dt, 1600, time < .16, false);
+          if (foxX >= stretch.gap && fox.y + 38 >= 518 && fox.vy >= 0) { fox = { y: 480, vy: 0, jumpLift: fox.jumpLift }; landed = true; }
+          const owlX = stretch.gap + 350 - 24 * time;
+          const owlY = owlFlightY(owlFlightHeight(seed, index), time, wavePhase);
+          if (Math.abs(owlX - foxX) < 49) {
+            expect(landed, `seed ${seed}, stretch ${index}, phase ${wavePhase}`).toBe(true);
+            expect(Math.abs(owlY - fox.y), `seed ${seed}, stretch ${index}, phase ${wavePhase}`).toBeGreaterThan(55);
+          }
+        }
+      }
+    }
   });
   it('a held jump clears generated gaps and reaches the generated ledge across 250 seeds', () => {
     const dt = 1 / 60;

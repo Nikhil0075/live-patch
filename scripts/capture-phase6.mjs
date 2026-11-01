@@ -24,11 +24,10 @@ try {
   await page.goto(`${base}/play`);
   await page.waitForFunction(() => document.querySelector('#status')?.textContent?.includes('Lantern Run · LIVE'));
   await page.waitForFunction(() => document.querySelector('#mutations')?.textContent?.includes('Forest Breeze · active'));
-  await page.waitForTimeout(3600);
-  await page.evaluate(() => {
-    window.__livePatch.game.apply({ type: 'spawn', args: ['log', 950, 485] }, 'capture');
-    window.__livePatch.game.apply({ type: 'spawn', args: ['owl', 1090, 350] }, 'capture');
-  });
+  await page.waitForFunction(() => {
+    const visible = window.__livePatch.game.snapshot().entities.filter(item => item.x > 550 && item.x < 1080);
+    return visible.some(item => ['firefly', 'acorn'].includes(item.kind)) && visible.some(item => ['log', 'thorns', 'boulder', 'owl'].includes(item.kind));
+  }, undefined, { timeout: 20_000 });
   await page.screenshot({ path: path.join(output, '01-gameplay.png') });
 
   const game = path.join(root, 'games', 'lantern-run');
@@ -90,8 +89,10 @@ try {
     fs.writeFileSync(path.join(output, name), Buffer.from(base64, 'base64'));
   };
   const foxFrames = [];
-  for (let i = 0; i < 8; i++) { foxFrames.push(await crop(346, 474, 170, 135)); await page.waitForTimeout(45); }
+  await page.clock.pauseAt(new Date());
+  for (let i = 0; i < 8; i++) { foxFrames.push(await crop(346, 474, 170, 135)); await page.clock.runFor(37); }
   await strip('07-fox-run-cycle.png', foxFrames);
+  await page.clock.resume();
   await page.reload();
   await page.waitForFunction(() => document.querySelector('#status')?.textContent?.includes('Lantern Run · LIVE'));
   await page.evaluate(() => { const game = window.__livePatch.game;

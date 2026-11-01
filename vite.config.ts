@@ -45,11 +45,19 @@ function livePatchPlugin(): Plugin {
       configureTwitchServer(server, root, directory, manifest);
       server.watcher.add([mutationDirectory, manifestFile]);
       server.watcher.on('change', file => { if (path.resolve(file) === manifestFile) void server.restart(); });
-      const changed = (file: string) => {
-        if (path.dirname(path.resolve(file)) === mutationDirectory && file.endsWith('.js'))
+      const changed = (file: string, attempt = 0) => {
+        if (path.dirname(path.resolve(file)) !== mutationDirectory || !file.endsWith('.js')) return;
+        try {
           server.ws.send({ type: 'custom', event: manifest.reload.event, data: mutationList() });
+        } catch (error) {
+          // Windows can briefly lock a new file while the test or runner finishes
+          // copying it. Retrying the whole list preserves the previous live state.
+          if (['EBUSY', 'EPERM', 'ENOENT'].includes((error as NodeJS.ErrnoException).code ?? '') && attempt < 10)
+            setTimeout(() => changed(file, attempt + 1), 100);
+          else console.error('Mutation reload failed:', error);
+        }
       };
-      server.watcher.on('add', changed).on('change', changed).on('unlink', changed);
+      server.watcher.on('add', file => changed(file)).on('change', file => changed(file)).on('unlink', file => changed(file));
       server.middlewares.use('/api/game', (_req, res) => {
         const address = server.httpServer?.address();
         const reload = new URL(manifest.reload.url);

@@ -22,6 +22,7 @@ interface Loaded {
   invalidActions: WindowCounter;
   pending?: { id: number; timeout: number; eventType: string };
   loadTimeout?: number;
+  frameSetupTimeout?: number;
   budgetStart: number;
   budgetCount: number;
 }
@@ -120,9 +121,12 @@ export class MutationHost {
     frame.addEventListener('load', () => {
       loadCount++;
       if (loadCount > 1) { this.disable(entry, 'Mutation frame navigated'); return; }
+      window.clearTimeout(entry.frameSetupTimeout);
+      if (entry.status !== 'loading') return;
+      entry.loadTimeout = window.setTimeout(() => this.disable(entry, 'Load deadline exceeded'), LOAD_DEADLINE_MS);
       frame.contentWindow?.postMessage({ type: 'load', source: file.source, hooks: this.manifest.hooks }, '*');
     });
-    entry.loadTimeout = window.setTimeout(() => this.disable(entry, 'Load deadline exceeded'), LOAD_DEADLINE_MS);
+    entry.frameSetupTimeout = window.setTimeout(() => this.disable(entry, 'Mutation frame setup deadline exceeded'), 10_000);
     document.body.append(frame);
   }
 
@@ -191,6 +195,7 @@ export class MutationHost {
   private dispose(entry: Loaded) {
     this.deferredActions = this.deferredActions.filter(item => item.origin !== entry.file.name);
     window.clearTimeout(entry.loadTimeout);
+    window.clearTimeout(entry.frameSetupTimeout);
     if (entry.pending) window.clearTimeout(entry.pending.timeout);
     entry.frame?.contentWindow?.postMessage({ type: 'dispose' }, '*');
     entry.frame?.remove(); entry.frame = undefined; entry.pending = undefined; entry.queue.length = 0;

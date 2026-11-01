@@ -77,7 +77,7 @@ export function createLanternParts(scene: Phaser.Scene): void {
     glow(c, 80, 80, 78, '#ffc86935'); c.strokeStyle = '#ffd276'; c.lineWidth = 4; c.shadowColor = '#ffcd65'; c.shadowBlur = 15;
     c.beginPath(); c.arc(80, 80, 72, 0, TAU); c.stroke(); c.shadowBlur = 0; ellipse(c, 40, 41, 11, 5, '#fff3b888', -.6);
   });
-  texture(scene, 'rig-light', 170, 60, c => glow(c, 85, 30, 83, '#ffd57788'));
+  texture(scene, 'rig-light', 170, 170, c => glow(c, 85, 85, 82, '#ffd57788'));
   texture(scene, 'rig-owl-body', 76, 74, c => {
     ellipse(c, 38, 39, 33, 29, shade(c, 9, 8, 68, 70, ['#8f9ac4', '#56698f', '#303c63']));
     ellipse(c, 39, 57, 20, 12, '#7a89b1');

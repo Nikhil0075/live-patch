@@ -10,6 +10,18 @@ const examples = fs.readdirSync(mutationDir).filter(name => name.endsWith('.js')
 const chosen = process.env.MUTATION_FILE ? path.basename(process.env.MUTATION_FILE) : undefined;
 const combined = process.env.LIVE_PATCH_SMOKE_COMBINED === '1';
 
+test('play exposes its game hook before patch list and live status', async ({ page }) => {
+  await page.route('**/api/runs', async route => {
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    await route.continue();
+  });
+  await page.goto('/play');
+  await expect(page.locator('#mutations')).toContainText('active');
+  expect(await page.evaluate(() => Boolean((window as any).__livePatch?.game && (window as any).__livePatch?.host))).toBe(true);
+  await expect(page.locator('#status')).toContainText('LIVE');
+  expect(await page.evaluate(() => (window as any).__livePatch.game.snapshot().frame)).toBeGreaterThan(0);
+});
+
 test('play window pauses frames and mutation ticks, then resumes from the same state', async ({ page }) => {
   await page.goto('/play');
   await expect(page.locator('#status')).toContainText('LIVE');

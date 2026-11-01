@@ -2,6 +2,7 @@ export interface GameEvent { type: string; origin?: string; [key: string]: unkno
 export interface GameAction { type: string; args: unknown[] }
 export interface GameAdapter {
   apply(action: GameAction, origin: string): void;
+  ready?: Promise<void>;
   enableSound?(): void;
   configure?(settings: unknown): void;
   pause?(): void;

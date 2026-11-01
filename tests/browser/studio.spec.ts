@@ -405,15 +405,16 @@ test('Go Live fits a 1080p studio view and shows every quick-action explanation'
   });
   expect(bounds.page).toBeLessThanOrEqual(bounds.viewport);
   expect(bounds.noteBottom).toBeLessThanOrEqual(bounds.panelBottom);
-  const codex = await page.locator('[data-panel="codex"]').boundingBox();
-  const steps = await page.locator('#runs .timeline-step').all();
-  expect(codex).not.toBeNull();
-  expect(steps).toHaveLength(4);
-  for (const step of steps) {
-    const box = await step.boundingBox();
-    expect(box).not.toBeNull();
-    expect(box!.y + box!.height).toBeLessThanOrEqual(codex!.y + codex!.height);
-  }
+  // The timeline refreshes on a timer. Measure all four rows in one browser
+  // turn so a refresh cannot replace them between locator queries.
+  const timeline = await page.evaluate(() => {
+    const panel = document.querySelector('[data-panel="codex"]')!.getBoundingClientRect();
+    const rows = Array.from(document.querySelectorAll('#runs .timeline-step')).map(row => row.getBoundingClientRect());
+    return { panelBottom: panel.bottom, rowBottoms: rows.map(row => row.bottom), visible: rows.every(row => row.height > 0) };
+  });
+  expect(timeline.rowBottoms).toHaveLength(4);
+  expect(timeline.visible).toBe(true);
+  for (const bottom of timeline.rowBottoms) expect(bottom).toBeLessThanOrEqual(timeline.panelBottom);
   expect(await page.locator('.panel-actions').evaluate(panel => panel.scrollHeight <= panel.clientHeight + 1)).toBe(true);
 });
 
