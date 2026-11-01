@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import net from 'node:net';
 import { createServer } from 'vite';
 import { chromium } from '@playwright/test';
 
@@ -14,7 +15,11 @@ Object.assign(process.env, { LIVE_PATCH_GAME: path.join(root, 'games', 'lantern-
   LIVE_PATCH_BUILDS_DIR: path.join(temp, 'builds'), LIVE_PATCH_TEST_SERVER: '1' });
 let server, browser;
 try {
-  server = await createServer({ server: { host: '127.0.0.1', port: 0 } });
+  const freePort = await new Promise((resolve, reject) => {
+    const socket = net.createServer(); socket.once('error', reject);
+    socket.listen(0, '127.0.0.1', () => { const address = socket.address(); socket.close(() => resolve(address.port)); });
+  });
+  server = await createServer({ server: { host: '127.0.0.1', port: freePort } });
   await server.listen();
   const address = server.httpServer.address();
   if (!address || typeof address === 'string') throw Error('No capture server address');
@@ -24,10 +29,17 @@ try {
   await page.goto(`${base}/play`);
   await page.waitForFunction(() => document.querySelector('#status')?.textContent?.includes('Lantern Run · LIVE'));
   await page.waitForFunction(() => document.querySelector('#mutations')?.textContent?.includes('Forest Breeze · active'));
+  await page.evaluate(() => {
+    const game = window.__livePatch.game;
+    game.apply({ type: 'setParameter', args: ['runSpeed', 600] }, 'capture');
+    game.apply({ type: 'setParameter', args: ['maxHearts', 5] }, 'capture');
+    game.apply({ type: 'heal', args: [3] }, 'capture');
+  });
   await page.waitForFunction(() => {
     const visible = window.__livePatch.game.snapshot().entities.filter(item => item.x > 550 && item.x < 1080);
     return visible.some(item => ['firefly', 'acorn'].includes(item.kind)) && visible.some(item => ['log', 'thorns', 'boulder', 'owl'].includes(item.kind));
-  }, undefined, { timeout: 20_000 });
+  }, undefined, { timeout: 40_000 });
+  await page.evaluate(() => window.__livePatch.game.apply({ type: 'heal', args: [3] }, 'capture'));
   await page.screenshot({ path: path.join(output, '01-gameplay.png') });
 
   const game = path.join(root, 'games', 'lantern-run');
@@ -68,6 +80,9 @@ try {
   await page.waitForFunction(() => document.querySelector('#status')?.textContent?.includes('Lantern Run · LIVE'));
   await page.evaluate(() => {
     const game = window.__livePatch.game;
+    window.__livePatch.host.sync([]);
+    for (const item of game.snapshot().entities.filter(item => ['log', 'thorns', 'boulder', 'owl', 'pinecone'].includes(item.kind)))
+      game.apply({ type: 'removeEntity', args: [item.id] }, 'capture');
     game.apply({ type: 'setParameter', args: ['runSpeed', 120] }, 'capture');
     game.apply({ type: 'setParameter', args: ['maxHearts', 5] }, 'capture'); game.apply({ type: 'heal', args: [2] }, 'capture');
   });
@@ -89,8 +104,10 @@ try {
     fs.writeFileSync(path.join(output, name), Buffer.from(base64, 'base64'));
   };
   const foxFrames = [];
+  await page.waitForTimeout(500);
+  await page.waitForFunction(() => { const state = window.__livePatch.game.snapshot(); return state.elapsed % 4.4 > .5 && state.elapsed % 4.4 < 3.5 && state.player.hearts === state.player.maxHearts; });
   await page.clock.pauseAt(new Date());
-  for (let i = 0; i < 8; i++) { foxFrames.push(await crop(346, 474, 170, 135)); await page.clock.runFor(37); }
+  for (let i = 0; i < 8; i++) { foxFrames.push(await crop(346, 462, 170, 165)); await page.clock.runFor(37); }
   await strip('07-fox-run-cycle.png', foxFrames);
   await page.clock.resume();
   await page.reload();
@@ -98,15 +115,23 @@ try {
   await page.evaluate(() => { const game = window.__livePatch.game;
     game.apply({ type: 'setParameter', args: ['runSpeed', 120] }, 'capture'); game.apply({ type: 'setParameter', args: ['maxJumps', 2] }, 'capture');
     game.apply({ type: 'setParameter', args: ['jumpPower', 320] }, 'capture'); game.apply({ type: 'setParameter', args: ['gravity', 300] }, 'capture'); });
+  await page.keyboard.press('Space');
+  await page.waitForFunction(() => !window.__livePatch.game.snapshot().player.grounded);
+  await page.waitForFunction(() => window.__livePatch.game.snapshot().player.grounded, undefined, { timeout: 4000 });
   await page.keyboard.down('Space');
   const jumpFrames = [];
-  for (let i = 0; i < 6; i++) {
-    await page.waitForTimeout(i === 0 ? 40 : i === 5 ? 190 : 105);
+  for (const [i, delay] of [40, 120, 180, 140, 130, 300, 650, 750, 850].entries()) {
+    await page.waitForTimeout(delay);
+    if (i === 8) await page.waitForFunction(() => window.__livePatch.game.snapshot().player.grounded, undefined, { timeout: 5000 });
     await page.evaluate(() => window.__livePatch.game.pause());
     const y = await page.evaluate(() => window.__livePatch.game.snapshot().player.y);
     jumpFrames.push(await crop(346, Math.max(110, y), 220, 210));
     await page.evaluate(() => window.__livePatch.game.resume());
-    if (i === 2) { await page.keyboard.up('Space'); await page.keyboard.down('Space'); }
+    if (i === 3) {
+      await page.keyboard.up('Space'); await page.waitForTimeout(80); await page.locator('#game canvas').click({ position: { x: 700, y: 200 } });
+      const state = await page.evaluate(() => window.__livePatch.game.snapshot());
+      if (state.player.jumpsLeft !== 0) throw Error(`Double-jump capture missed input: ${JSON.stringify({ jumpsLeft: state.player.jumpsLeft, grounded: state.player.grounded })}`);
+    }
   }
   await page.keyboard.up('Space'); await strip('08-fox-jump.png', jumpFrames);
   await page.reload();

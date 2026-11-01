@@ -184,10 +184,31 @@ The unquoted English word `log` occurs only as a generic chat ARIA role and Wind
 ## Round 3 responses
 
 - **P6-R3-01 — Fixed.** The Arena storm fixture now requests 100 actions in one tick, exceeding the per-event cap even on a slow machine. The focused test and full `npm test` pass.
+- **P6-R3-02 — Partly fixed.** The nine-frame jump strip now includes takeoff, the second-jump spin, fall and landing. The eight-frame run strip still catches the closed-eye state despite the capture waiting outside the timed blink, so its eye-open evidence remains incomplete.
 - **P6-R3-03 — Fixed.** Owl and firefly browser checks mask subject colours and disable each rig's `update` as a negative control. Both pass in the full suite.
+- **P6-R3-04 — Fixed.** The fox now has an upright orange torso, two slim hind legs with a longer opposing stride, articulated arms, a curved cream-tipped tail, larger ears and eye, a paw-held forked stick and a round ribbed lantern. The texture rig stays within the existing collider; the code-drawn silhouette is still simpler than the painted concept.
 - **P6-R3-05 — Fixed.** The right despawn horizon uses named generator lead, maximum gap, largest spawn offset and margin constants. The natural-generation browser check passes.
 
 The first Round 3 full run passed 104 unit tests (4 opt-in skipped), 30 studio tests, 36 Arena tests (1 optional WebGL skipped), 28 Lantern Run tests and the HTTPS regression. The capture and art findings P6-R3-02 and P6-R3-04 are addressed in the polish commits below.
+
+## Polish round
+
+The references are `plans/phase-6/reference/targets/R1-fox-construction.png`, `R2-gameplay-target.png`, `R3-environment-kit.png`, and the Phase 6 concepts. The references were read as guides; the shipped game uses only code-drawn textures.
+
+| Target | Status | Evidence and difference from reference |
+|---|---|---|
+| T1 upright fox and gait | Met | `07-fox-run-cycle.png` shows an upright torso, articulated arms and opposing long hind-leg steps; the clean four-pose silhouette of R1 is still more exaggerated. |
+| T2 seamless tail | Met | `07-fox-run-cycle.png` and `08-fox-jump.png` show overlapping orange segments and a cream teardrop tip, with springy follow-through. |
+| T3 ears, eyes, lantern, stick | Partly met | `01-gameplay.png` shows tall ears, a forked chest-height stick and round paper lantern; the run strip still catches shut eyes, although `08-fox-jump.png` shows the large open eye. |
+| T4 ground strip | Met | `01-gameplay.png`: repeated prerendered moss lip, roots, stones and stronger dark foreground leaves. R3 has softer painterly texture. |
+| T5 pit edges | Met | `01-gameplay.png`: left/right prerendered rock faces and dark gap, with moss over their lips. The rock shapes remain more geometric than R3. |
+| T6 pines and haze | Partly met | `01-gameplay.png` and `04-evolved.png`: scalloped tiers, varied layers and haze bands; R2's distant forest has more natural depth and irregularity. |
+| T7 lantern light | Met | `01-gameplay.png`: a shallow warm ellipse ahead of the fox stays above the soil; lantern halo remains separate. |
+| T8 fireflies | Met | `10-props.png`: smaller translucent wings, bright yellow-green body and existing short particle trail. |
+| T9 props | Partly met | `10-props.png` shows spring, ledge, shield and firefly; log, stack, thorns, boulder and pinecone remain simpler than R3's prop sheet. |
+| T10 visual evidence | Partly met | Recaptured `01-gameplay.png`, `04-evolved.png`, `05-run-over.png`, `07-fox-run-cycle.png`, `08-fox-jump.png`, `09-owl-flight.png`, `10-props.png` and `lantern-run-motion.webm`. The run strip eye issue above remains. |
+
+The gameplay frame has naturally generated pickups, hazard and pit. The evolved frame has six active local modules including the demo. The run-over frame stages three hits. The animation strips use controlled subjects and sampled times; their background changes are not the animation evidence, which is provided by subject-masked browser tests with disabled-rig negative controls.
 
 ## Round 1 responses
 

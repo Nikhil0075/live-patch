@@ -105,6 +105,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     for (const item of entities) item.sprite?.destroy(); entities.length = 0;
     granted.clear(); player.powerUps = [];
     spans.length = 0; spans.push({ from: 0, to: 1200 }); ensureWorld();
+    audio.setRunState(true, 0, run.speed, parameters.runSpeed);
     emit({ type: 'runStart', run: run.number });
   }
   function hurt(kind: Kind | 'pit', id = 0) {
@@ -117,7 +118,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     audio.play(kind === 'pit' ? 'fall' : 'hurt');
     emit(kind === 'pit' ? { type: 'fall', hearts: player.hearts } : { type: 'hit', id, kind, hearts: player.hearts });
     if (player.hearts === 0) {
-      run.best = Math.max(run.best, run.distance); runOver = 2; audio.play('run-over');
+      run.best = Math.max(run.best, run.distance); runOver = 2; audio.play('run-over'); audio.setRunState(false, run.distance, run.speed, parameters.runSpeed);
       emit({ type: 'runEnd', run: run.number, distance: run.distance, fireflies: run.fireflies });
     }
   }
@@ -204,6 +205,8 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     private sky!: Phaser.GameObjects.Image;
     private layers!: Phaser.GameObjects.TileSprite[];
     private foreground!: Phaser.GameObjects.TileSprite;
+    private groundStrip!: Phaser.GameObjects.TileSprite;
+    private cliffs = new Map<number, { left: Phaser.GameObjects.Image; right: Phaser.GameObjects.Image }>();
     private clouds!: Phaser.GameObjects.TileSprite;
     private stars: Phaser.GameObjects.Arc[] = [];
     private fox!: FoxRig;
@@ -224,7 +227,8 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       this.stars = Array.from({ length: 20 }, (_, index) => this.add.circle((index * 227 + 45) % WIDTH, (index * 71 + 33) % 280, index % 4 ? 1 : 2, 0xffecc2, .4).setDepth(-9));
       this.layers = Array.from({ length: 5 }, (_, index) => this.add.tileSprite(WIDTH / 2, 362 + index * 8, WIDTH, 330, `lantern-world-layer-${index}`)
         .setDepth(-8 + index).setAlpha(index === 4 ? .72 : 1));
-      this.foreground = this.add.tileSprite(WIDTH / 2, 563, WIDTH, 190, 'lantern-world-foreground').setDepth(6).setAlpha(.52);
+      this.groundStrip = this.add.tileSprite(0, GROUND - 12, WIDTH, 142, 'lantern-world-ground-strip').setOrigin(0, 0).setDepth(.5).setTileScale(.5);
+      this.foreground = this.add.tileSprite(WIDTH / 2, 563, WIDTH, 190, 'lantern-world-foreground').setDepth(6).setAlpha(.72);
       this.pen = this.add.graphics().setDepth(1);
       this.fox = new FoxRig(this, FOX_X, player.y, GROUND);
       const style = { fontFamily: 'Inter, Arial', fontSize: '27px', color: '#f4f1ff', fontStyle: 'bold', stroke: '#192039', strokeThickness: 5 };
@@ -276,6 +280,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       for (let i = particles.length - 1; i >= 0; i--) if (particles[i].life <= 0) particles.splice(i, 1);
       run.speed = clamp(parameters.runSpeed + (run.distance / 1000) * 35 * parameters.speedRamp, 120, 600);
       distancePx += run.speed * dt; run.distance = Math.floor(distancePx / 10);
+      audio.setRunState(true, run.distance, run.speed, parameters.runSpeed);
       while (lastMilestone + 100 <= run.distance) { lastMilestone += 100; emit({ type: 'milestone', meters: lastMilestone }); }
       ensureWorld();
       const previousFeet = player.y + 38;
@@ -320,14 +325,14 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
         if (item.kind === 'firefly' || item.kind === 'acorn') {
           item.alive = false; item.sprite?.destroy(); const value = item.kind === 'acorn' ? 5 : parameters.fireflyValue;
           run.fireflies += value; countPulse = .28; burst(item.kind === 'acorn' ? 'celebration' : 'sparks', x, item.y);
-          audio.play(item.kind); emit({ type: 'collect', id: item.id, kind: item.kind, value });
+          audio.play(item.kind, x); emit({ type: 'collect', id: item.id, kind: item.kind, value });
         } else if (powerUps.includes(item.kind as PowerUp)) {
           item.alive = false; item.sprite?.destroy(); apply({ type: 'grantPowerUp', args: [item.kind, 8] }, item.owner ?? 'world');
         } else if (['log', 'thorns', 'boulder', 'owl', 'pinecone'].includes(item.kind) && invulnerable === 0) {
           hurt(item.kind, item.id); item.alive = false; item.sprite?.destroy();
         } else if (item.kind === 'spring' && player.vy >= 0) {
           player.vy = -Math.max(900, parameters.jumpPower); player.grounded = false; item.kickUntil = elapsed + .3;
-          audio.play('spring'); emit({ type: 'land', x: player.x, y: player.y, on: 'spring' });
+          audio.play('spring', x); emit({ type: 'land', x: player.x, y: player.y, on: 'spring' });
         }
       }
       for (let i = entities.length - 1; i >= 0; i--) if (!entities[i].alive) entities.splice(i, 1);
@@ -335,52 +340,30 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     }
     private draw() {
       this.layers.forEach((layer, index) => { layer.tilePositionX = distancePx * [.06, .12, .22, .36, .53][index]; });
+      this.groundStrip.tilePositionX = distancePx * 2;
       this.foreground.tilePositionX = distancePx * .68;
       this.clouds.tilePositionX = elapsed * 5;
       this.stars.forEach((star, index) => star.setAlpha(.25 + .25 * (1 + Math.sin(elapsed * (1.2 + index % 3 * .35) + index))));
       this.layers[3].setAlpha(.92 + .08 * Math.sin(elapsed * 2));
       const g = this.pen; g.clear();
-      g.fillStyle(0x1b1f33); g.fillRect(0, GROUND, WIDTH, HEIGHT - GROUND);
+      const visibleGaps = new Set<number>();
       for (let index = 1; index < spans.length; index++) {
         const left = screenX(spans[index - 1].to), right = screenX(spans[index].from);
         if (right - left <= 1 || right < 0 || left > WIDTH) continue;
-        g.fillStyle(0x151d2b); g.fillRect(left, GROUND, right - left, HEIGHT - GROUND);
-        g.fillStyle(0x26303a, .8);
-        for (let x = left + 16; x < right; x += 27) {
-          const ridge = GROUND + 73 + Math.sin(x * .17) * 11;
-          g.fillTriangle(x - 18, HEIGHT, x, ridge, x + 23, HEIGHT);
+        const key = spans[index - 1].to; visibleGaps.add(key);
+        g.fillStyle(0x111b2b); g.fillRect(left, GROUND - 12, right - left, HEIGHT - GROUND + 12);
+        g.fillStyle(0x23354a, .55);
+        for (let x = left + 18; x < right; x += 30) g.fillTriangle(x - 14, HEIGHT, x, GROUND + 72 + Math.sin(x * .12) * 8, x + 20, HEIGHT);
+        let faces = this.cliffs.get(key);
+        if (!faces) {
+          faces = { left: this.add.image(0, 0, 'lantern-world-cliff-left').setDepth(1.5).setDisplaySize(70, 142),
+            right: this.add.image(0, 0, 'lantern-world-cliff-right').setDepth(1.5).setDisplaySize(70, 142) };
+          this.cliffs.set(key, faces);
         }
+        faces.left.setPosition(left - 35, GROUND + 59);
+        faces.right.setPosition(right + 35, GROUND + 59);
       }
-      for (const [index, span] of spans.entries()) {
-        const left = screenX(span.from), right = screenX(span.to);
-        if (right < 0 || left > WIDTH) continue;
-        g.fillStyle(0x5a3f30); g.fillRect(left, GROUND + 10, right - left, HEIGHT - GROUND);
-        g.fillStyle(0x76543a); g.fillRect(left, GROUND + 20, right - left, 34);
-        g.fillStyle(0x392f30); g.fillRect(left, GROUND + 82, right - left, HEIGHT - GROUND - 82);
-        g.fillStyle(0x5f8746); g.fillRect(left, GROUND, right - left, 17);
-        g.fillStyle(0xb2c76e); g.fillRect(left, GROUND, right - left, 5);
-        g.lineStyle(3, 0x9abb65, .85); g.lineBetween(left, GROUND + 6, right, GROUND + 6);
-        const edges = [
-          { x: left, outward: -1, gap: index > 0 && span.from - spans[index - 1].to > 1 },
-          { x: right, outward: 1, gap: index < spans.length - 1 && spans[index + 1].from - span.to > 1 }
-        ];
-        for (const edge of edges) if (edge.gap && edge.x > -12 && edge.x < WIDTH + 12) {
-          g.fillStyle(0x303a3d); g.fillTriangle(edge.x, GROUND + 12, edge.x + edge.outward * 22, GROUND + 48, edge.x, GROUND + 93);
-          g.fillStyle(0x586461); g.fillTriangle(edge.x, GROUND + 18, edge.x + edge.outward * 12, GROUND + 47, edge.x, GROUND + 64);
-          g.lineStyle(2, 0x8c9b76, .8).lineBetween(edge.x, GROUND + 9, edge.x + edge.outward * 8, GROUND + 28);
-          g.fillStyle(0x7a9e58); g.fillTriangle(edge.x - 7, GROUND + 7, edge.x + 7, GROUND + 7, edge.x, GROUND + 25);
-        }
-        for (let world = Math.ceil(span.from / 95) * 95; world < span.to; world += 95) {
-          const x = screenX(world); if (x < -20 || x > WIDTH + 20) continue;
-          const sway = Math.sin(elapsed * 2.6 + world * .09) * 3;
-          g.fillStyle(0x91b95c); g.fillTriangle(x - 9, GROUND, x - 3 + sway, GROUND - 13, x + 1, GROUND);
-          g.fillTriangle(x + 2, GROUND, x + 8 + sway, GROUND - 10, x + 13, GROUND);
-          g.fillStyle(0xa7c477); g.fillCircle(x + 18, GROUND + 2, 3);
-          if (world % 3 === 0) { g.fillStyle(0xe2b57c); g.fillCircle(x + 17 + sway, GROUND - 7, 3); g.fillStyle(0xffeed0); g.fillCircle(x + 17 + sway, GROUND - 7, 1); }
-          g.fillStyle(0xa17b55); g.fillCircle(x + 28, GROUND + 47 + world % 23, 5);
-          g.fillStyle(0x2d3035); g.fillCircle(x - 17, GROUND + 88 + world % 17, 3);
-        }
-      }
+      for (const [key, faces] of this.cliffs) if (!visibleGaps.has(key)) { faces.left.destroy(); faces.right.destroy(); this.cliffs.delete(key); }
       for (const item of entities) if (item.alive) {
         if (item.owlRig) item.owlRig.update(screenX(item.worldX), item.y, elapsed, (item.dropUntil ?? 0) > elapsed);
         else if (item.fireflyRig) item.fireflyRig.update(screenX(item.worldX), item.y, elapsed, settings.effectsIntensity);
@@ -480,7 +463,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       } catch { resolve(null); }
     }, 'image/jpeg', .65);
   });
-  return { apply, removeMutation, snapshot, ready, enableSound: () => audio.enable(), configure: value => { settings = value as StudioSettings; audio.configure(settings); scene?.applyHudSize(); },
+  return { apply, removeMutation, snapshot, ready, enableSound: () => { audio.enable(); audio.setRunState(runOver === 0, run.distance, run.speed, parameters.runSpeed); }, configure: value => { settings = value as StudioSettings; audio.configure(settings); scene?.applyHudSize(); },
     pause: () => { scene?.scene.pause(); audio.pause(); }, resume: () => { lastFrameAt = 0; scene?.scene.resume(); audio.resume(); }, captureFrame,
     destroy: () => { audio.destroy(); phaser.destroy(true); } };
 }

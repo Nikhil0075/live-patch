@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 
 type Draw = (c: CanvasRenderingContext2D) => void;
+const worldPalette = { moss: '#6f9c42', mossLight: '#b4c95b', soil: '#674431', soilDeep: '#302b33', rock: '#59677a', farPine: '#777796', middlePine: '#3e6673', nearPine: '#244b4b' };
 function texture(scene: Phaser.Scene, key: string, w: number, h: number, draw: Draw): void {
   if (scene.textures.exists(`lantern-world-${key}`)) return;
   const ratio = key === 'sky' || key === 'clouds' || key === 'foreground' || key.startsWith('layer-') ? 1 : 2;
@@ -24,11 +25,19 @@ function gradient(c: CanvasRenderingContext2D, x: number, y: number, x2: number,
   const g = c.createLinearGradient(x, y, x2, y2); colors.forEach((color, i) => g.addColorStop(i / (colors.length - 1), color)); return g;
 }
 function pine(c: CanvasRenderingContext2D, x: number, base: number, tall: number, color: string, lit: string): void {
-  line(c, [x, base, x, base - tall], '#453d46', Math.max(3, tall / 18));
-  for (let tier = 0; tier < 4; tier++) {
-    const top = base - tall + tier * tall * .16, half = tall * (.15 + tier * .035);
-    path(c, [x, top, x - half, top + tall * .38, x + half, top + tall * .38], color);
-    line(c, [x + 2, top + 8, x + half * .54, top + tall * .31], lit, 1);
+  const tierCount = tall > 175 ? 5 : 4;
+  if (tall > 175) line(c, [x, base, x, base - tall * .48], '#344c52', Math.max(3, tall / 24));
+  for (let tier = tierCount - 1; tier >= 0; tier--) {
+    const top = base - tall + tier * tall * .17, half = tall * (.115 + tier * .024), bottom = top + tall * .38;
+    const crown = new Path2D(); crown.moveTo(x, top); crown.bezierCurveTo(x - half * .22, top + tall * .12, x - half * .64, bottom - 9, x - half, bottom);
+    crown.quadraticCurveTo(x - half * .64, bottom + 6, x - half * .38, bottom - 1);
+    crown.quadraticCurveTo(x - half * .15, bottom + 7, x, bottom + 1);
+    crown.quadraticCurveTo(x + half * .3, bottom + 8, x + half * .46, bottom);
+    crown.quadraticCurveTo(x + half * .8, bottom + 7, x + half, bottom);
+    crown.bezierCurveTo(x + half * .65, bottom - 12, x + half * .25, top + tall * .12, x, top); crown.closePath();
+    c.fillStyle = gradient(c, x - half, top, x + half, bottom, [lit, color, color]); c.fill(crown);
+    c.save(); c.clip(crown); c.fillStyle = color; c.globalAlpha = .3; c.fillRect(x - half, bottom - 8, half * 2, 12); c.restore();
+    line(c, [x + 1, top + 8, x + half * .69, bottom - 8], lit, Math.max(1, tall / 110));
   }
 }
 function forest(c: CanvasRenderingContext2D, index: number): void {
@@ -63,6 +72,49 @@ function forest(c: CanvasRenderingContext2D, index: number): void {
       line(c, [x, y + 2, x, y + 14], '#b7b08a', 2);
     }
   }
+  const haze = c.createLinearGradient(0, h - 74, 0, h);
+  haze.addColorStop(0, '#bec1ca00'); haze.addColorStop(1, index < 2 ? '#c7a2b324' : '#8ca8a418');
+  c.fillStyle = haze; c.fillRect(0, h - 74, w, 74);
+}
+
+function groundStrip(c: CanvasRenderingContext2D): void {
+  const w = 1152, h = 142, tau = Math.PI * 2;
+  c.fillStyle = gradient(c, 0, 10, 0, h, ['#7e5738', worldPalette.soil, '#4d382f', worldPalette.soilDeep]); c.fillRect(0, 10, w, h);
+  for (let i = 0; i < 78; i++) {
+    const x = (i * 227 + i * i * 31) % w, y = 38 + (i * 43) % 95, r = 3 + i % 7;
+    ellipse(c, x, y, r * 1.4, r, i % 3 ? '#87705a88' : '#424657aa', i % 4 * .2);
+    if (i % 4 === 0) line(c, [x - 2, 17, x + 2, y - 6, x + 11, y + 5], '#8d694c88', 1.2);
+  }
+  const lip = new Path2D(); lip.moveTo(0, 10);
+  for (let x = 0; x <= w; x += 8) lip.lineTo(x, 11 + Math.sin(x / w * tau * 12) * 2);
+  lip.lineTo(w, 28);
+  for (let x = w; x >= 0; x -= 12) lip.lineTo(x, 23 + Math.sin(x / w * tau * 11) * 3 + (x % 5));
+  lip.closePath(); c.fillStyle = worldPalette.moss; c.fill(lip);
+  const crown = c.createLinearGradient(0, 8, 0, 27); crown.addColorStop(0, worldPalette.mossLight); crown.addColorStop(.5, '#8db84c'); crown.addColorStop(1, '#3d7338');
+  c.fillStyle = crown; c.fill(lip);
+  for (let i = 0; i < 140; i++) {
+    const x = i * w / 140, len = 6 + (i * 17) % 13;
+    const strand = new Path2D(); strand.moveTo(x - 3, 20); strand.quadraticCurveTo(x + 3, 29 + len * .5, x + 1, 25 + len); strand.quadraticCurveTo(x - 3, 29, x - 7, 22); strand.closePath();
+    c.fillStyle = i % 3 ? '#609039' : '#426f37'; c.fill(strand);
+  }
+  for (let i = 0; i < 46; i++) {
+    const x = (i * 193 + i * i * 13) % w;
+    line(c, [x, 10, x - 4, 3], '#86b44b', 1.4); line(c, [x, 10, x + 5, 1], '#c1cf65', 1.3);
+    if (i % 6 === 0) { ellipse(c, x + 8, 4, 3, 3, '#f5deb1'); ellipse(c, x + 8, 4, 1, 1, '#e3a86e'); }
+  }
+  c.fillStyle = '#202e34bb'; c.fillRect(0, 122, w, 20);
+}
+function cliff(c: CanvasRenderingContext2D, right: boolean): void {
+  if (right) { c.translate(70, 0); c.scale(-1, 1); }
+  const rock = new Path2D(); rock.moveTo(70, 0); rock.lineTo(18, 0); rock.lineTo(26, 23); rock.lineTo(10, 44); rock.lineTo(20, 70); rock.lineTo(4, 100); rock.lineTo(0, 142); rock.lineTo(70, 142); rock.closePath();
+  c.fillStyle = gradient(c, 0, 0, 68, 140, ['#839199', worldPalette.rock, '#26394e']); c.fill(rock);
+  c.save(); c.clip(rock);
+  const facets = [[20, 27, 48, 42, 34, 72], [10, 77, 39, 65, 21, 110], [27, 107, 60, 78, 55, 140]];
+  for (const [x1,y1,x2,y2,x3,y3] of facets) path(c,[x1,y1,x2,y2,x3,y3], '#9fabb146');
+  c.restore();
+  const moss = new Path2D(); moss.moveTo(10, 0); moss.lineTo(70, 0); moss.lineTo(70, 20); moss.quadraticCurveTo(50, 23, 39, 32); moss.quadraticCurveTo(30, 25, 23, 38); moss.lineTo(20, 13); moss.closePath();
+  c.fillStyle = gradient(c, 10, 0, 30, 38, ['#b8cd5d', '#6f9c42', '#3c7137']); c.fill(moss);
+  for (let x = 27; x < 65; x += 10) line(c,[x,17,x-3,36 + x%7], '#5f8b3d',2);
 }
 function prop(c: CanvasRenderingContext2D, kind: string): void {
   if (kind === 'log' || kind === 'log-stack') {
@@ -131,6 +183,9 @@ function prop(c: CanvasRenderingContext2D, kind: string): void {
 }
 
 export function createWorldArt(scene: Phaser.Scene): void {
+  texture(scene, 'ground-strip', 1152, 142, groundStrip);
+  texture(scene, 'cliff-left', 70, 142, c => cliff(c, false));
+  texture(scene, 'cliff-right', 70, 142, c => cliff(c, true));
   texture(scene, 'sky', 1152, 648, c => {
     c.fillStyle = gradient(c, 0, 0, 0, 648, ['#15233f', '#2d3d64', '#78587a', '#d48b72', '#f0bb83']); c.fillRect(0, 0, 1152, 648);
     const halo = c.createRadialGradient(740, 215, 10, 740, 215, 180);
