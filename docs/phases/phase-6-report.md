@@ -119,7 +119,7 @@ The first four captures below are 1920×1080. The strips are cropped from the ru
 | `deab45e` before overhaul | 13.2 fps | 10.2 fps | 175.3 ms |
 | `df4cadc` after overhaul | 7.7 fps | 6.1 fps | 291.1 ms |
 
-The richer layers and animated parts cost software-renderer throughput. The crowded smoke test still passes its existing requirements: fewer than 80 entities, at most 64 particles, worst gap below 350 ms, and crowded frame rate above 55% of the baseline. A visible hardware-accelerated stream has not been measured in this round, so that performance remains a manual risk.
+The richer layers and animated parts cost headless Chromium throughput. The old revision was measured from a temporary worktree whose linked `node_modules` caused Vite to block font files, so the two rates are directional rather than a controlled visual comparison. The crowded smoke test still passes its existing requirements: at most 80 entities and 64 particles, worst gap below 350 ms, and crowded frame rate above 55% of the baseline. A visible hardware-accelerated stream has not been measured in this round, so that performance remains a manual risk.
 
 ## How to run and test
 
@@ -133,6 +133,10 @@ The richer layers and animated parts cost software-renderer throughput. The crow
 - Step 6, live verification: `node scripts/verify-phase6-live.mjs` on the `D:` verification clone returned `SUMMARY: 3/3 shipped` and exit 0. The three `durationMs` values and mutation filenames are in the table above. The temporary clone was deleted.
 - Spec copy: a normalized text comparison of `docs/phases/phase-6.md` with the plan's `## Spec` section printed `Spec unchanged: true`.
 - Round 1 functional fixes: `npm test` passed 103 unit (4 opt-in skipped), 30 studio, 35 Arena (1 optional WebGL skipped), 23 Lantern, and HTTPS/HTTP2; the test runner reported no `builds/` change.
+- An initial Round 1 clone run exposed a flaky three-hit test: at maximum speed its third boulder could meet the fox over a generated pit. The test now uses the first continuous stretch at minimum speed. That failed clone was deleted before the final verification runs.
+- Round 1 final verification, first fresh clone at `D:\twitchconXcodex\phase6-r1-clone-a2` (deleted): `npm ci` added 49 packages; `npm test` passed 103 unit (4 opt-in skipped), 30 studio, 35 Arena (1 optional WebGL skipped), 24 Lantern, and HTTPS/HTTP2. `npm run build` passed; `npm audit --audit-level=high` found 0 vulnerabilities. `Test-Path builds` was `False` before and after the test.
+- Round 1 final verification, second fresh clone at `D:\twitchconXcodex\phase6-r1-clone-b` (deleted): the same `npm ci`, `npm test`, `npm run build`, and audit results passed; `Test-Path builds` remained `False`.
+- Round 1 final verification, Lantern selected in the repository: `$env:LIVE_PATCH_GAME='games/lantern-run'; npm test` passed the same 103 unit, 30 studio, 35 Arena, 24 Lantern, and HTTPS/HTTP2 checks. The test runner reported no change to `builds/`. The three-hit run-over check was stabilized by running on the first continuous stretch; it passed twice alone and in both clean clones and the Lantern-selected full suite.
 
 ## Exit criteria
 
@@ -160,7 +164,7 @@ The unquoted English word `log` occurs only as a generic chat ARIA role and Wind
 - [x] 9. Visual captures — `docs/phases/phase-6-visual/{01-gameplay,04-evolved,05-run-over,06-library}.png` are 1920×1080; four animation strips and a 9.04 s WebM are also present. The comparison tables above cite Appendix 3 and the animation concepts. Evolved has six active local modules including the demo.
 - [x] 10. Standing checks — game-specific names and kinds are absent from `engine/`; new mutations receive only the existing game handle; engine gates and sandbox were not loosened; browser tests insert viewer text as text and exercise HTML-like input; no secrets were added to tracked files or the overlay.
 - [x] 11. Docs are in sync — README, adding-a-game, architecture, demo-script, Lantern's mutation API and asset credits describe the shipped features and cover provenance.
-- [x] 12. Clean clone passes — `npm ci`, `npm test`, `npm run build` and `npm audit --audit-level=high` passed in the fresh clone; `builds/` was absent before and after the test; clone deleted.
+- [x] 12. Clean clone passes — `npm ci`, `npm test`, `npm run build` and `npm audit --audit-level=high` passed in two sequential fresh clones after the Round 1 fixes; `builds/` was absent before and after each test; both clones deleted.
 
 ## Deferred
 
@@ -170,7 +174,7 @@ The unquoted English word `log` occurs only as a generic chat ARIA role and Wind
 
 - The sandbox permits temp-to-temp writes on this Windows account, so an isolated verification clone under `%TEMP%` fails the preflight even though the normal `D:` project location passes. Keep future verification clones on a protected project drive. The three real builds ran only after the probe passed.
 - The four captures are representative local states. The evolved image does not itself prove a live Codex patch shipped; the separate three-build verification above does.
-- At 1920×1080 in headless Chromium's software renderer, the crowded probe fell from 10.2 fps before the visual overhaul to 6.1 fps after it, while still passing the established smoke-test thresholds. Validate frame rate on the streamer's visible, hardware-accelerated browser before relying on this art under encoding load.
+- At 1920×1080 in headless Chromium, the crowded probe fell from 10.2 fps before the visual overhaul to 6.1 fps after it, while still passing the established smoke-test thresholds. The old worktree had blocked font files, so the comparison is directional. Validate frame rate on the streamer's visible, hardware-accelerated browser before relying on this art under encoding load.
 
 ## Review responses
 
