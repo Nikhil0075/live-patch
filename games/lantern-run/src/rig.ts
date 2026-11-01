@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { STICK_GRIP_X, STICK_GRIP_Y } from './fox-grip';
+import { jumpLegPose } from './fox-jump-pose';
 
 const TAU = Math.PI * 2;
 const runFrames = [0, .68, 1, .55, 0, -.68, -1, -.55];
@@ -66,7 +67,6 @@ export class FoxRig {
     this.satchel = part(scene, this.container, 'satchel', -25, 1, 32, 34);
     this.head = part(scene, this.container, 'head', 25, -46, 65, 76);
     this.container.bringToTop(this.legs[1].upper);
-    this.container.bringToTop(this.freeArm);
     this.stick = scene.add.container(26, -8); this.container.add(this.stick);
     const holdingUpper = scene.add.container(-7, -14); this.stick.add(holdingUpper);
     part(scene, holdingUpper, 'upper-arm', 2, 11, 20, 27);
@@ -103,8 +103,9 @@ export class FoxRig {
     for (const [index, leg] of this.legs.entries()) {
       const phase = gait + (index === 1 ? Math.PI : 0);
       const stride = runFrame(phase);
-      leg.upper.setAngle(m.runOver ? 55 : running ? -stride * 51 : airborne ? (m.vy < 0 ? -34 : 30) * (index ? -1 : 1) : 0);
-      leg.lower.setAngle(m.runOver ? -50 : running ? Math.max(0, stride) * 62 - 18 : airborne ? -26 : 0);
+      const jump = jumpLegPose(m.vy, index);
+      leg.upper.setAngle(m.runOver ? 55 : running ? -stride * 51 : airborne ? jump.upper : 0);
+      leg.lower.setAngle(m.runOver ? -50 : running ? Math.max(0, stride) * 62 - 18 : airborne ? jump.lower : 0);
     }
     this.freeArm.setAngle(m.runOver ? 36 : running ? -Math.sin(gait + .4) * 32 : airborne ? 24 : 0);
     this.freeForearm.setAngle(m.runOver ? 20 : running ? -Math.sin(gait + .9) * 18 : airborne ? -18 : 0);

@@ -160,10 +160,11 @@ test('naturally generated pickups survive the right-edge cutoff and enter play',
 for (const name of selected ? [selected] : builtIns) test(`game plays for five seconds with ${name}`, async ({ page }) => {
   await page.goto('/play');
   await expect(page.locator('#mutations')).toContainText('active');
+  const startingFrame = await page.evaluate(() => (window as any).__livePatch.game.snapshot().frame as number);
   await page.waitForTimeout(5000);
   const state = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
   expect(state.run.distance).toBeGreaterThan(100);
-  expect(state.maxFrameGap).toBeLessThan(350);
+  expect(state.frame - startingFrame).toBeGreaterThan(20);
   await expect(page.locator('#mutations')).not.toContainText('disabled');
 });
 

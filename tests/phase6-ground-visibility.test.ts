@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CLIFF_WIDTH, cliffCentreY, pitWallsVisible } from '../games/lantern-run/src/ground-visibility';
 import { LEDGE_SPAWN_OFFSET, MAX_SPAWN_OFFSET, OBSTACLE_SPAWN_OFFSET, OWL_SPAWN_OFFSET } from '../games/lantern-run/src/generator';
 import { STICK_GRIP_Y, stickLineYAtGrip } from '../games/lantern-run/src/fox-grip';
+import { jumpLegPose } from '../games/lantern-run/src/fox-jump-pose';
 
 describe('Lantern Run edge geometry', () => {
   it('keeps pit walls until their outer edges leave either side of the viewport', () => {
@@ -20,5 +21,13 @@ describe('Lantern Run edge geometry', () => {
 
   it('puts the holding paw around the branch, within two unscaled pixels', () => {
     expect(Math.abs(STICK_GRIP_Y - stickLineYAtGrip())).toBeLessThan(2);
+  });
+
+  it('trails both paws behind the fox through a jump', () => {
+    for (const vy of [-200, 120]) for (const index of [0, 1]) {
+      const pose = jumpLegPose(vy, index);
+      expect(pose.upper).toBeGreaterThan(0);
+      expect(pose.upper + pose.lower).toBeGreaterThan(0);
+    }
   });
 });
