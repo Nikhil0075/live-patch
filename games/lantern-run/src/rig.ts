@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { STICK_GRIP_X, STICK_GRIP_Y } from './fox-grip';
 
 const TAU = Math.PI * 2;
 const runFrames = [0, .68, 1, .55, 0, -.68, -1, -.55];
@@ -27,6 +28,7 @@ export class FoxRig {
   private readonly tailTip: Phaser.GameObjects.Container;
   private readonly legs: { upper: Phaser.GameObjects.Container; lower: Phaser.GameObjects.Container }[] = [];
   private readonly freeArm: Phaser.GameObjects.Container;
+  private readonly freeForearm: Phaser.GameObjects.Container;
   private readonly body: Phaser.GameObjects.Image;
   private readonly head: Phaser.GameObjects.Image;
   private readonly satchel: Phaser.GameObjects.Image;
@@ -56,16 +58,22 @@ export class FoxRig {
       this.legs[index] = { upper, lower };
     }
     this.freeArm = scene.add.container(4, -24); this.container.add(this.freeArm);
-    part(scene, this.freeArm, 'arm', 2, 15, 20, 31);
+    part(scene, this.freeArm, 'upper-arm', 2, 11, 20, 26);
+    this.freeForearm = scene.add.container(3, 23); this.freeArm.add(this.freeForearm);
+    part(scene, this.freeForearm, 'forearm', 1, 9, 18, 24);
+    part(scene, this.freeForearm, 'paw', 3, 21, 16, 10);
     this.body = part(scene, this.container, 'body', -3, -14, 63, 75);
     this.satchel = part(scene, this.container, 'satchel', -25, 1, 32, 34);
     this.head = part(scene, this.container, 'head', 25, -46, 65, 76);
     this.container.bringToTop(this.legs[1].upper);
     this.container.bringToTop(this.freeArm);
     this.stick = scene.add.container(26, -8); this.container.add(this.stick);
-    part(scene, this.stick, 'arm', 5, 11, 20, 28);
+    const holdingUpper = scene.add.container(-7, -14); this.stick.add(holdingUpper);
+    part(scene, holdingUpper, 'upper-arm', 2, 11, 20, 27);
+    const holdingForearm = scene.add.container(5, 24); holdingUpper.add(holdingForearm);
+    part(scene, holdingForearm, 'forearm', 7, -5, 18, 24).setAngle(45);
     part(scene, this.stick, 'stick', 31, -8, 68, 23);
-    part(scene, this.stick, 'paw', 13, 12, 18, 11);
+    part(scene, this.stick, 'paw', STICK_GRIP_X, STICK_GRIP_Y, 18, 11);
     this.lantern = scene.add.container(64, 0); this.stick.add(this.lantern);
     this.lanternGlow = part(scene, this.lantern, 'firefly-glow', 0, 23, 106, 106);
     this.lanternGlow.setBlendMode(Phaser.BlendModes.ADD).setTint(0xffbd5b);
@@ -99,6 +107,7 @@ export class FoxRig {
       leg.lower.setAngle(m.runOver ? -50 : running ? Math.max(0, stride) * 62 - 18 : airborne ? -26 : 0);
     }
     this.freeArm.setAngle(m.runOver ? 36 : running ? -Math.sin(gait + .4) * 32 : airborne ? 24 : 0);
+    this.freeForearm.setAngle(m.runOver ? 20 : running ? -Math.sin(gait + .9) * 18 : airborne ? -18 : 0);
     const targetTail = m.runOver ? -25 : airborne ? (m.vy < 0 ? -20 : 28) : Math.sin(gait + .6) * 13;
     this.tailAngle += (targetTail - this.tailAngle) * Math.min(1, m.dt * 11);
     this.tailRoot.setAngle(this.tailAngle); this.tailMid.setAngle(Math.sin(m.elapsed * 8 - .5) * 8); this.tailTip.setAngle(Math.sin(m.elapsed * 8 - 1.1) * 10);

@@ -232,6 +232,29 @@ test('an action storm is throttled before it fills the arena', async ({ page }) 
   } finally { fs.rmSync(file, { force: true }); }
 });
 
+test('the 60-action window rejects the fourth valid 20-action event', async ({ page }) => {
+  await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
+  await page.evaluate(() => (window as any).__livePatch.host.sync([{ name: 'budget-probe.js', source: `export const meta={id:'budget-probe',title:'Budget Probe',author:'test',description:'window cap'}; export function onChat(game){for(let i=0;i<20;i++) game.setParameter('playerSpeed',300);}`, error: null }]));
+  await expect(page.locator('#mutations')).toContainText('Budget Probe · active');
+  await page.evaluate(() => {
+    const { game } = (window as any).__livePatch;
+    const fixed = Date.now(); Date.now = () => fixed;
+    const apply = game.apply.bind(game);
+    (window as any).__budgetApplied = 0;
+    game.apply = (action: unknown, origin: string) => {
+      if (origin === 'budget-probe.js') (window as any).__budgetApplied++;
+      return apply(action, origin);
+    };
+  });
+  for (let i = 0; i < 3; i++) {
+    await page.evaluate(i => (window as any).__livePatch.host.emit({ type: 'chat', text: String(i), author: 'test' }), i);
+    await expect.poll(() => page.evaluate(() => (window as any).__budgetApplied), { timeout: 10_000 }).toBe((i + 1) * 20);
+  }
+  await page.evaluate(() => (window as any).__livePatch.host.emit({ type: 'chat', text: 'fourth', author: 'test' }));
+  await expect(page.locator('#mutations')).toContainText('actions skipped', { timeout: 10_000 });
+  await expect.poll(() => page.evaluate(() => (window as any).__budgetApplied), { timeout: 10_000 }).toBe(60);
+});
+
 test('the arena caps enemies and clears a swarm on a new run', async ({ page }) => {
   await page.goto('/play?mutation=__none__'); await expect(page.locator('#status')).toContainText('LIVE');
   const capped = await page.evaluate(() => {

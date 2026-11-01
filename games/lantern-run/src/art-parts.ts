@@ -78,7 +78,15 @@ export function createLanternParts(scene: Phaser.Scene): void {
   texture(scene, 'rig-upper-leg', 29, 40, c => { const p = new Path2D(); p.moveTo(9, 2); p.quadraticCurveTo(24, -1, 26, 11); p.quadraticCurveTo(22, 31, 20, 39); p.lineTo(7, 37); p.quadraticCurveTo(6, 17, 9, 2); p.closePath(); curved(c, p, shade(c, 7, 2, 25, 39, ['#ffb452', '#e16c2b', '#a34428']), '#9d4228', '#ffcd77'); });
   texture(scene, 'rig-lower-leg', 26, 36, c => { const p = new Path2D(); p.moveTo(7, 1); p.quadraticCurveTo(23, 0, 23, 12); p.lineTo(19, 34); p.quadraticCurveTo(6, 39, 4, 31); p.closePath(); curved(c, p, shade(c, 5, 1, 24, 35, ['#e8762e', '#a24b2c', foxPalette.sock]), '#623a2b', '#eaa067'); });
   texture(scene, 'rig-paw', 29, 16, c => { ellipse(c, 15, 8, 13, 6, '#432a25'); stroke(c, [18, 10, 23, 10], '#b27953', 1.4); });
-  texture(scene, 'rig-arm', 30, 42, c => { const p = new Path2D(); p.moveTo(6, 3); p.quadraticCurveTo(19, -1, 24, 9); p.quadraticCurveTo(31, 21, 22, 39); p.quadraticCurveTo(8, 44, 4, 32); p.closePath(); curved(c, p, shade(c, 3, 3, 26, 42, ['#ffb454', '#e9782b', '#9b4629']), '#94422a', '#ffd18a'); ellipse(c, 18, 34, 9, 7, foxPalette.sock); });
+  texture(scene, 'rig-upper-arm', 30, 36, c => {
+    const p = new Path2D(); p.moveTo(7, 3); p.quadraticCurveTo(18, -1, 25, 8); p.quadraticCurveTo(27, 18, 22, 31); p.quadraticCurveTo(12, 38, 5, 29); p.quadraticCurveTo(2, 16, 7, 3); p.closePath();
+    curved(c, p, shade(c, 4, 2, 26, 33, ['#ffc365', '#eb7e32', '#ab4c29']), '#9b4429', '#ffe0a2');
+  });
+  texture(scene, 'rig-forearm', 28, 34, c => {
+    const p = new Path2D(); p.moveTo(7, 2); p.quadraticCurveTo(20, -1, 24, 7); p.quadraticCurveTo(28, 18, 20, 32); p.quadraticCurveTo(9, 37, 4, 28); p.quadraticCurveTo(2, 13, 7, 2); p.closePath();
+    curved(c, p, shade(c, 5, 2, 24, 34, ['#f39a48', '#a85630', foxPalette.sock]), '#643a2a', '#ffc075');
+    ellipse(c, 16, 29, 8, 5, foxPalette.sock);
+  });
   texture(scene, 'rig-satchel', 38, 38, c => {
     ellipse(c, 19, 20, 17, 16, '#56362d', -.2); poly(c, [4, 14, 35, 13, 29, 28, 9, 28], '#794b34');
     stroke(c, [8, 11, 29, 10], '#d19a54', 2); ellipse(c, 19, 22, 3, 3, '#efb45f');

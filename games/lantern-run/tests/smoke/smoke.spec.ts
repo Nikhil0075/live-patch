@@ -98,6 +98,30 @@ test('eight music bars render on the beat grid and meet quietly at the loop seam
   expect(result.brokenOnsets).toBeLessThan(8);
 });
 
+test('a hazard run-over stays faded after hurt and a hurt restore respects the music cap', async ({ page }) => {
+  await page.goto('/play');
+  const levels = await page.evaluate(async () => {
+    const audioPath = '/games/lantern-run/src/audio.ts', settingsPath = '/engine/studio/settings-defaults.ts';
+    const { LanternAudio } = await import(/* @vite-ignore */ audioPath);
+    const { defaultSettings } = await import(/* @vite-ignore */ settingsPath);
+    async function rms(mode: 'baseline' | 'hurt' | 'run-over') {
+      const rate = 22050, context = new OfflineAudioContext(1, rate * 4, rate);
+      const audio = new LanternAudio({ ...defaultSettings, musicVolume: .8, effectsVolume: 0 }, context);
+      audio.setRunState(true, 0, 260, 260);
+      audio.scheduleMusic(.1, 2);
+      if (mode !== 'baseline') audio.play('hurt');
+      if (mode === 'run-over') audio.setRunState(false, 0, 260, 260);
+      const data = (await context.startRendering()).getChannelData(0);
+      let sum = 0; for (let i = rate * 2; i < rate * 3; i++) sum += data[i] * data[i];
+      return Math.sqrt(sum / rate);
+    }
+    return { baseline: await rms('baseline'), hurt: await rms('hurt'), runOver: await rms('run-over') };
+  });
+  expect(levels.baseline).toBeGreaterThan(.002);
+  expect(levels.hurt).toBeLessThan(levels.baseline * 1.1);
+  expect(levels.runOver).toBeLessThan(levels.baseline * .05);
+});
+
 test('Lantern Run starts and advances', async ({ page }) => {
   await page.goto('/play');
   await expect(page.locator('#status')).toContainText('Lantern Run · LIVE');

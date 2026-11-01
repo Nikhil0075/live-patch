@@ -6,7 +6,8 @@ import { createLanternParts } from './art-parts';
 import { createWorldArt } from './art-world';
 import { FireflyRig, FoxRig, OwlRig } from './rig';
 import { LanternAudio, sounds, type SoundName } from './audio';
-import { DESPAWN_MARGIN, GENERATION_LEAD, MAX_GAP, MAX_SPAWN_OFFSET, generateStretch, owlFlightHeight, owlFlightY, type Stretch } from './generator';
+import { DESPAWN_MARGIN, GENERATION_LEAD, MAX_GAP, MAX_SPAWN_OFFSET, OWL_SPAWN_OFFSET, LEDGE_SPAWN_OFFSET, OBSTACLE_SPAWN_OFFSET, generateStretch, owlFlightHeight, owlFlightY, type Stretch } from './generator';
+import { CLIFF_HEIGHT, CLIFF_WIDTH, cliffCentreY, pitWallsVisible } from './ground-visibility';
 import { advanceFoxFlight } from './physics';
 
 const WIDTH = 1152, HEIGHT = 648, GROUND = 518, FOX_X = 346;
@@ -80,12 +81,12 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       spans.push({ from, to: from + stretch.groundLength, stretch });
       if (stretch.hazard !== 'none' && (index * 47 + seed * 13) % 100 < Math.min(100, parameters.spawnRate * 70)) {
         const height = owlFlightHeight(seed, index);
-        const item = addEntity(stretch.hazard, from + (stretch.hazard === 'owl' ? 350 : 220), stretch.hazard === 'owl' ? height : GROUND - 32);
+        const item = addEntity(stretch.hazard, from + (stretch.hazard === 'owl' ? OWL_SPAWN_OFFSET : OBSTACLE_SPAWN_OFFSET), stretch.hazard === 'owl' ? height : GROUND - 32);
         if (item && stretch.hazard === 'owl') { item.vx = -24; item.flightY = height; item.flightPhase = (seed + index * 7) % 19; }
       }
       const collectible = stretch.pickup;
       for (let i = 0; i < 3; i++) addEntity(collectible === 'acorn' && i === 1 ? 'acorn' : 'firefly', from + 110 + i * 58, GROUND - 125 - Math.sin(i / 2) * 35);
-      if (stretch.ledge) addEntity('ledge', from + 350, GROUND - 155, 1.3);
+      if (stretch.ledge) addEntity('ledge', from + LEDGE_SPAWN_OFFSET, GROUND - 155, 1.3);
     }
     while (spans.length > 2 && spans[1].to < distancePx - 400) spans.shift();
   }
@@ -349,19 +350,19 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       const visibleGaps = new Set<number>();
       for (let index = 1; index < spans.length; index++) {
         const left = screenX(spans[index - 1].to), right = screenX(spans[index].from);
-        if (right - left <= 1 || right < 0 || left > WIDTH) continue;
+        if (!pitWallsVisible(left, right, WIDTH)) continue;
         const key = spans[index - 1].to; visibleGaps.add(key);
         g.fillStyle(0x111b2b); g.fillRect(left, GROUND - 12, right - left, HEIGHT - GROUND + 12);
         g.fillStyle(0x23354a, .55);
         for (let x = left + 18; x < right; x += 30) g.fillTriangle(x - 14, HEIGHT, x, GROUND + 72 + Math.sin(x * .12) * 8, x + 20, HEIGHT);
         let faces = this.cliffs.get(key);
         if (!faces) {
-          faces = { left: this.add.image(0, 0, 'lantern-world-cliff-left').setDepth(1.5).setDisplaySize(70, 142),
-            right: this.add.image(0, 0, 'lantern-world-cliff-right').setDepth(1.5).setDisplaySize(70, 142) };
+          faces = { left: this.add.image(0, 0, 'lantern-world-cliff-left').setDepth(1.5).setDisplaySize(CLIFF_WIDTH, CLIFF_HEIGHT),
+            right: this.add.image(0, 0, 'lantern-world-cliff-right').setDepth(1.5).setDisplaySize(CLIFF_WIDTH, CLIFF_HEIGHT) };
           this.cliffs.set(key, faces);
         }
-        faces.left.setPosition(left - 35, GROUND + 59);
-        faces.right.setPosition(right + 35, GROUND + 59);
+        faces.left.setPosition(left - CLIFF_WIDTH / 2, cliffCentreY(GROUND));
+        faces.right.setPosition(right + CLIFF_WIDTH / 2, cliffCentreY(GROUND));
       }
       for (const [key, faces] of this.cliffs) if (!visibleGaps.has(key)) { faces.left.destroy(); faces.right.destroy(); this.cliffs.delete(key); }
       for (const item of entities) if (item.alive) {

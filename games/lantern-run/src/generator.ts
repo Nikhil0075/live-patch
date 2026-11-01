@@ -2,7 +2,10 @@ export interface RunningAbility { speed: number; jumpPower: number; gravity: num
 export interface Stretch { groundLength: number; gap: number; hazard: 'log' | 'thorns' | 'boulder' | 'owl' | 'none'; pickup: 'firefly' | 'acorn'; ledge: boolean }
 export const GENERATION_LEAD = 500;
 export const MAX_GAP = 150;
-export const MAX_SPAWN_OFFSET = 350;
+export const OWL_SPAWN_OFFSET = 350;
+export const LEDGE_SPAWN_OFFSET = 350;
+export const OBSTACLE_SPAWN_OFFSET = 220;
+export const MAX_SPAWN_OFFSET = Math.max(OWL_SPAWN_OFFSET, LEDGE_SPAWN_OFFSET, OBSTACLE_SPAWN_OFFSET);
 export const DESPAWN_MARGIN = 100;
 
 function random(seed: number): number {

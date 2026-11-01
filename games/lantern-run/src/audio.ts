@@ -42,6 +42,7 @@ export class LanternAudio {
   private nextBar = 0;
   private bar = 0;
   private running = false;
+  private runStateKnown = false;
   private rhythm = false;
   private paused = false;
   private recent = new Map<SoundName, number[]>();
@@ -79,16 +80,25 @@ export class LanternAudio {
     if (!this.context || !this.master || !this.music || !this.effects) return;
     const now = this.context.currentTime;
     this.master.gain.setTargetAtTime(settings.muted ? 0 : settings.masterVolume, now, .04);
-    this.music.gain.setTargetAtTime(settings.muted ? 0 : Math.min(.5, settings.musicVolume), now, .08);
+    this.music.gain.setTargetAtTime(settings.muted || (this.runStateKnown && !this.running) ? 0 : Math.min(.5, settings.musicVolume), now, .08);
     this.effects.gain.setTargetAtTime(settings.muted ? 0 : settings.effectsVolume, now, .04);
   }
   setRunState(active: boolean, distance: number, speed: number, startingSpeed: number): void {
     if (!this.context || !this.musicFilter || !this.music) return;
-    if (this.running === active && this.rhythm === (distance >= 200 || speed > startingSpeed * 1.18)) return;
+    if (this.runStateKnown && this.running === active && this.rhythm === (distance >= 200 || speed > startingSpeed * 1.18)) return;
+    const wasRunning = this.running;
+    this.runStateKnown = true;
     this.running = active; this.rhythm = distance >= 200 || speed > startingSpeed * 1.18;
     const now = this.context.currentTime;
     this.musicFilter.frequency.setTargetAtTime(active ? 3800 : 550, now, active ? .35 : .9);
-    if (!active) this.music.gain.setTargetAtTime(0, now, .7);
+    if (!active) {
+      this.music.gain.cancelScheduledValues(now);
+      this.music.gain.setTargetAtTime(0, now, .25);
+      if (wasRunning && this.effects) {
+        this.osc('sine', 220, 220, now, .3, .06, this.effects);
+        this.osc('sine', 164.81, 164.81, now + .22, .55, .05, this.effects);
+      }
+    }
     else this.configure(this.settings);
   }
   private tick(): void {
@@ -127,8 +137,8 @@ export class LanternAudio {
     if (times.length >= 5) return;
     times.push(now); this.recent.set(name, times);
     this.scheduleEffect(name, this.context.currentTime + .005, x, 1 + (Math.random() * 2 - 1) * .03);
-    if (name === 'hurt' && this.music) {
-      const t = this.context.currentTime, level = this.settings.musicVolume;
+    if (name === 'hurt' && this.music && this.running) {
+      const t = this.context.currentTime, level = Math.min(.5, this.settings.musicVolume);
       this.music.gain.setTargetAtTime(level * .38, t, .02);
       this.music.gain.setTargetAtTime(level, t + .2, .2);
     }

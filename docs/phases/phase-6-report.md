@@ -60,7 +60,7 @@ The first four captures below are 1920×1080. The strips are cropped from the ru
 
 | Matches the concept | Differs and why |
 |---|---|
-| The upright courier and flat lantern light resemble R1/R2. A natural firefly group, log stack and rocky pit cross the moss and root ground strip of R3; the three-heart HUD shows real state. | Ground begins at 80% of the canvas for the OBS ticker; the bridge and stone lantern are omitted per Appendix 3 row `01-gameplay.png`. The code-drawn pines and soil retain more geometric edges than R2/R3. |
+| The upright courier and flat lantern light resemble R1/R2. Natural fireflies, thorns, a ledge and two rocky pits cross the moss and root ground strip of R3; the heart HUD shows the actual run state. Both visible pit walls align with the grass lip. | Ground begins at 80% of the canvas for the OBS ticker; the bridge and stone lantern are omitted per Appendix 3 row `01-gameplay.png`. The code-drawn pines and soil retain more geometric edges than R2/R3. |
 
 ### `04-evolved.png`
 
@@ -84,7 +84,7 @@ The first four captures below are 1920×1080. The strips are cropped from the ru
 
 | Concepts | Matches | Differs and why |
 |---|---|---|
-| `02-art-sheet.png`, `06-fox-animation.png` row 1, R1 | Eight roughly 37 ms samples show an upright torso, opposing hind-leg stride, free-arm swing, tail, satchel and lantern follow-through. The holding paw keeps the stick below the face, and seven frames show the eye open. | One frame catches a natural blink. The painted R1 silhouette has a wider stride and softer fur than the code-drawn textures. |
+| `02-art-sheet.png`, `06-fox-animation.png` row 1, R1 | Eight roughly 37 ms samples show an upright torso, opposing hind-leg stride, a two-part swinging free arm, tail, satchel and lantern follow-through. The two-part holding arm reaches the branch, and its paw wraps around the stick line. | One frame catches a natural blink. The painted R1 silhouette has a wider stride and softer fur than the code-drawn textures. |
 
 ### `08-fox-jump.png`
 
@@ -181,12 +181,22 @@ The unquoted English word `log` occurs only as a generic chat ARIA role and Wind
 
 ## Review responses
 
+## Round 4 responses
+
+- **P6-R4-01 — Fixed.** Pit visibility now includes the full 70 px wall on both sides, and the wall texture's top sits at the grass lip (canvas y 517). `Lantern Run edge geometry` checks both entry and exit boundaries; the refreshed `01-gameplay.png` shows aligned edges.
+- **P6-R4-02 — Fixed.** Both front arms now have separate upper-arm and forearm textures and pivots. The free forearm lags its swing; the holding paw overlays the stick at the branch height. `puts the holding paw around the branch` checks the grip offset, and the refreshed `07-fox-run-cycle.png` shows the two-part motion.
+- **P6-R4-03 — Fixed.** Hurt restores only the capped music level, and run over cancels pending gain automation before fading. A two-note cadence plays through the effects bus. `a hazard run-over stays faded after hurt and a hurt restore respects the music cap` renders both cases offline.
+- **P6-R4-04 — Fixed.** A browser test sends exactly 20 valid parameter actions in each of four separate chat events under a fixed host clock. It requires 60 applied actions and skipped actions on the fourth event, so disabling only the per-second budget fails while the per-event cap remains active.
+- **P6-R4-05 — Fixed.** Hazard, owl and ledge spawn sites use named offsets; `MAX_SPAWN_OFFSET` derives from all three. `Lantern Run edge geometry` checks the relationship.
+
+Round 4 repository verification: `npm test` passed 107 unit tests (4 opt-in skipped), 30 studio browser tests, 37 Arena browser tests (1 optional WebGL skipped), 31 Lantern Run browser tests, and the HTTPS regression. `npm run build` exited 0 and `npm audit --audit-level=high` found 0 vulnerabilities. `git status --short -- builds` produced no output. The new budget test first exposed a sequencing mistake in the test (batched events), which was corrected; an unrelated rollback test binding accidentally changed during that edit and was restored before this green full run.
+
 ## Round 3 responses
 
 - **P6-R3-01 — Fixed.** The Arena storm fixture now requests 100 actions in one tick, exceeding the per-event cap even on a slow machine. The focused test and full `npm test` pass.
 - **P6-R3-02 — Partly fixed.** The nine-frame jump strip now includes takeoff, the second-jump spin, fall and landing. The run strip no longer uses a fake clock that could make game time go backward; seven of eight frames show the open eye, while one still catches a blink.
 - **P6-R3-03 — Fixed.** Owl and firefly browser checks mask subject colours and disable each rig's `update` as a negative control. Both pass in the full suite.
-- **P6-R3-04 — Fixed.** The fox now has an upright orange torso, two slim hind legs with a longer opposing stride, articulated arms, a curved cream-tipped tail, larger ears and eye, a paw-held forked stick and a round ribbed lantern. The texture rig stays within the existing collider; the code-drawn silhouette is still simpler than the painted concept.
+- **P6-R3-04 — Fixed after Round 4.** The fox has an upright orange torso, two slim hind legs with a longer opposing stride, two-part front arms, a curved cream-tipped tail, larger ears and eye, a paw gripping the forked stick and a round ribbed lantern. The texture rig stays within the existing collider; the code-drawn silhouette is still simpler than the painted concept.
 - **P6-R3-05 — Fixed.** The right despawn horizon uses named generator lead, maximum gap, largest spawn offset and margin constants. The natural-generation browser check passes.
 
 The first Round 3 full run passed 104 unit tests (4 opt-in skipped), 30 studio tests, 36 Arena tests (1 optional WebGL skipped), 28 Lantern Run tests and the HTTPS regression. The capture and art findings P6-R3-02 and P6-R3-04 are addressed in the polish commits below.
@@ -197,9 +207,9 @@ The references are `plans/phase-6/reference/targets/R1-fox-construction.png`, `R
 
 | Target | Status | Evidence and difference from reference |
 |---|---|---|
-| T1 upright fox and gait | Met | `07-fox-run-cycle.png` shows an upright torso, articulated arms and opposing long hind-leg steps; the clean four-pose silhouette of R1 is still more exaggerated. |
+| T1 upright fox and gait | Met | `07-fox-run-cycle.png` shows an upright torso, two-part arms and opposing long hind-leg steps; the clean four-pose silhouette of R1 is still more exaggerated. |
 | T2 seamless tail | Met | `07-fox-run-cycle.png` and `08-fox-jump.png` show overlapping orange segments and a cream teardrop tip, with springy follow-through. |
-| T3 ears, eyes, lantern, stick | Met | `01-gameplay.png` shows tall ears, a forked chest-height stick and round paper lantern; `07-fox-run-cycle.png` shows the enlarged eye open in seven frames and one natural blink. |
+| T3 ears, eyes, lantern, stick | Met | `01-gameplay.png` shows tall ears, a forked chest-height stick gripped by the overlaid paw and a round paper lantern; `07-fox-run-cycle.png` shows the enlarged eye open in seven frames and one natural blink. |
 | T4 ground strip | Met | `01-gameplay.png`: repeated prerendered moss lip, roots, stones and stronger dark foreground leaves. R3 has softer painterly texture. |
 | T5 pit edges | Met | `01-gameplay.png`: left/right prerendered rock faces and dark gap, with moss over their lips. The rock shapes remain more geometric than R3. |
 | T6 pines and haze | Partly met | `01-gameplay.png` and `04-evolved.png`: scalloped tiers, varied layers and haze bands; R2's distant forest has more natural depth and irregularity. |
@@ -207,7 +217,7 @@ The references are `plans/phase-6/reference/targets/R1-fox-construction.png`, `R
 | T8 fireflies | Met | `10-props.png`: smaller translucent wings, bright yellow-green body and existing short particle trail. |
 | T9 props | Partly met | `10-props.png` shows spring, ledge, shield and firefly; log, stack, thorns, boulder and pinecone remain simpler than R3's prop sheet. |
 | T10 visual evidence | Partly met | Recaptured `01-gameplay.png`, `04-evolved.png`, `05-run-over.png`, `07-fox-run-cycle.png`, `08-fox-jump.png`, `09-owl-flight.png`, `10-props.png` and `lantern-run-motion.webm`. The run strip has one blink frame despite targeting an open-eye interval; capture samples follow real time at roughly 37 ms intervals. |
-| T11 forest music | Met | `phase-6-audio/music-20s.wav` and `eight music bars render on the beat grid and meet quietly at the loop seam`: 90 BPM A minor, eight bars, scheduled pad, bass, pentatonic melody, low kick and hats. Rhythm enters at 200 m or higher speed, and run over closes the filter and fades the bus. |
+| T11 forest music | Met | `phase-6-audio/music-20s.wav` and `eight music bars render on the beat grid and meet quietly at the loop seam`: 90 BPM A minor, eight bars, scheduled pad, bass, pentatonic melody, low kick and hats. Rhythm enters at 200 m or higher speed; run over closes the filter, cancels a pending hurt restore, fades the bus and plays a two-note cadence. |
 | T12 per-sound effects | Met | `phase-6-audio/sfx-all.wav` and `all 14 sound recipes render audibly and within the output ceiling, with a silent negative control`: every manifest sound has two or three oscillator/noise voices with separate envelopes; supported world positions pan, pitch varies by ±3%. |
 | T13 mix and checks | Partly met | Effects and music use separate buses into a compressor; a generated impulse drives the reverb send. OfflineAudioContext accepts the same audio class as live play. Tests check non-silence, peak ≤0.9, duration, beat-grid error <5 ms and sample seam, including a silent negative recipe. A perceptual listening review remains for the operator. |
 
