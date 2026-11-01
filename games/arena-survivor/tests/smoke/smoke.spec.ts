@@ -223,9 +223,9 @@ test('an action storm is throttled before it fills the arena', async ({ page }) 
   const file = path.join(mutationDir, 'zz-storm-test.js');
   try {
     await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
-    fs.writeFileSync(file, `export const meta = { id:'storm', title:'Storm', author:'test', description:'storm' }; export function onTick(game) { for (let i=0;i<10;i++) game.spawn('coin',100+i*25,200); }`);
+    fs.writeFileSync(file, `export const meta = { id:'storm', title:'Storm', author:'test', description:'storm' }; export function onTick(game) { for (let i=0;i<100;i++) game.spawn('coin',100+i*5,200); }`);
     await expect(page.locator('#mutations')).toContainText('Storm · active', { timeout: 5000 });
-    await expect(page.locator('#mutations')).toContainText('actions skipped', { timeout: 5000 });
+    await expect(page.locator('#mutations')).toContainText('actions skipped', { timeout: 10000 });
     const state = await page.evaluate(() => (window as any).__livePatch.game.snapshot());
     expect(state.enemies).toBeGreaterThan(0);
     expect(state.coins).toBeLessThan(40);

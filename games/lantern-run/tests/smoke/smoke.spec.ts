@@ -124,6 +124,34 @@ test('fox legs visibly animate while the world scrolls, and pause freezes the pi
   expect(frozenA.equals(frozenB)).toBe(true);
 });
 
+for (const subject of ['owl', 'firefly'] as const) test(`${subject} visibly animates and a stopped rig does not`, async ({ page }) => {
+  await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
+  await page.evaluate(kind => {
+    const game = (window as any).__livePatch.game;
+    game.apply({ type: 'setParameter', args: ['runSpeed', 120] }, 'animation-probe');
+    game.apply({ type: 'setParameter', args: ['speedRamp', 0] }, 'animation-probe');
+    for (const item of game.snapshot().entities.filter((item: { kind: string }) => item.kind === kind))
+      game.apply({ type: 'removeEntity', args: [item.id] }, 'animation-probe');
+    game.apply({ type: 'spawn', args: [kind, 700, 260] }, 'animation-probe');
+    const item = game.snapshot().entities.filter((entity: { kind: string }) => entity.kind === kind).at(-1);
+    game.apply({ type: 'setVelocity', args: [item.id, 120, 0] }, 'animation-probe');
+  }, subject);
+  const first = await crop(page, 700, 260, 160, 130);
+  await page.waitForTimeout(subject === 'owl' ? 170 : 95);
+  const second = await crop(page, 700, 260, 160, 130);
+  const moving = await subjectChangedPixels(page, first, second, subject);
+  await page.evaluate(async kind => {
+    const info = await fetch('/api/game').then(response => response.json());
+    const rigs = await import(/* @vite-ignore */ new URL('./rig.ts', new URL(info.entry, location.origin)).href);
+    (kind === 'owl' ? rigs.OwlRig : rigs.FireflyRig).prototype.update = () => {};
+  }, subject);
+  const still = await crop(page, 700, 260, 160, 130);
+  await page.waitForTimeout(subject === 'owl' ? 170 : 95);
+  const frozen = await subjectChangedPixels(page, still, await crop(page, 700, 260, 160, 130), subject);
+  expect(moving, `${subject} should animate`).toBeGreaterThan(frozen + 30);
+  expect(frozen, `${subject} should stop when its rig update stops`).toBeLessThan(moving * .5);
+});
+
 test('rollback removes a patch’s weather, power-up, parameter and entities but keeps run progress', async ({ page }) => {
   await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
   await expect(page.locator('#mutations')).toContainText('Forest Breeze · active');

@@ -181,6 +181,14 @@ The unquoted English word `log` occurs only as a generic chat ARIA role and Wind
 
 ## Review responses
 
+## Round 3 responses
+
+- **P6-R3-01 — Fixed.** The Arena storm fixture now requests 100 actions in one tick, exceeding the per-event cap even on a slow machine. The focused test and full `npm test` pass.
+- **P6-R3-03 — Fixed.** Owl and firefly browser checks mask subject colours and disable each rig's `update` as a negative control. Both pass in the full suite.
+- **P6-R3-05 — Fixed.** The right despawn horizon uses named generator lead, maximum gap, largest spawn offset and margin constants. The natural-generation browser check passes.
+
+The first Round 3 full run passed 104 unit tests (4 opt-in skipped), 30 studio tests, 36 Arena tests (1 optional WebGL skipped), 28 Lantern Run tests and the HTTPS regression. The capture and art findings P6-R3-02 and P6-R3-04 are addressed in the polish commits below.
+
 ## Round 1 responses
 
 - **P6-R1-01 — Fixed.** Recomputing `maxHearts` clamps current hearts, and HUD rendering bounds the count; the five-heart removal browser test checks that frames continue.

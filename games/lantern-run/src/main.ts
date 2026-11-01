@@ -6,7 +6,7 @@ import { createLanternParts } from './art-parts';
 import { createWorldArt } from './art-world';
 import { FireflyRig, FoxRig, OwlRig } from './rig';
 import { LanternAudio, sounds, type SoundName } from './audio';
-import { generateStretch, owlFlightHeight, owlFlightY, type Stretch } from './generator';
+import { DESPAWN_MARGIN, GENERATION_LEAD, MAX_GAP, MAX_SPAWN_OFFSET, generateStretch, owlFlightHeight, owlFlightY, type Stretch } from './generator';
 import { advanceFoxFlight } from './physics';
 
 const WIDTH = 1152, HEIGHT = 648, GROUND = 518, FOX_X = 346;
@@ -73,7 +73,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     return item;
   }
   function ensureWorld() {
-    while (spans.at(-1)!.to < distancePx + WIDTH + 500) {
+    while (spans.at(-1)!.to < distancePx + WIDTH + GENERATION_LEAD) {
       const index = spans.length - 1;
       const stretch = generateStretch(seed, index, { speed: Math.max(120, run.speed), jumpPower: parameters.jumpPower, gravity: parameters.gravity });
       const from = spans.at(-1)!.to + stretch.gap;
@@ -315,7 +315,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
         if (player.powerUps.includes('magnet') && item.kind === 'firefly' && Math.abs(x - FOX_X) < 180) item.worldX -= Math.sign(x - FOX_X) * 300 * dt;
         // Generated ledges are placed 350 px into the next stretch, which itself
         // can begin 650 px beyond the viewport when ensureWorld extends it.
-        if (x < -140 || x > WIDTH + 1100) { item.alive = false; item.sprite?.destroy(); continue; }
+        if (x < -140 || x > WIDTH + GENERATION_LEAD + MAX_GAP + MAX_SPAWN_OFFSET + DESPAWN_MARGIN) { item.alive = false; item.sprite?.destroy(); continue; }
         if (Math.abs(x - FOX_X) > 49 || Math.abs(item.y - player.y) > (item.kind === 'owl' ? 55 : 48)) continue;
         if (item.kind === 'firefly' || item.kind === 'acorn') {
           item.alive = false; item.sprite?.destroy(); const value = item.kind === 'acorn' ? 5 : parameters.fireflyValue;
