@@ -210,7 +210,8 @@ test('a pit fall recovers on the next ground and emits every crossed milestone',
 
 test('three hits show run over, then a new run starts after two seconds', async ({ page }) => {
   await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
-  await page.evaluate(() => (window as any).__livePatch.game.apply({ type: 'setParameter', args: ['runSpeed', 600] }, 'probe'));
+  // Keep this collision check on the first continuous stretch, away from random pits and pickups.
+  await page.evaluate(() => (window as any).__livePatch.game.apply({ type: 'setParameter', args: ['runSpeed', 120] }, 'probe'));
   await expect.poll(() => page.evaluate(() => (window as any).__livePatch.game.snapshot().runElapsed), { timeout: 8000 }).toBeGreaterThan(3.1);
   for (let hearts = 2; hearts >= 0; hearts--) {
     await page.evaluate(() => (window as any).__livePatch.game.apply({ type: 'spawn', args: ['boulder', 520, 480] }, 'probe'));
