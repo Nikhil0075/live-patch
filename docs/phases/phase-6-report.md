@@ -192,6 +192,8 @@ The unquoted English word `log` occurs only as a generic chat ARIA role and Wind
 
 Round 5 repository verification: `npm test` passed 107 unit tests (4 opt-in skipped), 30 studio browser tests, 37 Arena browser tests (1 optional WebGL skipped), 32 Lantern Run browser tests, and the HTTPS regression. `npm run build` exited 0; `npm audit --audit-level=high` found 0 vulnerabilities. `git status --short -- builds` produced no output. The capture script refreshed the 1920×1080 views and animation evidence; `01-gameplay.png` and `07-fox-run-cycle.png` were inspected against the round-five evidence images.
 
+Round 5 isolated-checkout verification at `bfb47be`: existing clones A and B each ran `npm ci` (49 packages, 0 vulnerabilities), then the full `npm test` sequence. Both passed 107 unit (4 opt-in skipped), 30 studio, 37 Arena (1 optional WebGL skipped), 32 Lantern and HTTPS. Both passed `npm run build` and `npm audit --audit-level=high` (0 vulnerabilities). `Test-Path builds` returned `False` and `git status --porcelain` was empty in both. Clone B also started with `npm run dev` for Lantern Run in test mode and served `http://127.0.0.1:5173/`; the server was stopped after that startup check. The existing clone paths remain for the operator because automatic approval review previously rejected recursive deletion as “blocked by policy”.
+
 ## Round 4 responses
 
 - **P6-R4-01 — Fixed.** Pit visibility now includes the full 70 px wall on both sides, and the wall texture's top sits at the grass lip (canvas y 517). `Lantern Run edge geometry` checks both entry and exit boundaries. Round 5 aligned the dark fill and masked the strip; the refreshed `01-gameplay.png` shows the complete pit edge.
