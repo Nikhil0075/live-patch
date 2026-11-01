@@ -9,6 +9,7 @@
 #library .library-card{border-radius:4px;background:#18181b;border-color:#2f2f35}
 #library .library-cover{height:auto;aspect-ratio:3/4;background:radial-gradient(circle at 50% 35%,#483171,#19151f 72%);color:#c4a0ff}
 #library .library-cover img{object-fit:cover}
+#library .library-detail-cover.portrait{height:240px;object-fit:contain;object-position:center 35%;background:#151a30}
 #library .library-cover span{font-size:80px;color:#bb90ff}
 #library .library-card-content{padding:14px}
 #library .library-card-content h3{font-size:18px}

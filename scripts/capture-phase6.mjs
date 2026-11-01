@@ -43,12 +43,20 @@ try {
 
   await page.reload();
   await page.waitForFunction(() => document.querySelector('#status')?.textContent?.includes('Lantern Run · LIVE'));
-  await page.evaluate(() => window.__livePatch.game.apply({ type: 'setParameter', args: ['runSpeed', 600] }, 'capture'));
-  await page.waitForFunction(() => window.__livePatch.game.snapshot().runElapsed > 3.1, undefined, { timeout: 12000 });
+  await page.evaluate(() => { const game = window.__livePatch.game; game.apply({ type: 'setParameter', args: ['runSpeed', 120] }, 'capture'); game.apply({ type: 'setParameter', args: ['speedRamp', 0] }, 'capture'); });
+  await page.waitForFunction(() => { const state = window.__livePatch.game.snapshot(); return state.runElapsed > 3.1 && state.player.grounded; }, undefined, { timeout: 12000 });
   for (let hearts = 2; hearts >= 0; hearts--) {
-    await page.evaluate(() => window.__livePatch.game.apply({ type: 'spawn', args: ['boulder', 520, 480] }, 'capture'));
-    await page.waitForFunction(hearts => window.__livePatch.game.snapshot().player.hearts <= hearts, hearts, { timeout: 6000 });
-    if (hearts > 0) await page.waitForTimeout(1200);
+    let hit = false;
+    for (let attempt = 0; attempt < 4 && !hit; attempt++) {
+      await page.evaluate(() => { const game = window.__livePatch.game, state = game.snapshot();
+        game.apply({ type: 'spawn', args: ['boulder', 510, state.player.y] }, 'capture');
+        const boulder = game.snapshot().entities.filter(entity => entity.kind === 'boulder').at(-1);
+        if (boulder) game.apply({ type: 'setVelocity', args: [boulder.id, -300, 0] }, 'capture'); });
+      try { await page.waitForFunction(target => window.__livePatch.game.snapshot().player.hearts <= target, hearts, { timeout: 1500 }); hit = true; }
+      catch { await page.waitForTimeout(250); }
+    }
+    if (!hit) throw Error(`Run-over capture could not show hit ${3 - hearts}`);
+    if (hearts > 0) await page.waitForTimeout(1150);
   }
   await page.waitForFunction(() => window.__livePatch.game.snapshot().runOver, undefined, { timeout: 2000 });
   await page.screenshot({ path: path.join(output, '05-run-over.png') });
@@ -56,11 +64,168 @@ try {
   await page.goto(`${base}/?view=library`);
   await page.locator('.library-card').getByText('Lantern Run').waitFor();
   await page.screenshot({ path: path.join(output, '06-library.png') });
-  console.log(`Captured four 1920×1080 Phase 6 views in ${output}`);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(`${base}/play`);
+  await page.waitForFunction(() => document.querySelector('#status')?.textContent?.includes('Lantern Run · LIVE'));
+  await page.evaluate(() => {
+    const game = window.__livePatch.game;
+    game.apply({ type: 'setParameter', args: ['runSpeed', 120] }, 'capture');
+    game.apply({ type: 'setParameter', args: ['maxHearts', 5] }, 'capture'); game.apply({ type: 'heal', args: [2] }, 'capture');
+  });
+  const crop = async (x, y, w, h) => {
+    const box = await page.locator('#game canvas').boundingBox();
+    return page.screenshot({ clip: { x: box.x + (x - w / 2) * box.width / 1152, y: box.y + (y - h / 2) * box.height / 648,
+      width: w * box.width / 1152, height: h * box.height / 648 } });
+  };
+  const strip = async (name, frames) => {
+    const encoded = frames.map(frame => frame.toString('base64'));
+    const base64 = await page.evaluate(async images => {
+      const decoded = await Promise.all(images.map(async image => createImageBitmap(await (await fetch(`data:image/png;base64,${image}`)).blob())));
+      const canvas = document.createElement('canvas'); canvas.width = decoded.reduce((sum, image) => sum + image.width, 0);
+      canvas.height = Math.max(...decoded.map(image => image.height));
+      const c = canvas.getContext('2d'); let x = 0;
+      for (const image of decoded) { c.drawImage(image, x, 0); x += image.width; image.close(); }
+      return canvas.toDataURL('image/png').split(',')[1];
+    }, encoded);
+    fs.writeFileSync(path.join(output, name), Buffer.from(base64, 'base64'));
+  };
+  const foxFrames = [];
+  for (let i = 0; i < 8; i++) { foxFrames.push(await crop(346, 474, 170, 135)); await page.waitForTimeout(45); }
+  await strip('07-fox-run-cycle.png', foxFrames);
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('#status')?.textContent?.includes('Lantern Run · LIVE'));
+  await page.evaluate(() => { const game = window.__livePatch.game;
+    game.apply({ type: 'setParameter', args: ['runSpeed', 120] }, 'capture'); game.apply({ type: 'setParameter', args: ['maxJumps', 2] }, 'capture');
+    game.apply({ type: 'setParameter', args: ['jumpPower', 320] }, 'capture'); game.apply({ type: 'setParameter', args: ['gravity', 300] }, 'capture'); });
+  await page.keyboard.down('Space');
+  const jumpFrames = [];
+  for (let i = 0; i < 6; i++) {
+    await page.waitForTimeout(i === 0 ? 40 : i === 5 ? 190 : 105);
+    await page.evaluate(() => window.__livePatch.game.pause());
+    const y = await page.evaluate(() => window.__livePatch.game.snapshot().player.y);
+    jumpFrames.push(await crop(346, Math.max(110, y), 220, 210));
+    await page.evaluate(() => window.__livePatch.game.resume());
+    if (i === 2) { await page.keyboard.up('Space'); await page.keyboard.down('Space'); }
+  }
+  await page.keyboard.up('Space'); await strip('08-fox-jump.png', jumpFrames);
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('#status')?.textContent?.includes('Lantern Run · LIVE'));
+  const owlId = await page.evaluate(() => {
+    const game = window.__livePatch.game;
+    game.apply({ type: 'setParameter', args: ['runSpeed', 120] }, 'capture');
+    game.apply({ type: 'setParameter', args: ['maxHearts', 5] }, 'capture'); game.apply({ type: 'heal', args: [2] }, 'capture');
+    for (const item of game.snapshot().entities.filter(entity => entity.kind === 'owl')) game.apply({ type: 'removeEntity', args: [item.id] }, 'capture');
+    game.apply({ type: 'spawn', args: ['owl', 760, 250] }, 'capture');
+    const id = game.snapshot().entities.filter(entity => entity.kind === 'owl').at(-1).id;
+    game.apply({ type: 'setVelocity', args: [id, 120, 0] }, 'capture'); return id;
+  });
+  const owlFrames = [];
+  for (let i = 0; i < 6; i++) {
+    const owl = await page.evaluate(id => window.__livePatch.game.snapshot().entities.find(entity => entity.id === id), owlId);
+    if (!owl) throw Error(`Owl animation subject despawned on frame ${i}: ${JSON.stringify(await page.evaluate(() => {
+      const state = window.__livePatch.game.snapshot(); return { run: state.run.number, runOver: state.runOver, hearts: state.player.hearts, owls: state.entities.filter(entity => entity.kind === 'owl') };
+    }))}`);
+    owlFrames.push(await crop(owl.x, owl.y, 170, 135)); await page.waitForTimeout(90);
+  }
+  await strip('09-owl-flight.png', owlFrames);
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('#status')?.textContent?.includes('Lantern Run · LIVE'));
+  const propIds = await page.evaluate(() => {
+    const game = window.__livePatch.game, ids = [];
+    game.apply({ type: 'setParameter', args: ['runSpeed', 120] }, 'capture');
+    for (const [kind, x, y] of [['firefly', 650, 330], ['spring', 750, 480], ['ledge', 910, 370], ['shield', 1060, 340]])
+      { for (const item of game.snapshot().entities.filter(entity => entity.kind === kind)) game.apply({ type: 'removeEntity', args: [item.id] }, 'capture');
+        game.apply({ type: 'spawn', args: [kind, x, y] }, 'capture'); const id = game.snapshot().entities.filter(entity => entity.kind === kind).at(-1).id;
+        game.apply({ type: 'setVelocity', args: [id, 120, 0] }, 'capture'); ids.push(id); }
+    return ids;
+  });
+  const props = [];
+  for (const id of propIds) {
+    const item = await page.evaluate(id => window.__livePatch.game.snapshot().entities.find(entity => entity.id === id), id);
+    props.push(await crop(item.x, item.y, 165, 125));
+  }
+  await strip('10-props.png', props);
+  await page.close();
+
+  const videoContext = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1,
+    recordVideo: { dir: temp, size: { width: 1280, height: 720 } } });
+  const videoPage = await videoContext.newPage();
+  await videoPage.goto(`${base}/play`);
+  await videoPage.waitForFunction(() => document.querySelector('#status')?.textContent?.includes('Lantern Run · LIVE'));
+  await videoPage.evaluate(() => {
+    const { game, host } = window.__livePatch;
+    window.__captureLands = [];
+    const original = host.emit.bind(host);
+    host.emit = event => { if (event.type === 'land') window.__captureLands.push(event.on); original(event); };
+    game.apply({ type: 'setParameter', args: ['maxJumps', 2] }, 'capture');
+    game.apply({ type: 'setParameter', args: ['runSpeed', 120] }, 'capture');
+    game.apply({ type: 'setParameter', args: ['speedRamp', 0] }, 'capture');
+    game.apply({ type: 'spawn', args: ['ledge', 520, 400] }, 'capture');
+    game.apply({ type: 'spawn', args: ['firefly', 570, 350] }, 'capture');
+    game.apply({ type: 'spawn', args: ['owl', 820, 290] }, 'capture');
+  });
+  await videoPage.waitForTimeout(450);
+  await videoPage.keyboard.down('Space'); await videoPage.waitForTimeout(300); await videoPage.keyboard.up('Space');
+  try { await videoPage.waitForFunction(() => window.__captureLands.includes('ledge'), undefined, { timeout: 3000 }); }
+  catch { throw Error(`Motion capture missed ledge: ${JSON.stringify(await videoPage.evaluate(() => ({ lands: window.__captureLands, state: window.__livePatch.game.snapshot() })))}`); }
+  await videoPage.waitForTimeout(150); await videoPage.keyboard.press('Space');
+  await videoPage.waitForTimeout(230); await videoPage.keyboard.press('Space');
+  await videoPage.waitForFunction(() => { const state = window.__livePatch.game.snapshot(); return state.runElapsed > 3.1 && state.player.grounded; }, undefined, { timeout: 12000 });
+  await videoPage.evaluate(() => { const game = window.__livePatch.game, state = game.snapshot();
+    game.apply({ type: 'spawn', args: ['firefly', 510, state.player.y] }, 'capture');
+    const firefly = game.snapshot().entities.filter(entity => entity.kind === 'firefly').at(-1);
+    if (firefly) game.apply({ type: 'setVelocity', args: [firefly.id, -300, 0] }, 'capture'); });
+  await videoPage.waitForFunction(() => window.__livePatch.game.snapshot().run.fireflies >= 1, undefined, { timeout: 1800 });
+  for (let target = 2; target >= 0; target--) {
+    let hit = false;
+    for (let attempt = 0; attempt < 4 && !hit; attempt++) {
+      await videoPage.evaluate(() => {
+        const game = window.__livePatch.game, state = game.snapshot();
+        game.apply({ type: 'spawn', args: ['boulder', 510, state.player.y] }, 'capture');
+        const boulder = game.snapshot().entities.filter(entity => entity.kind === 'boulder').at(-1);
+        if (boulder) game.apply({ type: 'setVelocity', args: [boulder.id, -300, 0] }, 'capture');
+      });
+      try { await videoPage.waitForFunction(target => window.__livePatch.game.snapshot().player.hearts <= target, target, { timeout: 1500 }); hit = true; }
+      catch { await videoPage.waitForTimeout(250); }
+    }
+    if (!hit) throw Error(`Motion capture could not show hit ${3 - target}`);
+    if (target > 0) await videoPage.waitForTimeout(1150);
+  }
+  await videoPage.waitForFunction(() => window.__livePatch.game.snapshot().runOver, undefined, { timeout: 2000 });
+  await videoPage.waitForTimeout(1050);
+  const video = videoPage.video();
+  await videoContext.close();
+  const sourceVideo = fs.readFileSync(await video.path()).toString('base64');
+  const encoderPage = await browser.newPage();
+  const clip = await encoderPage.evaluate(async source => {
+    const video = document.createElement('video'); video.src = `data:video/webm;base64,${source}`; video.muted = true;
+    await new Promise((resolve, reject) => { video.onloadedmetadata = resolve; video.onerror = reject; });
+    const start = Math.max(0, video.duration - 9.8), end = video.duration;
+    video.currentTime = start; await new Promise(resolve => { video.onseeked = resolve; });
+    video.playbackRate = 1.08;
+    const canvas = document.createElement('canvas'); canvas.width = 1280; canvas.height = 720;
+    const context = canvas.getContext('2d'); context.drawImage(video, 0, 0, 1280, 720);
+    const recorder = new MediaRecorder(canvas.captureStream(30), { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 2_400_000 });
+    const chunks = []; recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+    const stopped = new Promise(resolve => { recorder.onstop = resolve; });
+    recorder.start(); await video.play();
+    await new Promise(resolve => {
+      const draw = () => { context.drawImage(video, 0, 0, 1280, 720); if (video.currentTime >= end || video.ended) resolve(); else requestAnimationFrame(draw); };
+      requestAnimationFrame(draw);
+    });
+    recorder.stop(); await stopped; video.pause();
+    const blob = new Blob(chunks, { type: 'video/webm' });
+    const base64 = await new Promise(resolve => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1]); reader.readAsDataURL(blob); });
+    return { base64, duration: (end - start) / 1.08 };
+  }, sourceVideo);
+  fs.writeFileSync(path.join(output, 'lantern-run-motion.webm'), Buffer.from(clip.base64, 'base64'));
+  await encoderPage.close();
+  if (fs.statSync(path.join(output, 'lantern-run-motion.webm')).size > 4_000_000) throw Error('Motion video exceeds 4 MB');
+  console.log(`Captured four 1920×1080 views, four animation strips and motion video in ${output}`);
 } finally {
   await browser?.close();
   await server?.close();
   const resolved = path.resolve(temp);
   if (!resolved.startsWith(path.resolve(root) + path.sep)) throw Error(`Unsafe capture directory: ${resolved}`);
-  fs.rmSync(resolved, { recursive: true, force: true });
+  fs.rmSync(resolved, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
 }

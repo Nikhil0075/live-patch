@@ -2,7 +2,7 @@
   "name": "Lantern Run",
   "hint": "Run automatically · Space, W, Up or click to jump · Hold for a higher jump",
   "description": "A fox courier runs through a twilight forest that chat can reshape.",
-  "cover": "assets/cover-generated.png",
+  "cover": "assets/cover.webp",
   "tags": ["Runner", "One button"],
   "version": "1.0.0",
   "author": "Live Patch",

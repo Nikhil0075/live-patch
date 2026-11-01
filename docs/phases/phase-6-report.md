@@ -20,7 +20,7 @@ Phase 6 starts from `b3a4de0` (`phase 5.5: fixes for round 6`). The operator's r
 
 ### Step 3 — Lantern Run core
 
-- Added a separately loadable Phaser runner with one-button jumping, scrolling ground and hazards, firefly and acorn collection, three hearts, pit recovery, a run-over card and a two-second automatic restart. The scene draws its fox poses, three forest layers and entities in code. Its Web Audio adapter synthesizes cues and a short looping melody.
+- Added a separately loadable Phaser runner with one-button jumping, scrolling ground and hazards, firefly and acorn collection, three hearts, pit recovery, a run-over card and a two-second automatic restart. The later visual round replaced its static poses with code-drawn part rigs, five parallax layers and a foreground layer. Its Web Audio adapter synthesizes cues and a short looping melody.
 - The stretch generator derives gap width from the current jump reach. Unit tests cover 250 seeds at default and reduced jump ability. A browser smoke check verifies a running Lantern Run session advances.
 
 ### Step 4 — mutation API
@@ -30,9 +30,9 @@ Phase 6 starts from `b3a4de0` (`phase 5.5: fixes for round 6`). The operator's r
 
 ### Step 5 — studio integration and visuals
 
-- Generated an original vector Library cover with `games/lantern-run/assets/generate-cover.mjs`, rasterized it with the installed Playwright browser, and recorded its origin in `assets/CREDITS.md`. The game art remains code-drawn and no concept image was imported.
+- Shipped the operator-approved OpenArt portrait cover as a 96 KB WebP and recorded its origin in `assets/CREDITS.md`. All game art remains code-drawn; no concept image is loaded by the game.
 - The isolated browser catalog now contains a copy of each built-in game, so Library switching in tests does not touch the live game folders. A browser test switches both ways and checks that the OBS page follows each saved layout. Another saves Lantern Run and opens its original and evolved views. The selected-game studio suite exercises its Practice demo and Go Live mirror.
-- Captured the four required 1920×1080 views in `docs/phases/phase-6-visual/` and compared them below.
+- Captured four 1920×1080 views, four animation strips and a 1280×720 motion video in `docs/phases/phase-6-visual/`; comparisons and measured differences are below.
 
 ### Step 6 — real-build and clean-clone verification
 
@@ -50,31 +50,76 @@ Phase 6 starts from `b3a4de0` (`phase 5.5: fixes for round 6`). The operator's r
 
 ## Final stream layout
 
-All rectangles below are `(x,y,width,height)` in a 1920×1080 capture. The engine patch-toast zone is `(685,60,550,110)`. Lantern Run protects its HUD `(0,0,460,130)` and run lane `(420,500,1500,364)`. Its defaults are patch card `(24,140,380,340)`, Codex card `(24,500,380,300)`, ballot `(880,175,1010,320)` and ticker `(560,1004,1336,58)`. The unit test checks every pair and every protected zone, including the ballot's required height. A narrower ballot keeps its readable height even when no collision-free location exists; the editor warns the operator instead of clipping choices.
+All rectangles below are `(x,y,width,height)` in a 1920×1080 capture. The engine patch-toast zone is `(685,60,550,110)`. Lantern Run protects its icon HUD `(0,0,670,130)` and run lane `(420,500,1500,364)`. Its defaults are patch card `(24,140,380,340)`, Codex card `(24,500,380,300)`, ballot `(880,175,1010,320)` and ticker `(560,1004,1336,58)`. The unit test checks every pair and every protected zone, including the ballot's required height. A narrower ballot keeps its readable height even when no collision-free location exists; the editor warns the operator instead of clipping choices.
+
+## Visual overhaul
+
+The first four captures below are 1920×1080. The strips are cropped from the running game at 1280×720; the capture script briefly pauses the game between jump screenshots so browser screenshot latency cannot shift the subject out of frame. The nine-second 1280×720 WebM is a Playwright recording edited in browser Canvas and MediaRecorder without a new dependency.
 
 ### `01-gameplay.png`
 
 | Matches the concept | Differs and why |
 |---|---|
-| Fixed left-side fox, one-row firefly/distance/hearts HUD, twilight sky, three scrolling forest layers, glowing pickups and a running lane. | Ground begins at 80% of the canvas for the OBS ticker, and the bridge and stone lantern are omitted, as required by Appendix 3 row `01-gameplay.png`. The code-drawn tree silhouettes use simpler shapes than the painted reference. |
+| Fixed left-side animated fox, one-row firefly/distance/icon-heart HUD, twilight sky, five scrolling layers plus foreground leaves, animated pickups and a running lane. | Ground begins at 80% of the canvas for the OBS ticker; the bridge and stone lantern are omitted per Appendix 3 row `01-gameplay.png`. The geometric code-drawn trees, moon and soil are simpler than the painted reference, and the foreground leaves are a subtle accent rather than a thick frame. |
 
 ### `04-evolved.png`
 
 | Matches the concept | Differs and why |
 |---|---|
-| Six active modules including the demo create rain, a shield ring, a large owl, extra fireflies, ledges and a spring. The game banner is below the patch-toast zone and the HUD stays in one row. | The castle is omitted and the banner/HUD use the corrected positions in Appendix 3 row `04-evolved.png`. The captured patch state is a local visual scenario, not a claim that those modules were shipped by live Codex. |
+| Six active modules including the demo create rain, a pulsing shield, a boss-sized flying owl, extra fireflies, mossy ledges and an animated spring. The fox is fully visible; the pill banner sits below the patch-toast zone. | The castle is omitted and banner/HUD use the corrected positions in Appendix 3 row `04-evolved.png`. The artwork is geometric rather than painterly. This is a local visual scenario, not a claim that these particular modules were shipped by live Codex. |
 
 ### `05-run-over.png`
 
 | Matches the concept | Differs and why |
 |---|---|
-| A centered compact card shows the actual run distance, collected fireflies, session best and automatic restart; the HUD shows three empty hearts. | The shrine, gate and house are omitted. The card uses the real countdown and “Space to start now” wording from Appendix 3 row `05-run-over.png`. |
+| The fox rests with closed eyes and a dropped glowing lantern. A rounded amber card with leaf corners, divider and Space keycap shows real distance, fireflies, session best and countdown; the HUD shows empty drawn hearts. | The shrine, gate and house are omitted per Appendix 3 row `05-run-over.png`. The card uses the live countdown and a compact Space keycap instead of a separate full-width button. |
 
 ### `06-library.png`
 
 | Matches the concept | Differs and why |
 |---|---|
-| Both ready-to-play games have distinct illustrated covers, with Lantern Run selected and its controls, hooks, actions, audio and effects visible in details. | This is the shipped studio's Library layout rather than a game concept image. The cover follows the mood of Appendix 3 row `03-cover.png` but omits the castle and town, and contains no text. |
+| Both ready-to-play games have illustrated covers. Lantern Run's portrait OpenArt cover keeps the owl and fox visible on the card and in the details panel; controls, hooks, actions, audio and effects are listed. | This is the shipped studio's Library layout. Appendix 3 row `03-cover.png` omits the castle and town; the approved new cover keeps the forest and river. The details panel contains the portrait image in a landscape slot, leaving dark side bars to preserve both characters. |
+
+### `07-fox-run-cycle.png`
+
+| Concepts | Matches | Differs and why |
+|---|---|---|
+| `02-art-sheet.png`, `06-fox-animation.png` row 1, `07-fox-parts.png` | Eight successive captures show separate leg, paw, tail, satchel and lantern motion. Stride is driven by travelled distance; the lantern swings from its stick and casts light. | The silhouettes are pre-rendered Canvas shapes rather than the reference's painted frames. The segmented tail is more visible at this scale. |
+
+### `08-fox-jump.png`
+
+| Concepts | Matches | Differs and why |
+|---|---|---|
+| `06-fox-animation.png` rows 2–3, `11-effects.png` | Six captures show takeoff, rise and a double-jump rotation with lantern and tail following. The jump begins on the input frame. | This strip samples the double jump; glider, hurt, pit recovery and run-over poses are visible in game states or other captures, rather than all being placed in this strip. |
+
+### `09-owl-flight.png`
+
+| Concepts | Matches | Differs and why |
+|---|---|---|
+| `02-art-sheet.png`, `08-owl-animation.png` | Six captures show the owl facing the fox with spread two-part wings at visibly different flap angles, amber eyes, ear tufts and talons. | The code-drawn feathers are simpler than the painted sheet. There is one glide/flap path and a brief drop pose; a separate dive/perch pattern remains a permitted late cut. |
+
+### `10-props.png`
+
+| Concepts | Matches | Differs and why |
+|---|---|---|
+| `10-props-animation.png`, `12-ui-kit.png` | Crops show a glowing winged firefly, mushroom spring, mossy island ledge and amber shield. Acorn, log stack, thorns, boulder, pinecone, glider and magnet are also code-drawn textures in the running game. | The strip is four subjects rather than every prop frame; the remaining props can be inspected in play. Geometric details are less textured than the concept. |
+
+### `lantern-run-motion.webm`
+
+| Concepts | Matches | Differs and why |
+|---|---|---|
+| `05-run-over.png`, `06-fox-animation.png`, `08-owl-animation.png`, `10-props-animation.png`, `11-effects.png` | The 9.04 s, 1280×720, 2.06 MB clip shows running, ledge landing, two jumps including a spin, an owl, a firefly collection, hits and the run-over card. All displayed counters are live game state. | The browser recording is silent and plays the source at 1.08× to fit the requested duration; it does not demonstrate the separate glider and weather modes. |
+
+### Crowded rendering measurement
+
+`node scripts/probe-phase6-fps.mjs` in headless Chromium at 1920×1080, after two seconds of baseline play and 1.6 seconds of the same capped 80-entity storm used by the smoke test:
+
+| Revision | Baseline frame rate | Crowded frame rate | Worst frame gap |
+|---|---:|---:|---:|
+| `deab45e` before overhaul | 13.2 fps | 10.2 fps | 175.3 ms |
+| `df4cadc` after overhaul | 7.7 fps | 6.1 fps | 291.1 ms |
+
+The richer layers and animated parts cost software-renderer throughput. The crowded smoke test still passes its existing requirements: fewer than 80 entities, at most 64 particles, worst gap below 350 ms, and crowded frame rate above 55% of the baseline. A visible hardware-accelerated stream has not been measured in this round, so that performance remains a manual risk.
 
 ## How to run and test
 
@@ -112,19 +157,20 @@ The unquoted English word `log` occurs only as a generic chat ARIA role and Wind
 - [x] 6. Live Codex builds — 3/3 distinct Lantern Run pitches shipped through `!idea`, moderator `!approve`, Codex generation, file gates and combined smoke. The table above records each pitch, result and time.
 - [x] 7. Studio works with Lantern Run — studio tests cover manifest sample pitches, labelled Practice demo, two-way Library switching, Go Live mirror and active patches; Lantern's saved-build browser test reopens original and evolved views.
 - [x] 8. Overlay respects each game — per-game settings and Arena migration unit tests pass; `keeps all four default OBS widgets separate ... at maximum ballot height` passes; `Library switches both built-in games and the OBS layout follows the active manifest` passes.
-- [x] 9. Visual captures — `docs/phases/phase-6-visual/{01-gameplay,04-evolved,05-run-over,06-library}.png` are 1920×1080; the four comparison tables above cite Appendix 3. Evolved has six active local modules including the demo.
+- [x] 9. Visual captures — `docs/phases/phase-6-visual/{01-gameplay,04-evolved,05-run-over,06-library}.png` are 1920×1080; four animation strips and a 9.04 s WebM are also present. The comparison tables above cite Appendix 3 and the animation concepts. Evolved has six active local modules including the demo.
 - [x] 10. Standing checks — game-specific names and kinds are absent from `engine/`; new mutations receive only the existing game handle; engine gates and sandbox were not loosened; browser tests insert viewer text as text and exercise HTML-like input; no secrets were added to tracked files or the overlay.
 - [x] 11. Docs are in sync — README, adding-a-game, architecture, demo-script, Lantern's mutation API and asset credits describe the shipped features and cover provenance.
 - [x] 12. Clean clone passes — `npm ci`, `npm test`, `npm run build` and `npm audit --audit-level=high` passed in the fresh clone; `builds/` was absent before and after the test; clone deleted.
 
 ## Deferred
 
-- Log stacks and a second owl motion pattern, the plan's permitted late cuts. The playable game retains logs, thorns, boulders and variable-height owls.
+- A separate owl dive/perch motion pattern remains the plan's permitted late cut. Log stacks were restored as a visual variant of the existing `log` entity, keeping the mutation API and hitbox unchanged.
 
 ## Known gaps / risks
 
 - The sandbox permits temp-to-temp writes on this Windows account, so an isolated verification clone under `%TEMP%` fails the preflight even though the normal `D:` project location passes. Keep future verification clones on a protected project drive. The three real builds ran only after the probe passed.
 - The four captures are representative local states. The evolved image does not itself prove a live Codex patch shipped; the separate three-build verification above does.
+- At 1920×1080 in headless Chromium's software renderer, the crowded probe fell from 10.2 fps before the visual overhaul to 6.1 fps after it, while still passing the established smoke-test thresholds. Validate frame rate on the streamer's visible, hardware-accelerated browser before relying on this art under encoding load.
 
 ## Review responses
 
@@ -133,12 +179,12 @@ The unquoted English word `log` occurs only as a generic chat ARIA role and Wind
 - **P6-R1-01 — Fixed.** Recomputing `maxHearts` clamps current hearts, and HUD rendering bounds the count; the five-heart removal browser test checks that frames continue.
 - **P6-R1-02 — Fixed.** The Library switch waits for the restarted overlay server and gives navigation 30 seconds; the focused switch test passes.
 - **P6-R1-03 — Fixed.** Legacy layouts migrate only when `overlayLayouts` is absent, and new saves omit top-level `overlayWidgets`; the fresh Lantern save → Arena test passes.
-- **P6-R1-04 — Fixed.** The HUD row is compact and the protected zone is widened without reaching the toast; the Large five-heart bounds browser test passes. The icon HUD follows in the visual commit.
+- **P6-R1-04 — Fixed.** The firefly icon, distance and five drawn heart icons fit inside the 670 px protected zone without reaching the toast; the Large five-heart bounds browser test passes.
 - **P6-R1-05 — Fixed.** A fall records the ground immediately following its gap, and a milestone loop emits every crossed 100 m mark; the fall recovery browser test passes.
 - **P6-R1-06 — Fixed.** Generated owls travel toward the fox and bob at three seeded heights; the 250-seed height and motion test passes, and the API doc states the path.
 - **P6-R1-07 — Fixed.** The fairness test uses the same extracted flight step as the game to check held jumps across 250 seeds, gap clearance, ledge height and obstacle spacing.
-- **P6-R1-08 — In progress.** The visual and animation overhaul is the next commit in this round.
-- **P6-R1-09 — In progress.** The portrait OpenArt cover is the third commit in this round.
+- **P6-R1-08 — Fixed.** Part rigs animate the fox, owl and fireflies; mossy props, five parallax layers, detailed ground, pill banner and keycap card replace the static art. The animation, immediate-jump and pause browser test passes; the new stills and strips below show the result and its remaining differences.
+- **P6-R1-09 — Fixed.** The portrait OpenArt cover replaces the landscape generated cover; the Library card and details capture show the fox and owl together. The manifest points to the 96 KB WebP, and `CREDITS.md` records the operator's permission and origin.
 - **P6-R1-10 — Fixed.** Lantern's API doc states the three-second load deadline; the doc test now checks every built-in game.
 - **P6-R1-11 — Fixed.** The stale criterion 6 sentence above now points to the separate three-build evidence.
 - **P6-R1-12 — Fixed.** Entities far beyond the right edge release their cap slots; the crowded browser test remains the guard.

@@ -46,7 +46,8 @@ function showDetails(game?: GameCard) {
   detail.replaceChildren();
   if (!game) { appendText(detail, 'h2', 'Choose a game'); return; }
   const close = document.createElement('button'); close.className = 'library-detail-close secondary'; close.textContent = '✕'; close.setAttribute('aria-label', 'Close game details'); close.addEventListener('click', () => { selected = ''; detail.replaceChildren(); }); detail.append(close);
-  if (game.cover) { const cover = document.createElement('img'); cover.className = 'library-detail-cover'; cover.src = game.cover; cover.alt = ''; detail.append(cover); }
+  if (game.cover) { const cover = document.createElement('img'); cover.className = 'library-detail-cover'; cover.src = game.cover; cover.alt = '';
+    cover.addEventListener('load', () => { if (cover.naturalHeight > cover.naturalWidth) cover.classList.add('portrait'); }); detail.append(cover); }
   appendText(detail, 'h2', game.name);
   appendText(detail, 'p', game.description || game.error || 'No description supplied.');
   const actions = document.createElement('div'); actions.className = 'library-card-actions';
