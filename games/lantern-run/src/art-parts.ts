@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { STICK_LINE, STICK_TEXTURE_HEIGHT, STICK_TEXTURE_WIDTH } from './fox-grip';
 
 const TAU = Math.PI * 2;
 const foxPalette = { orange: '#ec792c', light: '#ffc168', shadow: '#a84425', cream: '#fff0d7', sock: '#56352d', rim: '#ffda91' };
@@ -91,7 +92,7 @@ export function createLanternParts(scene: Phaser.Scene): void {
     ellipse(c, 19, 20, 17, 16, '#56362d', -.2); poly(c, [4, 14, 35, 13, 29, 28, 9, 28], '#794b34');
     stroke(c, [8, 11, 29, 10], '#d19a54', 2); ellipse(c, 19, 22, 3, 3, '#efb45f');
   });
-  texture(scene, 'rig-stick', 72, 22, c => { stroke(c, [3, 20, 49, 8, 66, 2], '#593926', 7); stroke(c, [4, 18, 49, 6, 66, 2], '#b47b43', 2.5); stroke(c, [48, 8, 54, 19], '#8b5d35', 3); stroke(c, [54, 18, 64, 13], '#9b6d3e', 2); });
+  texture(scene, 'rig-stick', STICK_TEXTURE_WIDTH, STICK_TEXTURE_HEIGHT, c => { stroke(c, [STICK_LINE.x1, STICK_LINE.y1, STICK_LINE.x2, STICK_LINE.y2, 66, 2], '#593926', 7); stroke(c, [4, 18, STICK_LINE.x2, 6, 66, 2], '#b47b43', 2.5); stroke(c, [48, 8, 54, 19], '#8b5d35', 3); stroke(c, [54, 18, 64, 13], '#9b6d3e', 2); });
   texture(scene, 'rig-lantern', 42, 56, c => {
     c.shadowColor = '#ffcf65'; c.shadowBlur = 14;
     const paper = new Path2D(); paper.moveTo(21, 8); paper.bezierCurveTo(1, 9, -2, 42, 21, 49); paper.bezierCurveTo(45, 44, 42, 11, 21, 8); paper.closePath();

@@ -131,6 +131,12 @@ test('Lantern Run starts and advances', async ({ page }) => {
   expect(later.run.distance).toBeGreaterThan(initial.run.distance);
 });
 
+test('the rendered holding paw stays on the stick', async ({ page }) => {
+  await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
+  const error = await page.evaluate(() => (window as any).__livePatch.game.snapshot().gripError as number);
+  expect(Math.abs(error)).toBeLessThan(2);
+});
+
 test('naturally generated pickups survive the right-edge cutoff and enter play', async ({ page }) => {
   await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
   await page.evaluate(() => {
@@ -393,6 +399,7 @@ test('a crowded storm stays bounded without disabling an unrelated patch', async
   const baseline = await page.evaluate(() => (window as any).__livePatch.game.snapshot().frameRate as number);
   await page.evaluate(() => {
     const game = (window as any).__livePatch.game;
+    game.resetFrameGap();
     game.apply({ type: 'setWeather', args: ['rain'] }, 'storm');
     for (const [kind, count] of [['firefly', 40], ['acorn', 10], ['owl', 6], ['pinecone', 10], ['log', 12], ['ledge', 10], ['spring', 4], ['shield', 4]] as const)
       for (let i = 0; i < count; i++) game.apply({ type: 'spawn', args: [kind, 700 + (i % 7) * 50, 260 + (i % 4) * 40] }, 'storm');

@@ -78,6 +78,7 @@ for (const example of chosen ? [chosen] : examples) test(`game plays for five se
   await expect(page.locator('#status')).toContainText('LIVE');
   await expect(page.locator('#mutations li')).toHaveCount(combined ? examples.length : 1);
   await expect.poll(async () => (await page.locator('#mutations li').allTextContents()).every(text => text.includes('· active'))).toBe(true);
+  await page.evaluate(() => (window as any).__livePatch.game.resetFrameGap());
   const start = await page.evaluate(() => (window as any).__livePatch.game.snapshot().frame);
   await page.keyboard.down('ArrowRight');
   await page.waitForTimeout(2500);
@@ -152,6 +153,7 @@ test('a three-second hook stall is rejected without a long host frame gap', asyn
   const file = path.join(mutationDir, 'zz-stall-test.js');
   try {
     await page.goto('/play'); await expect(page.locator('#status')).toContainText('LIVE');
+    await page.evaluate(() => (window as any).__livePatch.game.resetFrameGap());
     fs.writeFileSync(file, `export const meta = { id:'stall', title:'Stall', author:'test', description:'slow' }; export function onTick(game) { if(game.state.elapsed > .3) { const start=Date.now(); while(Date.now()-start<3000) {} } }`);
     await expect(page.locator('#mutations')).toContainText('Stall · failed', { timeout: 5000 });
     const state = await page.evaluate(() => (window as any).__livePatch.game.snapshot());

@@ -8,6 +8,7 @@ export interface GameAdapter {
   pause?(): void;
   resume?(): void;
   captureFrame?(): Promise<ImageBitmap | null>;
+  resetFrameGap?(): void;
   removeMutation(origin: string): void;
   snapshot(): unknown;
   destroy(): void;

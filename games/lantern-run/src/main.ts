@@ -7,7 +7,7 @@ import { createWorldArt } from './art-world';
 import { FireflyRig, FoxRig, OwlRig } from './rig';
 import { LanternAudio, sounds, type SoundName } from './audio';
 import { DESPAWN_MARGIN, GENERATION_LEAD, MAX_GAP, MAX_SPAWN_OFFSET, OWL_SPAWN_OFFSET, LEDGE_SPAWN_OFFSET, OBSTACLE_SPAWN_OFFSET, generateStretch, owlFlightHeight, owlFlightY, type Stretch } from './generator';
-import { CLIFF_HEIGHT, CLIFF_WIDTH, cliffCentreY, pitWallsVisible } from './ground-visibility';
+import { CLIFF_HEIGHT, CLIFF_WIDTH, cliffCentreY, cliffTopY, pitWallsVisible, visibleGroundRects } from './ground-visibility';
 import { advanceFoxFlight } from './physics';
 
 const WIDTH = 1152, HEIGHT = 648, GROUND = 518, FOX_X = 346;
@@ -129,7 +129,8 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       frameRate: recentFrames.length > 1 ? (recentFrames.length - 1) * 1000 / (recentFrames.at(-1)! - recentFrames[0]) : 60,
       renderer: phaser.renderer?.type === Phaser.WEBGL ? 'webgl' : 'canvas', runOver: runOver > 0, restartIn: runOver,
       weather, parameters: { ...parameters }, particles: particles.length, drawings: drawings.length,
-      hudBounds: scene?.hudBounds() ?? [], groundUnderFox: spans.some(span => distancePx + FOX_X >= span.from && distancePx + FOX_X <= span.to),
+      hudBounds: scene?.hudBounds() ?? [], gripError: scene?.gripError() ?? 0,
+      groundUnderFox: spans.some(span => distancePx + FOX_X >= span.from && distancePx + FOX_X <= span.to),
       entities: entities.filter(item => item.alive).slice(0, 100).map(item => ({ id: item.id, kind: item.kind, x: screenX(item.worldX), y: item.y, size: item.size, vx: item.vx, vy: item.vy, tag: item.tag })),
       activeEntities: entities.filter(item => item.alive).length, measuredAt: now };
   }
@@ -203,6 +204,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
 
   class LanternScene extends Phaser.Scene {
     private pen!: Phaser.GameObjects.Graphics;
+    private groundMask!: Phaser.GameObjects.Graphics;
     private sky!: Phaser.GameObjects.Image;
     private layers!: Phaser.GameObjects.TileSprite[];
     private foreground!: Phaser.GameObjects.TileSprite;
@@ -229,6 +231,8 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       this.layers = Array.from({ length: 5 }, (_, index) => this.add.tileSprite(WIDTH / 2, 362 + index * 8, WIDTH, 330, `lantern-world-layer-${index}`)
         .setDepth(-8 + index).setAlpha(index === 4 ? .72 : 1));
       this.groundStrip = this.add.tileSprite(0, GROUND - 12, WIDTH, 142, 'lantern-world-ground-strip').setOrigin(0, 0).setDepth(.5).setTileScale(.5);
+      this.groundMask = this.add.graphics().setVisible(false);
+      this.groundStrip.setMask(this.groundMask.createGeometryMask());
       this.foreground = this.add.tileSprite(WIDTH / 2, 563, WIDTH, 190, 'lantern-world-foreground').setDepth(6).setAlpha(.72);
       this.pen = this.add.graphics().setDepth(1);
       this.fox = new FoxRig(this, FOX_X, player.y, GROUND);
@@ -342,6 +346,8 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
     private draw() {
       this.layers.forEach((layer, index) => { layer.tilePositionX = distancePx * [.06, .12, .22, .36, .53][index]; });
       this.groundStrip.tilePositionX = distancePx * 2;
+      this.groundMask.clear().fillStyle(0xffffff);
+      for (const rect of visibleGroundRects(spans, distancePx, WIDTH)) this.groundMask.fillRect(rect.x, GROUND - 12, rect.width, HEIGHT - GROUND + 12);
       this.foreground.tilePositionX = distancePx * .68;
       this.clouds.tilePositionX = elapsed * 5;
       this.stars.forEach((star, index) => star.setAlpha(.25 + .25 * (1 + Math.sin(elapsed * (1.2 + index % 3 * .35) + index))));
@@ -352,7 +358,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
         const left = screenX(spans[index - 1].to), right = screenX(spans[index].from);
         if (!pitWallsVisible(left, right, WIDTH)) continue;
         const key = spans[index - 1].to; visibleGaps.add(key);
-        g.fillStyle(0x111b2b); g.fillRect(left, GROUND - 12, right - left, HEIGHT - GROUND + 12);
+        g.fillStyle(0x111b2b); g.fillRect(left, cliffTopY(GROUND), right - left, HEIGHT - cliffTopY(GROUND));
         g.fillStyle(0x23354a, .55);
         for (let x = left + 18; x < right; x += 30) g.fillTriangle(x - 14, HEIGHT, x, GROUND + 72 + Math.sin(x * .12) * 8, x + 20, HEIGHT);
         let faces = this.cliffs.get(key);
@@ -450,6 +456,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       this.hudFirefly.setDisplaySize(iconSize + 5, iconSize + 5).setPosition(38, 19 + size * .68);
     }
     hudBounds() { return [this.hudCount, this.hudDistance, this.hudFirefly, ...this.hudHearts.filter(icon => icon.visible)].map(label => { const { x, y, width, height } = label.getBounds(); return { x, y, width, height }; }); }
+    gripError() { return this.fox.gripError(); }
   }
 
   const phaser = new Phaser.Game({ type: Phaser.AUTO, width: WIDTH, height: HEIGHT, parent, backgroundColor: '#1f2b5c', scene: LanternScene, scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH } });
@@ -464,7 +471,7 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       } catch { resolve(null); }
     }, 'image/jpeg', .65);
   });
-  return { apply, removeMutation, snapshot, ready, enableSound: () => { audio.enable(); audio.setRunState(runOver === 0, run.distance, run.speed, parameters.runSpeed); }, configure: value => { settings = value as StudioSettings; audio.configure(settings); scene?.applyHudSize(); },
+  return { apply, removeMutation, snapshot, ready, resetFrameGap: () => { maxFrameGap = 0; lastFrameAt = 0; }, enableSound: () => { audio.enable(); audio.setRunState(runOver === 0, run.distance, run.speed, parameters.runSpeed); }, configure: value => { settings = value as StudioSettings; audio.configure(settings); scene?.applyHudSize(); },
     pause: () => { scene?.scene.pause(); audio.pause(); }, resume: () => { lastFrameAt = 0; scene?.scene.resume(); audio.resume(); }, captureFrame,
     destroy: () => { audio.destroy(); phaser.destroy(true); } };
 }

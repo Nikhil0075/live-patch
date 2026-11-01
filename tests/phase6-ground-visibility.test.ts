@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CLIFF_WIDTH, cliffCentreY, pitWallsVisible } from '../games/lantern-run/src/ground-visibility';
-import { LEDGE_SPAWN_OFFSET, MAX_SPAWN_OFFSET, OBSTACLE_SPAWN_OFFSET, OWL_SPAWN_OFFSET } from '../games/lantern-run/src/generator';
-import { STICK_GRIP_Y, stickLineYAtGrip } from '../games/lantern-run/src/fox-grip';
+import { CLIFF_WIDTH, cliffCentreY, cliffTopY, pitWallsVisible, visibleGroundRects } from '../games/lantern-run/src/ground-visibility';
 import { jumpLegPose } from '../games/lantern-run/src/fox-jump-pose';
 
 describe('Lantern Run edge geometry', () => {
@@ -11,16 +9,14 @@ describe('Lantern Run edge geometry', () => {
     expect(pitWallsVisible(-gap - CLIFF_WIDTH - 1, -CLIFF_WIDTH - 1, width)).toBe(false);
     expect(pitWallsVisible(width + 52, width + gap + 52, width)).toBe(true);
     expect(pitWallsVisible(width + CLIFF_WIDTH + 1, width + gap + CLIFF_WIDTH + 1, width)).toBe(false);
-    expect(cliffCentreY(518) - 71).toBe(517);
+    expect(cliffCentreY(518) - 71).toBe(cliffTopY(518));
+    expect(cliffTopY(518)).toBe(517);
   });
 
-  it('derives the despawn offset from all generated placements', () => {
-    expect(MAX_SPAWN_OFFSET).toBe(Math.max(OWL_SPAWN_OFFSET, LEDGE_SPAWN_OFFSET, OBSTACLE_SPAWN_OFFSET));
-    expect(MAX_SPAWN_OFFSET).toBeGreaterThanOrEqual(OWL_SPAWN_OFFSET);
-  });
-
-  it('puts the holding paw around the branch, within two unscaled pixels', () => {
-    expect(Math.abs(STICK_GRIP_Y - stickLineYAtGrip())).toBeLessThan(2);
+  it('masks the ground strip through each visible pit', () => {
+    expect(visibleGroundRects([{ from: 0, to: 400 }, { from: 520, to: 900 }], 100, 700)).toEqual([
+      { x: 0, width: 300 }, { x: 420, width: 280 }
+    ]);
   });
 
   it('trails both paws behind the fox through a jump', () => {

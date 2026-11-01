@@ -15,7 +15,7 @@ All time values are seconds; distance is metres. Canvas coordinates are 1152×64
 
 ## State and hooks
 
-`game.state` is a JSON snapshot: `player {x,y,vy,grounded,jumpsLeft,hearts,maxHearts,powerUps}`, `run {number,distance,fireflies,best,speed}`, `elapsed`, `runElapsed`, `frame`, `frameRate`, `maxFrameGap`, `weather`, `parameters`, and up to 100 `entities` of `{id,kind,x,y,size,vx,vy,tag}`. It also includes diagnostic `groundUnderFox` (whether solid ground is under the fox) and `hudBounds` (canvas-coordinate rectangles of visible HUD elements). `elapsed` excludes paused time. Distance, fireflies and hearts already earned remain when a module is removed. Entity IDs stay stable for their lifetime.
+`game.state` is a JSON snapshot: `player {x,y,vy,grounded,jumpsLeft,hearts,maxHearts,powerUps}`, `run {number,distance,fireflies,best,speed}`, `elapsed`, `runElapsed`, `frame`, `frameRate`, `maxFrameGap`, `weather`, `parameters`, and up to 100 `entities` of `{id,kind,x,y,size,vx,vy,tag}`. It also includes diagnostic `groundUnderFox` (whether solid ground is under the fox), `hudBounds` (canvas-coordinate rectangles of visible HUD elements), and `gripError` (the holding paw's distance in pixels from the stick line). `elapsed` excludes paused time. Distance, fireflies and hearts already earned remain when a module is removed. Entity IDs stay stable for their lifetime.
 
 | Event | Hook | Payload |
 |---|---|---|

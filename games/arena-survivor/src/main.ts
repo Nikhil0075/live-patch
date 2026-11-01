@@ -302,5 +302,5 @@ export function createGame(parent: HTMLElement, emit: (event: GameEvent) => void
       } catch { resolve(null); }
     }, 'image/jpeg', .65);
   });
-  return { apply, removeMutation, snapshot, enableSound: () => audio.enable(), configure: value => { settings = value as StudioSettings; audio.configure(settings); scene?.setHudSize(settings.hudSize); }, pause: () => { scene?.scene.pause(); audio.pause(); }, resume: () => { lastFrameAt = 0; scene?.scene.resume(); audio.resume(); }, captureFrame, destroy: () => { audio.destroy(); phaser.destroy(true); } };
+  return { apply, removeMutation, snapshot, resetFrameGap: () => { maxFrameGap = 0; lastFrameAt = 0; }, enableSound: () => audio.enable(), configure: value => { settings = value as StudioSettings; audio.configure(settings); scene?.setHudSize(settings.hudSize); }, pause: () => { scene?.scene.pause(); audio.pause(); }, resume: () => { lastFrameAt = 0; scene?.scene.resume(); audio.resume(); }, captureFrame, destroy: () => { audio.destroy(); phaser.destroy(true); } };
 }

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { STICK_GRIP_X, STICK_GRIP_Y } from './fox-grip';
+import { STICK_DISPLAY_HEIGHT, STICK_DISPLAY_WIDTH, STICK_DRAW_X, STICK_DRAW_Y, STICK_GRIP_X, STICK_GRIP_Y, stickLineYAt } from './fox-grip';
 import { jumpLegPose } from './fox-jump-pose';
 
 const TAU = Math.PI * 2;
@@ -34,6 +34,8 @@ export class FoxRig {
   private readonly head: Phaser.GameObjects.Image;
   private readonly satchel: Phaser.GameObjects.Image;
   private readonly stick: Phaser.GameObjects.Container;
+  private readonly stickImage: Phaser.GameObjects.Image;
+  private readonly holdingPaw: Phaser.GameObjects.Image;
   private readonly lantern: Phaser.GameObjects.Container;
   private readonly lanternGlow: Phaser.GameObjects.Image;
   private readonly shield: Phaser.GameObjects.Image;
@@ -71,9 +73,9 @@ export class FoxRig {
     const holdingUpper = scene.add.container(-7, -14); this.stick.add(holdingUpper);
     part(scene, holdingUpper, 'upper-arm', 2, 11, 20, 27);
     const holdingForearm = scene.add.container(5, 24); holdingUpper.add(holdingForearm);
-    part(scene, holdingForearm, 'forearm', 7, -5, 18, 24).setAngle(45);
-    part(scene, this.stick, 'stick', 31, -8, 68, 23);
-    part(scene, this.stick, 'paw', STICK_GRIP_X, STICK_GRIP_Y, 18, 11);
+    part(scene, holdingForearm, 'forearm', 7, -5, 18, 24).setAngle(-135);
+    this.stickImage = part(scene, this.stick, 'stick', STICK_DRAW_X, STICK_DRAW_Y, STICK_DISPLAY_WIDTH, STICK_DISPLAY_HEIGHT);
+    this.holdingPaw = part(scene, this.stick, 'paw', STICK_GRIP_X, STICK_GRIP_Y, 18, 11);
     this.lantern = scene.add.container(64, 0); this.stick.add(this.lantern);
     this.lanternGlow = part(scene, this.lantern, 'firefly-glow', 0, 23, 106, 106);
     this.lanternGlow.setBlendMode(Phaser.BlendModes.ADD).setTint(0xffbd5b);
@@ -81,6 +83,9 @@ export class FoxRig {
     this.shield = part(scene, this.container, 'shield', 0, -7, 160, 160).setBlendMode(Phaser.BlendModes.ADD);
     this.glider = part(scene, this.container, 'glider', 12, -83, 112, 45);
     this.shield.setVisible(false); this.glider.setVisible(false);
+  }
+  gripError(): number {
+    return this.holdingPaw.y - stickLineYAt(this.holdingPaw.x, this.stickImage.x, this.stickImage.y, this.stickImage.displayWidth, this.stickImage.displayHeight);
   }
   update(m: FoxMotion): void {
     const gait = m.distancePx / 78 * TAU;

@@ -84,7 +84,7 @@ The first four captures below are 1920×1080. The strips are cropped from the ru
 
 | Concepts | Matches | Differs and why |
 |---|---|---|
-| `02-art-sheet.png`, `06-fox-animation.png` row 1, R1 | Eight roughly 37 ms samples show an upright torso, opposing hind-leg stride, a two-part swinging free arm, tail, satchel and lantern follow-through. The two-part holding arm reaches the branch, and its paw wraps around the stick line. | One frame catches a natural blink. The painted R1 silhouette has a wider stride and softer fur than the code-drawn textures. |
+| `02-art-sheet.png`, `06-fox-animation.png` row 1, R1 | Eight roughly 37 ms samples show an upright torso, opposing hind-leg stride, tail, satchel and lantern follow-through. The free arm swings behind the torso, so only its paw is visible in some frames. The two-part holding arm reaches the branch, and its paw wraps around the stick line. | One frame catches a natural blink. The painted R1 silhouette has a wider stride and softer fur than the code-drawn textures. |
 
 ### `08-fox-jump.png`
 
@@ -181,13 +181,24 @@ The unquoted English word `log` occurs only as a generic chat ARIA role and Wind
 
 ## Review responses
 
+## Round 5 responses
+
+- **P6-R5-01 — Fixed.** The pit fill and both wall tops use `cliffTopY`, and a geometry mask limits the ground strip to visible solid spans. `Lantern Run edge geometry` tests the shared top and a visible gap in the mask; the refreshed `01-gameplay.png` shows open sky down to the grass line, with no floating blades over the gap.
+- **P6-R5-02 — Fixed.** The holding forearm turns toward the stick so its brown sock end meets the gripping paw. The refreshed `07-fox-run-cycle.png` shows the forearm and grip.
+- **P6-R5-03 — Fixed.** The stick line, texture size and rendered size now share definitions. The browser test `the rendered holding paw stays on the stick` reads the actual Phaser image and paw positions through the diagnostic snapshot; changing the rig's paw position fails it.
+- **P6-R5-04 — Fixed.** Both game adapters expose an optional diagnostic `resetFrameGap()` method. The Arena and Lantern performance tests call it at the start of the measured window; their frame-rate comparisons remain.
+- **P6-R5-05 — Fixed.** The run-strip caption describes the free arm as mostly hidden, and the round-four pit response below specifies the wall alignment and the subsequent fill correction.
+- **P6-R5-06 — Fixed.** Removed the unit test that restated the spawn-offset definition; the natural-spawn browser test remains the regression guard.
+
+Round 5 repository verification: `npm test` passed 107 unit tests (4 opt-in skipped), 30 studio browser tests, 37 Arena browser tests (1 optional WebGL skipped), 32 Lantern Run browser tests, and the HTTPS regression. `npm run build` exited 0; `npm audit --audit-level=high` found 0 vulnerabilities. `git status --short -- builds` produced no output. The capture script refreshed the 1920×1080 views and animation evidence; `01-gameplay.png` and `07-fox-run-cycle.png` were inspected against the round-five evidence images.
+
 ## Round 4 responses
 
-- **P6-R4-01 — Fixed.** Pit visibility now includes the full 70 px wall on both sides, and the wall texture's top sits at the grass lip (canvas y 517). `Lantern Run edge geometry` checks both entry and exit boundaries; the refreshed `01-gameplay.png` shows aligned edges.
-- **P6-R4-02 — Fixed.** Both front arms now have separate upper-arm and forearm textures and pivots. The free forearm lags its swing; the holding paw overlays the stick at the branch height. `puts the holding paw around the branch` checks the grip offset, and the refreshed `07-fox-run-cycle.png` shows the two-part motion.
+- **P6-R4-01 — Fixed.** Pit visibility now includes the full 70 px wall on both sides, and the wall texture's top sits at the grass lip (canvas y 517). `Lantern Run edge geometry` checks both entry and exit boundaries. Round 5 aligned the dark fill and masked the strip; the refreshed `01-gameplay.png` shows the complete pit edge.
+- **P6-R4-02 — Fixed.** Both front arms now have separate upper-arm and forearm textures and pivots. The free forearm lags its swing; the holding paw overlays the stick at the branch height. The round-five browser grip test checks the rendered paw position, and the refreshed `07-fox-run-cycle.png` shows the two-part motion.
 - **P6-R4-03 — Fixed.** Hurt restores only the capped music level, and run over cancels pending gain automation before fading. A two-note cadence plays through the effects bus. `a hazard run-over stays faded after hurt and a hurt restore respects the music cap` renders both cases offline.
 - **P6-R4-04 — Fixed.** A browser test sends exactly 20 valid parameter actions in each of four separate chat events under a fixed host clock. It requires 60 applied actions and skipped actions on the fourth event, so disabling only the per-second budget fails while the per-event cap remains active.
-- **P6-R4-05 — Fixed.** Hazard, owl and ledge spawn sites use named offsets; `MAX_SPAWN_OFFSET` derives from all three. `Lantern Run edge geometry` checks the relationship.
+- **P6-R4-05 — Fixed.** Hazard, owl and ledge spawn sites use named offsets; `MAX_SPAWN_OFFSET` derives from all three. The natural-spawn browser test guards the actual right-edge behaviour.
 
 Round 4 repository verification: `npm test` passed 107 unit tests (4 opt-in skipped), 30 studio browser tests, 37 Arena browser tests (1 optional WebGL skipped), 31 Lantern Run browser tests, and the HTTPS regression. `npm run build` exited 0 and `npm audit --audit-level=high` found 0 vulnerabilities. `git status --short -- builds` produced no output. The new budget test first exposed a sequencing mistake in the test (batched events), which was corrected; an unrelated rollback test binding accidentally changed during that edit and was restored before this green full run.
 

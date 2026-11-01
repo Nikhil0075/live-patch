@@ -36,6 +36,7 @@ The entry exports `createGame(parent, emit)`. `parent` is the game's container; 
 - Optional `pause()` and `resume()` freeze and resume game time, physics and mutation delivery from the Play menu.
 - Optional `configure(settings)` applies sound volume, mute, effects intensity, reduced flashing and shake, and HUD size from Studio Settings.
 - Optional `enableSound()` unlocks synthesized audio after a user gesture; `captureFrame()` supplies the Go Live mirror.
+- Optional `resetFrameGap()` clears a game's diagnostic maximum frame gap before a browser performance test; it is not a mutation action.
 
 The engine also calls `apply({type: 'systemEvent', args: [name]}, 'system')` for `round-start`, `vote-tick`, `shipped`, `failed` and `rolled_back`. A game may use these for its own sound cues or effects; unknown events are ignored. The game adapter must validate this action like any other and never treat event text as HTML.
 
