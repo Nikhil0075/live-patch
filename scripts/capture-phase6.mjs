@@ -78,13 +78,14 @@ try {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(`${base}/play`);
   await page.waitForFunction(() => document.querySelector('#status')?.textContent?.includes('Lantern Run · LIVE'));
-  await page.evaluate(() => {
+  const cleanRunAt = await page.evaluate(() => {
     const game = window.__livePatch.game;
     window.__livePatch.host.sync([]);
     for (const item of game.snapshot().entities.filter(item => ['log', 'thorns', 'boulder', 'owl', 'pinecone'].includes(item.kind)))
       game.apply({ type: 'removeEntity', args: [item.id] }, 'capture');
     game.apply({ type: 'setParameter', args: ['runSpeed', 120] }, 'capture');
     game.apply({ type: 'setParameter', args: ['maxHearts', 5] }, 'capture'); game.apply({ type: 'heal', args: [2] }, 'capture');
+    return game.snapshot().elapsed;
   });
   const crop = async (x, y, w, h) => {
     const box = await page.locator('#game canvas').boundingBox();
@@ -104,8 +105,7 @@ try {
     fs.writeFileSync(path.join(output, name), Buffer.from(base64, 'base64'));
   };
   const foxFrames = [];
-  await page.waitForTimeout(500);
-  await page.waitForFunction(() => { const state = window.__livePatch.game.snapshot(); return state.elapsed % 4.4 > .5 && state.elapsed % 4.4 < 3.5 && state.player.hearts === state.player.maxHearts; });
+  await page.waitForFunction(cleanedAt => { const state = window.__livePatch.game.snapshot(); return state.elapsed - cleanedAt > .6 && state.elapsed % 4.4 > .5 && state.elapsed % 4.4 < 3.5 && state.player.hearts === state.player.maxHearts; }, cleanRunAt);
   await page.clock.pauseAt(new Date());
   for (let i = 0; i < 8; i++) { foxFrames.push(await crop(346, 462, 170, 165)); await page.clock.runFor(37); }
   await strip('07-fox-run-cycle.png', foxFrames);
