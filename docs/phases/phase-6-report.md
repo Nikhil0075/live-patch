@@ -227,6 +227,10 @@ The gameplay frame has naturally generated pickups, hazard and pit. The evolved 
 
 The Web Audio scheduler wakes every 25 ms and schedules the next bar ahead of time on `AudioContext.currentTime`; layer changes take effect only at bar boundaries. The play button is still required to unlock sound, Studio Settings control the master, music and effects buses, mute zeroes their gain, pause suspends the owned context, and the existing per-effect play cap remains five per second. The two WAVs are offline-rendered listening samples, not runtime assets.
 
+### Clean-clone verification of the polish
+
+The repository full run passed 104 unit, 30 studio, 36 Arena and 30 Lantern browser checks, then timed out once in the HTTPS Practice confirmation. `npm run test:https` passed on immediate isolated rerun. Clone A (`a2a17ad`) passed `npm ci`, the entire `npm test` including HTTPS, `npm run build`, and `npm audit --audit-level=high` (0 vulnerabilities); `builds/` was absent after testing. Clone B exposed a random-generation assumption in a Lantern smoke test: it required a random hazard to appear within 20 seconds, despite the generator legitimately returning `none`. The test now checks a naturally generated pickup crossing from beyond the old cutoff, which exercises the same despawn boundary without depending on hazard selection. It passed five focused runs. Final clean-clone results follow below.
+
 ## Round 1 responses
 
 - **P6-R1-01 — Fixed.** Recomputing `maxHearts` clamps current hearts, and HUD rendering bounds the count; the five-heart removal browser test checks that frames continue.
