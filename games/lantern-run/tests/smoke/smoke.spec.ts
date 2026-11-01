@@ -38,6 +38,66 @@ async function subjectChangedPixels(page: import('@playwright/test').Page, a: Bu
   }, [a.toString('base64'), b.toString('base64'), subject] as const);
 }
 
+test('all 14 sound recipes render audibly and within the output ceiling, with a silent negative control', async ({ page }) => {
+  await page.goto('/play');
+  const result = await page.evaluate(async () => {
+    const audioPath = '/games/lantern-run/src/audio.ts', settingsPath = '/engine/studio/settings-defaults.ts';
+    const { LanternAudio, sounds, recipes, soundLength } = await import(/* @vite-ignore */ audioPath);
+    const { defaultSettings } = await import(/* @vite-ignore */ settingsPath);
+    async function render(name: typeof sounds[number]) {
+      const rate = 22050, context = new OfflineAudioContext(1, rate * 2, rate);
+      const audio = new LanternAudio(defaultSettings, context);
+      const duration = audio.scheduleEffect(name, .1);
+      const data = (await context.startRendering()).getChannelData(0);
+      const peak = Math.max(...Array.from(data.filter((_, i) => i % 40 === 0), Math.abs));
+      let first = -1, last = -1;
+      for (let i = 0; i < data.length; i++) if (Math.abs(data[i]) > .0005) { if (first < 0) first = i; last = i; }
+      return { name, peak, first: first / rate, last: last / rate, duration };
+    }
+    const soundsRendered = [];
+    for (const name of sounds) soundsRendered.push(await render(name));
+    const original = recipes.jump;
+    recipes.jump = original.map((voice: { gain: number }) => ({ ...voice, gain: 0 }));
+    const broken = await render('jump');
+    recipes.jump = original;
+    return { soundsRendered, broken, lengths: Object.fromEntries(sounds.map((name: string) => [name, soundLength(name)])) };
+  });
+  for (const sound of result.soundsRendered) {
+    expect(sound.peak, sound.name).toBeGreaterThan(.002);
+    expect(sound.peak, sound.name).toBeLessThanOrEqual(.9);
+    expect(sound.first, sound.name).toBeGreaterThanOrEqual(.095);
+    expect(sound.last, sound.name).toBeGreaterThan(sound.first + .04);
+    expect(sound.last, sound.name).toBeLessThan(.1 + result.lengths[sound.name] + .75);
+  }
+  expect(result.broken.peak).toBeLessThan(.002);
+});
+
+test('eight music bars render on the beat grid and meet quietly at the loop seam', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.goto('/play');
+  const result = await page.evaluate(async () => {
+    const audioPath = '/games/lantern-run/src/audio.ts', settingsPath = '/engine/studio/settings-defaults.ts';
+    const { LanternAudio, MUSIC_BAR, MUSIC_STEP } = await import(/* @vite-ignore */ audioPath);
+    const { defaultSettings } = await import(/* @vite-ignore */ settingsPath);
+    const rate = 22050, length = MUSIC_BAR * 8, context = new OfflineAudioContext(1, Math.ceil((length + .8) * rate), rate);
+    const audio = new LanternAudio(defaultSettings, context);
+    const onsets = audio.scheduleMusic(.1, 8);
+    const brokenOnsets = audio.scheduleMusic(.1 + length + 1, 1, { melody: false, rhythm: false });
+    const data = (await context.startRendering()).getChannelData(0);
+    let peak = 0; for (const sample of data) peak = Math.max(peak, Math.abs(sample));
+    const seam = Math.abs(data[Math.round((.1 + length) * rate)] - data[Math.round((.1 + length) * rate) - 1]);
+    const gridError = Math.max(...onsets.map((time: number) => Math.abs((time - .1) / MUSIC_STEP - Math.round((time - .1) / MUSIC_STEP)) * MUSIC_STEP));
+    return { peak, seam, gridError, bars: length / MUSIC_BAR, onsets: onsets.length, brokenOnsets: brokenOnsets.length };
+  });
+  expect(result.peak).toBeGreaterThan(.002);
+  expect(result.peak).toBeLessThanOrEqual(.9);
+  expect(result.gridError).toBeLessThan(.005);
+  expect(result.seam).toBeLessThan(.05);
+  expect(result.bars).toBe(8);
+  expect(result.onsets).toBeGreaterThan(32);
+  expect(result.brokenOnsets).toBeLessThan(8);
+});
+
 test('Lantern Run starts and advances', async ({ page }) => {
   await page.goto('/play');
   await expect(page.locator('#status')).toContainText('Lantern Run · LIVE');

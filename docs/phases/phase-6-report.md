@@ -207,8 +207,25 @@ The references are `plans/phase-6/reference/targets/R1-fox-construction.png`, `R
 | T8 fireflies | Met | `10-props.png`: smaller translucent wings, bright yellow-green body and existing short particle trail. |
 | T9 props | Partly met | `10-props.png` shows spring, ledge, shield and firefly; log, stack, thorns, boulder and pinecone remain simpler than R3's prop sheet. |
 | T10 visual evidence | Partly met | Recaptured `01-gameplay.png`, `04-evolved.png`, `05-run-over.png`, `07-fox-run-cycle.png`, `08-fox-jump.png`, `09-owl-flight.png`, `10-props.png` and `lantern-run-motion.webm`. The run strip eye issue above remains. |
+| T11 forest music | Met | `phase-6-audio/music-20s.wav` and `eight music bars render on the beat grid and meet quietly at the loop seam`: 90 BPM A minor, eight bars, scheduled pad, bass, pentatonic melody, low kick and hats. Rhythm enters at 200 m or higher speed, and run over closes the filter and fades the bus. |
+| T12 per-sound effects | Met | `phase-6-audio/sfx-all.wav` and `all 14 sound recipes render audibly and within the output ceiling, with a silent negative control`: every manifest sound has two or three oscillator/noise voices with separate envelopes; supported world positions pan, pitch varies by ±3%. |
+| T13 mix and checks | Partly met | Effects and music use separate buses into a compressor; a generated impulse drives the reverb send. OfflineAudioContext accepts the same audio class as live play. Tests check non-silence, peak ≤0.9, duration, beat-grid error <5 ms and sample seam, including a silent negative recipe. A perceptual listening review remains for the operator. |
 
 The gameplay frame has naturally generated pickups, hazard and pit. The evolved frame has six active local modules including the demo. The run-over frame stages three hits. The animation strips use controlled subjects and sampled times; their background changes are not the animation evidence, which is provided by subject-masked browser tests with disabled-rig negative controls.
+
+### Sound design
+
+| Names | Design |
+|---|---|
+| `jump`, `spring` | Two rising sine/triangle voices; spring has a longer, higher bounce. |
+| `land` | Short filtered noise impact over a descending low sine. |
+| `firefly`, `acorn` | Bright paired chimes; the acorn adds a triangle onset. |
+| `hurt`, `fall`, `run-over` | Filtered noise and falling pitches, with increasing duration and weight. Hurt briefly ducks the score. |
+| `power-up`, `round-start`, `patch-shipped` | Layered ascending or sustained chord tones with separate attacks. |
+| `vote-tick` | Short high chime and a very quiet noise click. |
+| `patch-failed`, `rollback` | Two descending voices; failure includes a dull noise tail. |
+
+The Web Audio scheduler wakes every 25 ms and schedules the next bar ahead of time on `AudioContext.currentTime`; layer changes take effect only at bar boundaries. The play button is still required to unlock sound, Studio Settings control the master, music and effects buses, mute zeroes their gain, pause suspends the owned context, and the existing per-effect play cap remains five per second. The two WAVs are offline-rendered listening samples, not runtime assets.
 
 ## Round 1 responses
 

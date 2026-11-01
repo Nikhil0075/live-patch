@@ -12,6 +12,7 @@
     "test:https": "node scripts/test-https.mjs",
     "smoke": "node scripts/test.mjs --smoke",
     "new-game": "node scripts/new-game.mjs",
+    "render:lantern-audio": "node scripts/render-phase6-audio.mjs",
     "build": "tsc --noEmit && vite build"
   },
   "dependencies": {
