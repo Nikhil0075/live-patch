@@ -54,25 +54,25 @@ All rectangles below are `(x,y,width,height)` in a 1920×1080 capture. The engin
 
 ## Visual overhaul
 
-The first four captures below are 1920×1080. The strips are cropped from the running game at 1280×720; the run strip advances the browser clock in fixed 37 ms steps, and the jump strip briefly pauses between screenshots so capture latency cannot shift the subject out of frame. The nine-second 1280×720 WebM is a Playwright recording edited in browser Canvas and MediaRecorder without a new dependency. `01-gameplay.png` waits for a naturally generated pickup and hazard and injects none. `04-evolved.png` loads five prepared modules and one visual-only module that spawns an owl, two ledges and a spring. `05-run-over.png` injects boulders for a repeatable death pose. The owl, firefly and prop strips and motion video also stage their subjects; they demonstrate art and animation, not natural generator frequency.
+The first four captures below are 1920×1080. The strips are cropped from the running game at 1280×720; the run strip samples real game time at roughly 37 ms intervals, and the jump strip briefly pauses between screenshots so capture latency cannot shift the subject out of frame. The nine-second 1280×720 WebM is a Playwright recording edited in browser Canvas and MediaRecorder without a new dependency. `01-gameplay.png` waits for a naturally generated pickup and hazard and injects none; it restores the default run speed and three-heart HUD before capture. `04-evolved.png` loads five prepared modules and one visual-only module that spawns an owl, two ledges and a spring. `05-run-over.png` injects boulders for a repeatable death pose. The owl, firefly and prop strips and motion video also stage their subjects; they demonstrate art and animation, not natural generator frequency.
 
 ### `01-gameplay.png`
 
 | Matches the concept | Differs and why |
 |---|---|
-| Fixed left-side animated fox, one-row firefly/distance/icon-heart HUD, twilight sky, five scrolling layers plus foreground leaves, naturally generated owl, acorn and fireflies, and a rocky pit. | Ground begins at 80% of the canvas for the OBS ticker; the bridge and stone lantern are omitted per Appendix 3 row `01-gameplay.png`. The geometric code-drawn trees and soil are simpler than the painted reference, and the foreground leaves are a subtle accent rather than a thick frame. |
+| The upright courier and flat lantern light resemble R1/R2. A natural firefly group, log stack and rocky pit cross the moss and root ground strip of R3; the three-heart HUD shows real state. | Ground begins at 80% of the canvas for the OBS ticker; the bridge and stone lantern are omitted per Appendix 3 row `01-gameplay.png`. The code-drawn pines and soil retain more geometric edges than R2/R3. |
 
 ### `04-evolved.png`
 
 | Matches the concept | Differs and why |
 |---|---|
-| Six active modules including the demo create rain, a pulsing shield, a boss-sized flying owl, extra fireflies, mossy ledges and an animated spring. The fox is fully visible; the pill banner sits below the patch-toast zone. | The castle is omitted and banner/HUD use the corrected positions in Appendix 3 row `04-evolved.png`. The artwork is geometric rather than painterly. This is a local visual scenario, not a claim that these particular modules were shipped by live Codex. |
+| Six active modules including the demo create rain, a pulsing shield, a boss-sized flying owl, extra fireflies, mossy ledges and an animated spring. The upright fox and forest layers follow R1/R2; the pill banner sits below the patch-toast zone. | The castle is omitted and banner/HUD use the corrected positions in Appendix 3 row `04-evolved.png`. The pines remain less organic than R3. This is a local visual scenario, not a claim that these particular modules were shipped by live Codex. |
 
 ### `05-run-over.png`
 
 | Matches the concept | Differs and why |
 |---|---|
-| The fox rests with closed eyes and a dropped glowing lantern. A rounded amber card with leaf corners, divider and Space keycap shows real distance, fireflies, session best and countdown; the HUD shows empty drawn hearts. | The shrine, gate and house are omitted per Appendix 3 row `05-run-over.png`. The card uses the live countdown and a compact Space keycap instead of a separate full-width button. |
+| The fox rests with closed eyes and a dropped glowing lantern. A rounded amber card with leaf corners, divider and Space keycap shows real distance, fireflies, session best and countdown; the HUD shows empty drawn hearts. R3's moss and cliff treatment remains visible behind the card. | The shrine, gate and house are omitted per Appendix 3 row `05-run-over.png`. The card uses the live countdown and a compact Space keycap instead of a separate full-width button. |
 
 ### `06-library.png`
 
@@ -84,13 +84,13 @@ The first four captures below are 1920×1080. The strips are cropped from the ru
 
 | Concepts | Matches | Differs and why |
 |---|---|---|
-| `02-art-sheet.png`, `06-fox-animation.png` row 1, `07-fox-parts.png` | Eight fixed-step captures show a longer body, smaller head, two visible front legs with opposite phases, separate paws, tail, satchel and lantern motion. The front paw holds the stick below the face. | The silhouettes are pre-rendered Canvas shapes rather than the reference's painted frames. The segmented tail is more visible at this scale. |
+| `02-art-sheet.png`, `06-fox-animation.png` row 1, R1 | Eight roughly 37 ms samples show an upright torso, opposing hind-leg stride, free-arm swing, tail, satchel and lantern follow-through. The holding paw keeps the stick below the face, and seven frames show the eye open. | One frame catches a natural blink. The painted R1 silhouette has a wider stride and softer fur than the code-drawn textures. |
 
 ### `08-fox-jump.png`
 
 | Concepts | Matches | Differs and why |
 |---|---|---|
-| `06-fox-animation.png` rows 2–3, `11-effects.png` | Six captures show takeoff, rise and a double-jump rotation with lantern and tail following. The jump begins on the input frame. | This strip samples the double jump; glider, hurt, pit recovery and run-over poses are visible in game states or other captures, rather than all being placed in this strip. |
+| `06-fox-animation.png` rows 2–3, `11-effects.png`, R1 | Nine captures show takeoff, rise, the double-jump rotation with lantern and tail following, fall and landing. The jump begins on the input frame. | Glider, hurt and pit recovery poses are visible in play rather than this strip. The spin is angular compared with R1's flowing drawn poses. |
 
 ### `09-owl-flight.png`
 
