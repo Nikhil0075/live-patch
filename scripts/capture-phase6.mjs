@@ -32,14 +32,13 @@ try {
   await page.evaluate(() => {
     const game = window.__livePatch.game;
     game.apply({ type: 'setParameter', args: ['runSpeed', 600] }, 'capture');
-    game.apply({ type: 'setParameter', args: ['maxHearts', 5] }, 'capture');
     game.apply({ type: 'heal', args: [3] }, 'capture');
   });
   await page.waitForFunction(() => {
     const visible = window.__livePatch.game.snapshot().entities.filter(item => item.x > 550 && item.x < 1080);
     return visible.some(item => ['firefly', 'acorn'].includes(item.kind)) && visible.some(item => ['log', 'thorns', 'boulder', 'owl'].includes(item.kind));
   }, undefined, { timeout: 40_000 });
-  await page.evaluate(() => window.__livePatch.game.apply({ type: 'heal', args: [3] }, 'capture'));
+  await page.evaluate(() => { const game = window.__livePatch.game; game.apply({ type: 'setParameter', args: ['runSpeed', 260] }, 'capture'); game.apply({ type: 'heal', args: [3] }, 'capture'); });
   await page.screenshot({ path: path.join(output, '01-gameplay.png') });
 
   const game = path.join(root, 'games', 'lantern-run');
@@ -105,11 +104,9 @@ try {
     fs.writeFileSync(path.join(output, name), Buffer.from(base64, 'base64'));
   };
   const foxFrames = [];
-  await page.waitForFunction(cleanedAt => { const state = window.__livePatch.game.snapshot(); return state.elapsed - cleanedAt > .6 && state.elapsed % 4.4 > .5 && state.elapsed % 4.4 < 3.5 && state.player.hearts === state.player.maxHearts; }, cleanRunAt);
-  await page.clock.pauseAt(new Date());
-  for (let i = 0; i < 8; i++) { foxFrames.push(await crop(346, 462, 170, 165)); await page.clock.runFor(37); }
+  await page.waitForFunction(cleanedAt => { const state = window.__livePatch.game.snapshot(); return state.elapsed - cleanedAt > .6 && state.elapsed % 4.4 > .5 && state.elapsed % 4.4 < 2 && state.player.hearts === state.player.maxHearts; }, cleanRunAt);
+  for (let i = 0; i < 8; i++) { foxFrames.push(await crop(346, 462, 170, 165)); await page.waitForTimeout(37); }
   await strip('07-fox-run-cycle.png', foxFrames);
-  await page.clock.resume();
   await page.reload();
   await page.waitForFunction(() => document.querySelector('#status')?.textContent?.includes('Lantern Run · LIVE'));
   await page.evaluate(() => { const game = window.__livePatch.game;

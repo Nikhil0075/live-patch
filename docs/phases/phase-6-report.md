@@ -184,7 +184,7 @@ The unquoted English word `log` occurs only as a generic chat ARIA role and Wind
 ## Round 3 responses
 
 - **P6-R3-01 — Fixed.** The Arena storm fixture now requests 100 actions in one tick, exceeding the per-event cap even on a slow machine. The focused test and full `npm test` pass.
-- **P6-R3-02 — Partly fixed.** The nine-frame jump strip now includes takeoff, the second-jump spin, fall and landing. The eight-frame run strip still catches the closed-eye state despite the capture waiting outside the timed blink, so its eye-open evidence remains incomplete.
+- **P6-R3-02 — Partly fixed.** The nine-frame jump strip now includes takeoff, the second-jump spin, fall and landing. The run strip no longer uses a fake clock that could make game time go backward; seven of eight frames show the open eye, while one still catches a blink.
 - **P6-R3-03 — Fixed.** Owl and firefly browser checks mask subject colours and disable each rig's `update` as a negative control. Both pass in the full suite.
 - **P6-R3-04 — Fixed.** The fox now has an upright orange torso, two slim hind legs with a longer opposing stride, articulated arms, a curved cream-tipped tail, larger ears and eye, a paw-held forked stick and a round ribbed lantern. The texture rig stays within the existing collider; the code-drawn silhouette is still simpler than the painted concept.
 - **P6-R3-05 — Fixed.** The right despawn horizon uses named generator lead, maximum gap, largest spawn offset and margin constants. The natural-generation browser check passes.
@@ -199,14 +199,14 @@ The references are `plans/phase-6/reference/targets/R1-fox-construction.png`, `R
 |---|---|---|
 | T1 upright fox and gait | Met | `07-fox-run-cycle.png` shows an upright torso, articulated arms and opposing long hind-leg steps; the clean four-pose silhouette of R1 is still more exaggerated. |
 | T2 seamless tail | Met | `07-fox-run-cycle.png` and `08-fox-jump.png` show overlapping orange segments and a cream teardrop tip, with springy follow-through. |
-| T3 ears, eyes, lantern, stick | Partly met | `01-gameplay.png` shows tall ears, a forked chest-height stick and round paper lantern; the run strip still catches shut eyes, although `08-fox-jump.png` shows the large open eye. |
+| T3 ears, eyes, lantern, stick | Met | `01-gameplay.png` shows tall ears, a forked chest-height stick and round paper lantern; `07-fox-run-cycle.png` shows the enlarged eye open in seven frames and one natural blink. |
 | T4 ground strip | Met | `01-gameplay.png`: repeated prerendered moss lip, roots, stones and stronger dark foreground leaves. R3 has softer painterly texture. |
 | T5 pit edges | Met | `01-gameplay.png`: left/right prerendered rock faces and dark gap, with moss over their lips. The rock shapes remain more geometric than R3. |
 | T6 pines and haze | Partly met | `01-gameplay.png` and `04-evolved.png`: scalloped tiers, varied layers and haze bands; R2's distant forest has more natural depth and irregularity. |
 | T7 lantern light | Met | `01-gameplay.png`: a shallow warm ellipse ahead of the fox stays above the soil; lantern halo remains separate. |
 | T8 fireflies | Met | `10-props.png`: smaller translucent wings, bright yellow-green body and existing short particle trail. |
 | T9 props | Partly met | `10-props.png` shows spring, ledge, shield and firefly; log, stack, thorns, boulder and pinecone remain simpler than R3's prop sheet. |
-| T10 visual evidence | Partly met | Recaptured `01-gameplay.png`, `04-evolved.png`, `05-run-over.png`, `07-fox-run-cycle.png`, `08-fox-jump.png`, `09-owl-flight.png`, `10-props.png` and `lantern-run-motion.webm`. The run strip eye issue above remains. |
+| T10 visual evidence | Partly met | Recaptured `01-gameplay.png`, `04-evolved.png`, `05-run-over.png`, `07-fox-run-cycle.png`, `08-fox-jump.png`, `09-owl-flight.png`, `10-props.png` and `lantern-run-motion.webm`. The run strip has one blink frame despite targeting an open-eye interval; capture samples follow real time at roughly 37 ms intervals. |
 | T11 forest music | Met | `phase-6-audio/music-20s.wav` and `eight music bars render on the beat grid and meet quietly at the loop seam`: 90 BPM A minor, eight bars, scheduled pad, bass, pentatonic melody, low kick and hats. Rhythm enters at 200 m or higher speed, and run over closes the filter and fades the bus. |
 | T12 per-sound effects | Met | `phase-6-audio/sfx-all.wav` and `all 14 sound recipes render audibly and within the output ceiling, with a silent negative control`: every manifest sound has two or three oscillator/noise voices with separate envelopes; supported world positions pan, pitch varies by ±3%. |
 | T13 mix and checks | Partly met | Effects and music use separate buses into a compressor; a generated impulse drives the reverb send. OfflineAudioContext accepts the same audio class as live play. Tests check non-silence, peak ≤0.9, duration, beat-grid error <5 ms and sample seam, including a silent negative recipe. A perceptual listening review remains for the operator. |
@@ -229,7 +229,14 @@ The Web Audio scheduler wakes every 25 ms and schedules the next bar ahead of ti
 
 ### Clean-clone verification of the polish
 
-The repository full run passed 104 unit, 30 studio, 36 Arena and 30 Lantern browser checks, then timed out once in the HTTPS Practice confirmation. `npm run test:https` passed on immediate isolated rerun. Clone A (`a2a17ad`) passed `npm ci`, the entire `npm test` including HTTPS, `npm run build`, and `npm audit --audit-level=high` (0 vulnerabilities); `builds/` was absent after testing. Clone B exposed a random-generation assumption in a Lantern smoke test: it required a random hazard to appear within 20 seconds, despite the generator legitimately returning `none`. The test now checks a naturally generated pickup crossing from beyond the old cutoff, which exercises the same despawn boundary without depending on hazard selection. It passed five focused runs. Final clean-clone results follow below.
+The repository full run passed 104 unit, 30 studio, 36 Arena and 30 Lantern browser checks, then timed out once in the HTTPS Practice confirmation. `npm run test:https` passed on immediate isolated rerun. Clone A (`a2a17ad`) passed `npm ci`, the entire `npm test` including HTTPS, `npm run build`, and `npm audit --audit-level=high` (0 vulnerabilities); `builds/` was absent after testing. Clone B exposed a random-generation assumption in a Lantern smoke test: it required a random hazard to appear within 20 seconds, despite the generator legitimately returning `none`. The test now checks a naturally generated pickup crossing from beyond the old cutoff, which exercises the same despawn boundary without depending on hazard selection. It passed five focused runs.
+
+| Final clean clone | Commands and output | Build data |
+|---|---|---|
+| C, `c6ab055` | `npm ci` added 49 packages; `npm test` passed 104 unit (4 opt-in skipped), 30 studio, 36 Arena (1 optional WebGL skipped), 30 Lantern, HTTPS regression; `npm run build` exit 0; `npm audit --audit-level=high` found 0 vulnerabilities. | `Test-Path builds` → `False` after testing. |
+| D, `c6ab055` | `npm ci` added 49 packages; `npm test` passed the same 104/30/36/30 suites and HTTPS regression; `npm run build` exit 0; `npm audit --audit-level=high` found 0 vulnerabilities. | `Test-Path builds` → `False` after testing. |
+
+After those runs, only the capture script and visual evidence were refined; game/runtime and test code is unchanged. The automatic approval review rejected a checked recursive deletion of clone A as “blocked by policy”. Clones A–D remain at `D:\twitchconXcodex\phase6-polish-clone-{a,b,c,d}-20261101`; none contains operator `.env`, `.live-patch` or `builds/` data. The earlier Round 2 verification clone path remains in Known gaps above.
 
 ## Round 1 responses
 
