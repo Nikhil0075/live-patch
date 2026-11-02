@@ -1,5 +1,27 @@
 # Architecture
 
+## Diagrams
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="media/architecture/01-system-loop-dark.png"><img src="media/architecture/01-system-loop-light.png" alt="Clockwise loop from Twitch ideas to the local server, Codex sandbox, running game and viewers"></picture>
+
+The whole system as one loop. A viewer's idea travels clockwise from Twitch through the local server and the Codex sandbox into the running game, then back to viewers on stream.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="media/architecture/02-round-states-dark.png"><img src="media/architecture/02-round-states-light.png" alt="Round states showing the timed pitch and vote stages followed by moderator approval"></picture>
+
+Two timers, then a moderator decides.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="media/architecture/03-build-gates-dark.png"><img src="media/architecture/03-build-gates-light.png" alt="Build gates checking source and running a smoke test before a patch reaches the game"></picture>
+
+Nothing reaches the running game until it passes every gate.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="media/architecture/04-patch-sandbox-dark.png"><img src="media/architecture/04-patch-sandbox-light.png" alt="Sandboxed patch asking the host for actions while the host enforces limits"></picture>
+
+A live patch can only ask. The host decides.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="media/architecture/05-platform-contract-dark.png"><img src="media/architecture/05-platform-contract-light.png" alt="Game agnostic engine connected to each game through a manifest and adapter"></picture>
+
+The engine knows a game only through its manifest and adapter.
+
 `package.json` names one default game. `npm run dev -- --game <folder>` selects another. The Vite plugin loads and validates that game's `live-patch.json` before opening ports. It serves `/api/game` with the manifest and entry URL, serves `/api/mutations` with checked source, watches the manifest's mutation folder, and publishes complete file lists on the manifest's custom event over Vite's WebSocket. Vite reconnects after disconnection; the client refetches the list on each connection. Editing the manifest restarts the development server so its validated contract stays current. A development-server restart reloads the page and resets the game run; ordinary mutation file edits preserve it.
 
 `engine/client.ts` imports the selected game entry dynamically and calls `createGame(parent, emit)`. The game returns an adapter with `apply(action, origin)`, `removeMutation(origin)`, `snapshot()` and `destroy()`. Game-specific entity types, parameters, actions and hook names live in the game and manifest. The engine only carries generic event envelopes and action calls; nothing in `engine/` imports game code.

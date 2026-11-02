@@ -3,6 +3,13 @@
 **A Twitch stream where chat changes the game while you play.** Viewers pitch mechanics, vote on a winner, and watch Codex build and test the approved idea. Passing patches appear in the live game without restarting the run; every shipped idea credits its contributors.
 
 <p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/logo/live-patch-logo-3x2-dark.png">
+    <img src="docs/media/logo/live-patch-logo-3x2-light.png" width="420" alt="Purple starburst mark beside the Live Patch wordmark">
+  </picture>
+</p>
+
+<p align="center">
   <img src="games/arena-survivor/assets/cover-generated.webp" width="220" alt="Arena Survivor cover: a green hero surrounded by slimes and coins">
   <img src="games/lantern-run/assets/cover.webp" width="220" alt="Lantern Run cover: a fox carrying a lantern through a forest">
 </p>
@@ -12,9 +19,35 @@
 |---|---|---|
 | Practice runs a sample pitch and vote without accounts. | Connect Twitch and Codex, then show the game and OBS overlay. | Save playable builds, credited patch notes, and an original-versus-evolved comparison. |
 
-**[Get started](#quick-start)** · **[Stream setup](#twitch-and-stream-setup)** · **[Commands](#commands)** · **[Architecture](docs/architecture.md)** · **[Add a game](docs/adding-a-game.md)**
+**[Get started](#quick-start)** · **[Gallery](#gallery)** · **[How it works](#how-it-works)** · **[Stream setup](#twitch-and-stream-setup)** · **[Commands](#commands)** · **[Architecture](docs/architecture.md)** · **[Add a game](docs/adding-a-game.md)**
 
-The [three-minute demo outline](docs/demo-script.md) covers the product tour. A recorded demo is still pending.
+Watch the [2:21 demo video](https://youtu.be/zuyCcjgMr1Y?si=40spIwIUN5jMJtv6). The [three-minute demo outline](docs/demo-script.md) covers the product tour.
+
+## How it works
+
+<a href="docs/architecture.md"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/media/architecture/01-system-loop-dark.png"><img src="docs/media/architecture/01-system-loop-light.png" alt="Viewer ideas travel from Twitch through the local studio and Codex build gates into the running game, then return to viewers on stream"></picture></a>
+
+1. Viewers pitch mechanics in chat or with a Channel Points reward. Practice uses simulated viewers in the same pipeline.
+2. The three oldest ideas enter a 45-second vote after a 60-second pitch window. Each viewer gets one vote.
+3. A moderator or the broadcaster approves the winner. Approval has no timer.
+4. Codex builds the patch in its own worktree. Source gates and a smoke test check it alongside active patches.
+5. A passing patch loads into the running game.
+6. Viewers see the change and its credit on stream.
+
+## Gallery
+
+| | | |
+|---|---|---|
+| [![Original and evolved Arena Survivor side by side](docs/media/gallery/02-before-and-after.png)](docs/gallery.md)<br>Same game, before and after chat | [![Viewer pitching a game idea from a phone](docs/media/gallery/03-viewers-pitch.png)](docs/gallery.md)<br>Viewers pitch from their phones | [![Codex build progress shown beside the running game](docs/media/gallery/06-codex-builds.png)](docs/gallery.md)<br>Codex builds while the game keeps running |
+| [![Shipped patch credited to its viewer on stream](docs/media/gallery/08-credited.png)](docs/gallery.md)<br>Shipped, and credited to the viewer | [![Moderator rollback removing the latest patch](docs/media/gallery/10-rollback.png)](docs/gallery.md)<br>One command takes it back | [![Lantern Run fox crossing a twilight forest](docs/media/gallery/13-lantern-run.png)](docs/gallery.md)<br>Lantern Run: a second game, same engine |
+
+[See all 15 gallery images](docs/gallery.md).
+
+## Safety
+
+- Codex builds each approved patch in an isolated Git worktree without network, shell, web search, apps, plugins or MCP access. It may add one file in the active game's mutation folder, up to 120 lines and 12 KB. Source gates and a five-second smoke test with all active patches run before shipping.
+- A patch runs in a Worker inside a sandboxed iframe. The host limits it to 20 actions per event batch and 60 per second. It has a 3 s load deadline and a 1.8 to 2.2 s event deadline. A rule-breaking or late patch is switched off while play continues. A moderator's `!rollback` removes the latest patch at once.
+- Viewer text is inserted as text, never as HTML. A rejected build gate or smoke test resolves a prediction as **Fails**; sandbox, quota, timeout, cancellation and restart cancel it so Twitch returns points. [Read the architecture](docs/architecture.md).
 
 ## Quick start
 
@@ -74,6 +107,8 @@ The local **Roll back latest** button is also immediate. Rollback removes patch-
 
 `npm test` runs unit tests, the studio browser suite once with the selected game, each built-in game's smoke suite in separate copies, and the HTTPS regression. The test Library contains isolated copies of both games so switching never changes your live folders. `npm run smoke` runs only the selected game's mutation smoke test. Each copy uses isolated data and a free port, so tests can run while the live studio holds port 5173. The full test copy includes only Git-tracked built-in mutations; in a ZIP without Git, it excludes generated `demo-*.js` and `patch-*.js` files. Tests keep saved builds in a temporary folder, so they do not add entries to your Library. `LIVE_PATCH_GAME` selects the studio game for tests; `LIVE_PATCH_DATA_DIR` selects a local data folder. **Library → Add your game** is the UI path for creating or importing a game. Imported code is run only after confirmation.
 
+Browser tests include timing limits, so run `npm test` on an otherwise idle machine.
+
 ### Live Codex sandbox
 
 Use **Setup → Sandbox → Run setup** to request the Windows administrator prompt, then **Run sandbox self-test**. Setup passes the launching Windows user and Codex home explicitly, including when a different administrator approves the prompt. The runner refuses to build if the sandbox cannot write in its worktree or can write outside it. On a managed PC, ask IT to provision the sandbox for the launching account. Setup shows a specific error and diagnostics when the pre-build probe fails.
@@ -83,3 +118,18 @@ Each build uses its own Git worktree. Codex has no network, shell, web search, a
 For a visible WebGL crowd check on the streaming PC, run `$env:LIVE_PATCH_WEBGL=1; node scripts/test.mjs --browser-only --game-suite --browser-grep "WebGL crowd"` in PowerShell. Keep the browser visible and confirm that all three example patches remain active after a crowded Space attack. [Phase reports](docs/phases/) record development history and checks. [Phase 5 report](docs/phases/phase-5-report.md) tracks the remaining operator-only Twitch, OBS and timed-run checks.
 
 To regenerate Lantern Run's synthesized listening samples, run `npm run render:lantern-audio`. It writes a 20-second music excerpt and all 14 effects under `docs/phases/phase-6-audio/`; each is mono 22.05 kHz and under 1 MB. The game generates sound through Web Audio after the user enables it in Play.
+
+## Built with Codex
+
+Codex wrote the engine, both games and the tests, phase by phase. Each phase was reviewed, with findings in [reviews/](reviews/), and the operator tagged it `phase-N-done`. The [phase specs and reports](docs/phases/) and [builder instructions](AGENTS.md) show the process. At runtime, the Codex SDK builds each approved patch.
+
+Stack: TypeScript, Node 20+, Vite 7, Phaser 3.90, the Codex SDK, Zod, Vitest, Playwright and OBS.
+
+## Known limitations
+
+- A patch that misses its event deadline is switched off to protect the game. This happened on the demo stream with one PC running the game, OBS, recorders and Codex together. Reopening Play reloads the patches in the live folder.
+- Live Codex sandbox setup is Windows-only, as noted in [Quick start](#quick-start).
+
+## Credits
+
+[Media credits](docs/media/CREDITS.md) cover the figures and gallery. Live Patch is an independent hackathon project, not made or endorsed by Twitch or OpenAI.
