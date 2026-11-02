@@ -8,6 +8,7 @@ button:not(.secondary):not(.danger):hover,.button.primary:hover{background:#772c
 .danger{background:#5b1717;border-color:#aa3333}
 a{color:var(--accent-text)}
 .app-rail{background:#18181b;border-color:#2f2f35;padding:20px 12px}
+#shell>.app-rail{position:sticky;top:0;align-self:start;height:100vh;height:100dvh;min-height:0;overflow-y:auto;overscroll-behavior:contain}
 .app-mark{padding:4px 12px 24px;color:#efeff1;text-decoration:none}
 .mark-icon,.app-kicker{color:var(--accent-text)}
 #app-nav a{border-radius:4px;color:var(--text-soft);padding:12px 14px}
@@ -56,3 +57,4 @@ a{color:var(--accent-text)}
 #shell:has(.app-rail.collapsed){grid-template-columns:76px minmax(0,1fr)}
 @media(max-width:1150px){.top-search{min-width:180px}.top-actions #codex-connection,.top-actions #mode-switch{display:none}.home-grid{grid-template-columns:1fr}}
 @media(max-width:720px){.app-top{display:block}.top-search{width:100%}.top-actions{margin-top:10px}.home-shelf .status-grid{grid-template-columns:1fr}.welcome-steps{font-size:12px;flex-wrap:wrap}}
+@media(max-width:640px){#shell>.app-rail{position:sticky;top:0;height:auto;min-height:0;overflow-x:auto;overflow-y:hidden}}

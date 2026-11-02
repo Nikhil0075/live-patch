@@ -67,6 +67,48 @@ test('Library patch count and details rows reflect the active game', async ({ pa
   expect(geometry.star.top).toBeGreaterThanOrEqual(geometry.cover.top);
 });
 
+test('sidebar settings and local status stay in view while the page scrolls', async ({ page }) => {
+  for (const height of [900, 768]) {
+    await page.setViewportSize({ width: height === 900 ? 1920 : 1366, height });
+    await page.goto('/?view=home');
+    const settings = page.locator('.rail-settings');
+    const status = page.locator('.rail-foot');
+    await expect(settings).toBeVisible();
+    await expect(status).toContainText('LOCAL STUDIO');
+    const before = { settings: await settings.boundingBox(), status: await status.boundingBox() };
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(100);
+    const after = { settings: await settings.boundingBox(), status: await status.boundingBox() };
+    for (const key of ['settings', 'status'] as const) {
+      expect(after[key]).toBeTruthy();
+      expect(Math.abs(after[key]!.y - before[key]!.y)).toBeLessThan(2);
+      expect(after[key]!.y).toBeGreaterThanOrEqual(0);
+      expect(after[key]!.y + after[key]!.height).toBeLessThanOrEqual(height);
+    }
+  }
+});
+
+test('Library covers crop to equal frames and cards align', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto('/?view=library');
+  const cards = page.locator('.library-select:has(img)');
+  await expect.poll(() => cards.count()).toBeGreaterThanOrEqual(2);
+  await expect.poll(() => cards.locator('img').evaluateAll(images => images.every(image => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0))).toBe(true);
+  const layout = await cards.evaluateAll(cards => cards.slice(0, 2).map(card => {
+    const cover = card.querySelector('.library-cover')!;
+    const image = cover.querySelector('img')!;
+    return { card: card.getBoundingClientRect().toJSON(), cover: cover.getBoundingClientRect().toJSON(), image: image.getBoundingClientRect().toJSON(), fit: getComputedStyle(image).objectFit };
+  }));
+  expect(Math.abs(layout[0].cover.height - layout[1].cover.height)).toBeLessThan(2);
+  expect(Math.abs(layout[0].cover.top - layout[1].cover.top)).toBeLessThan(2);
+  expect(Math.abs(layout[0].card.bottom - layout[1].card.bottom)).toBeLessThan(2);
+  for (const item of layout) {
+    expect(item.fit).toBe('cover');
+    expect(Math.abs(item.image.width - item.cover.width)).toBeLessThan(2);
+    expect(Math.abs(item.image.height - item.cover.height)).toBeLessThan(2);
+  }
+});
+
 test('OBS widgets can be removed, added and resized across reloads', async ({ page }) => {
   await page.goto('/?view=go-live');
   await page.getByRole('link', { name: /Customize OBS overlay/ }).click();
@@ -305,6 +347,8 @@ test('studio and welcome scrollbars use the violet theme and keep keyboard scrol
     expect(colours.every(colour => colour.includes('rgb(107, 60, 161)'))).toBe(true);
   }
   await page.goto('/?view=library');
+  await expect(page.locator('.library-select').first()).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight)).toBeGreaterThan(600);
   await page.keyboard.press('PageDown');
   await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(0);
 });

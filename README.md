@@ -1,10 +1,20 @@
 # Live Patch
 
-Live Patch lets a Twitch audience redesign a browser game while the streamer plays. Viewers pitch mechanics, vote, and watch a moderator approve one. A confined Codex runner writes a small mutation, tests it with the active patches, and ships it into the running game. The studio includes a game library, practice mode, stream controls, OBS overlay, patch credits, saved builds and an original-versus-evolved comparison.
+**A Twitch stream where chat changes the game while you play.** Viewers pitch mechanics, vote on a winner, and watch Codex build and test the approved idea. Passing patches appear in the live game without restarting the run; every shipped idea credits its contributors.
 
-**Source:** [github.com/Nikhil0075/live-patch](https://github.com/Nikhil0075/live-patch)
+<p align="center">
+  <img src="games/arena-survivor/assets/cover-generated.webp" width="220" alt="Arena Survivor cover: a green hero surrounded by slimes and coins">
+  <img src="games/lantern-run/assets/cover.webp" width="220" alt="Lantern Run cover: a fox carrying a lantern through a forest">
+</p>
+<p align="center"><strong>Arena Survivor</strong> · <strong>Lantern Run</strong> · One manifest-driven studio</p>
 
-**Demo video:** Pending operator recording and upload. The [three-minute demo outline](docs/demo-script.md) lists the scenes to capture.
+| Try it locally | Take it on stream | Keep what chat made |
+|---|---|---|
+| Practice runs a sample pitch and vote without accounts. | Connect Twitch and Codex, then show the game and OBS overlay. | Save playable builds, credited patch notes, and an original-versus-evolved comparison. |
+
+**[Get started](#quick-start)** · **[Stream setup](#twitch-and-stream-setup)** · **[Commands](#commands)** · **[Architecture](docs/architecture.md)** · **[Add a game](docs/adding-a-game.md)**
+
+The [three-minute demo outline](docs/demo-script.md) covers the product tour. A recorded demo is still pending.
 
 ## Quick start
 

@@ -296,3 +296,10 @@ After those runs, only the capture script and visual evidence were refined; game
 - **P6-R2-05 — Fixed.** The fox has a smaller head, longer raised torso, visible front legs in opposing run phases, and a stick rooted at its front paw. The fifth forest layer is behind ground; the moon is one disc; the lantern glow texture has full radial room; touching ground spans have no cliff edge; pits have jagged rock faces; clouds wrap seamlessly; the run-over lantern rests at ground level. The spring cap and floating ledge have more distinct shapes. New captures show these changes; the code-drawn shapes remain simpler than the painterly references.
 - **P6-R2-06 — Fixed.** The HUD measures count and distance widths each frame, reduces their font size only when needed, and positions the hearts after the distance. A browser test collects over 1,000 fireflies at Large size with five hearts and checks no overlaps or keep-clear overflow.
 - **P6-R2-07 — Fixed.** The mutation API doc now names the read-only `hudBounds` and `groundUnderFox` diagnostic snapshot fields.
+
+## Post-tag studio polish (2026-11-02)
+
+- Pinned the Studio sidebar to the viewport so Settings and LOCAL STUDIO remain visible while long pages scroll. The browser test checks 1920×900 and 1366×768 viewports.
+- Cropped both Library covers into equal 3:4 frames and aligned the game cards and Add your game card. The browser test checks cover geometry, `object-fit: cover`, and card bottoms.
+- Refreshed the README introduction with both game covers, a short feature tour, and direct links to setup, commands, architecture, and adding a game.
+- Verification: `npm test` passed 107 unit tests (4 opt-in skipped), 32 studio browser tests, 37 Arena smoke tests (1 optional skipped), 32 Lantern smoke tests, and the HTTPS regression. `npm run build` passed; `npm audit --audit-level=high` found 0 vulnerabilities. `npm run dev` served the Library route with HTTP 200 in isolated test mode.

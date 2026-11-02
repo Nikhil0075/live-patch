@@ -6,17 +6,22 @@
 #library .library-toolbar select{margin-left:8px;padding:9px 12px;background:#1f1f23;color:#efeff1;border:1px solid #3a3a42;border-radius:4px}
 #library .library-layout{grid-template-columns:minmax(0,1fr) minmax(300px,370px)}
 #library .library-grid{grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px;align-items:start}
-#library .library-card{border-radius:4px;background:#18181b;border-color:#2f2f35}
-#library .library-cover{height:auto;aspect-ratio:3/4;background:radial-gradient(circle at 50% 35%,#483171,#19151f 72%);color:#c4a0ff}
-#library .library-cover img{object-fit:cover}
-#library .library-detail-cover.portrait{height:240px;object-fit:contain;object-position:center 35%;background:#151a30}
+#library .library-grid{align-items:stretch}
+#library .library-card{border-radius:4px;background:#18181b;border-color:#2f2f35;height:100%}
+#library .library-select{display:flex;flex-direction:column}
+#library .library-cover{height:auto;aspect-ratio:3/4;flex:none;overflow:hidden;background:radial-gradient(circle at 50% 35%,#483171,#19151f 72%);color:#c4a0ff}
+#library .library-cover img{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover;object-position:center}
+#library .library-cover>span:not(.library-star){display:grid;place-items:center;width:100%;height:100%}
+#library .library-card-content{display:flex;flex:1;flex-direction:column}
+#library .library-card-footer{margin-top:auto}
+#library .library-detail-cover.portrait{height:240px;object-fit:cover;object-position:center 35%;background:#151a30}
 #library .library-cover span{font-size:80px;color:#bb90ff}
 #library .library-card-content{padding:14px}
 #library .library-card-content h3{font-size:18px}
 #library .library-card-content p{font-size:12px;min-height:50px}
 #library .library-card-content small{font-size:11px}
 #library button.library-select.selected{border-color:#9146ff!important;box-shadow:0 0 0 2px #9146ff!important}
-#library .library-add{min-height:0;aspect-ratio:3/4;background:#1d1727!important;border:1px dashed #9146ff!important;padding:24px!important;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
+#library .library-add{min-height:0;aspect-ratio:auto;background:#1d1727!important;border:1px dashed #9146ff!important;padding:24px!important;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
 #library .library-add-icon{color:#c8a7ff;font-size:64px}
 #library .library-detail{background:#18181b;top:20px}
 #library .library-detail-row strong{color:#c4a0ff}
@@ -32,3 +37,4 @@
 #library .library-badges span{background:#2c2040;border-color:#6c489c;color:#e2ccff}
 #library>.section-head>div{display:none}#library>.section-head{justify-content:flex-end;margin:0 0 5px}#library .library-detail{position:relative}#library .library-detail-close{position:absolute;right:12px;top:12px;z-index:2}#library .library-detail-cover{display:block;width:100%;height:180px;object-fit:cover;border-radius:4px;margin-bottom:16px}#library .library-detail-row{padding:12px;border-top:1px solid #363640}#library .library-detail-row summary{cursor:pointer;color:#e9e1f3;font-weight:700}#library .library-detail-row p{margin:8px 0;color:#bdb9c7}#library .library-card-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:18px 0}#library .library-card-actions button{min-height:44px}#library .library-patch-count{display:block;color:#c9a2ff;font-size:12px}#library .library-tags{display:flex;gap:5px;flex-wrap:wrap;margin:8px 0}#library .library-tags span{padding:3px 6px;background:#30243f;color:#e2d2f3;border-radius:3px;font-size:11px}#library .library-card-footer{display:block;border-top:1px solid #383840;padding-top:8px;margin-top:12px}#library .library-cover{position:relative}#library .library-star{position:absolute;top:8px;right:10px;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#1d1727;color:#fff;font-size:25px}
 @media(max-width:1100px){#library .library-layout{grid-template-columns:1fr}#library .library-detail{position:static}}
+#library .library-select .library-card-footer{margin-top:auto}
